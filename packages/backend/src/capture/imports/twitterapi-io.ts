@@ -1,0 +1,204 @@
+import { config } from "../../config.js";
+import type { ImportedPost } from "./x.js";
+import type { ProfilePull } from "./apify-profile.js";
+
+const MAX_PAGES = 30; // hard safety cap regardless of maxPosts (API returns 20/page)
+// Free tier is capped at 1 request/5s (verified live 2026-07-05: back-to-back
+// pagination 429s immediately). Space requests out with margin above that.
+const MIN_REQUEST_INTERVAL_MS = 5500;
+
+interface RawTweet {
+  id?: string;
+  url?: string;
+  text?: string;
+  createdAt?: string;
+  isReply?: boolean;
+  retweetCount?: number;
+  replyCount?: number;
+  likeCount?: number;
+  quoteCount?: number;
+  viewCount?: number;
+  bookmarkCount?: number;
+  conversationId?: string;
+  retweeted_tweet?: unknown;
+  author?: { followers?: number; description?: string };
+}
+
+// Verified against a live call to /twitter/user/last_tweets on 2026-07-05: the
+// tweets array is nested under `data`, and pagination fields sit at the TOP
+// level — both differ from what the published docs page describes.
+interface LastTweetsResponse {
+  status?: string; // "success" | anything else on failure
+  code?: number; // 0 = ok
+  msg?: string;
+  data?: { tweets?: RawTweet[] };
+  has_next_page?: boolean;
+  next_cursor?: string;
+}
+
+export class TwitterApiIoError extends Error {
+  constructor(
+    public status: number,
+    body: string,
+  ) {
+    super(`twitterapi.io error ${status}: ${body.slice(0, 300)}`);
+  }
+}
+
+/**
+ * Parse twitterapi.io's tweet shape into ImportedPost, carrying engagement +
+ * thread context that the Apify actor doesn't expose. Pure function, no I/O.
+ * Excludes replies and pure retweets — same "own original posts only" contract
+ * as the other import paths, since positions/voice must be the person's words.
+ */
+export function parseTwitterApiIoTweets(
+  tweets: RawTweet[],
+): { posts: ImportedPost[]; bio?: string; followers?: number } {
+  const posts: ImportedPost[] = [];
+  let bio: string | undefined;
+  let followers: number | undefined;
+
+  for (const t of tweets) {
+    bio ??= t.author?.description || undefined;
+    followers ??= t.author?.followers ?? undefined;
+
+    const text = (t.text ?? "").trim();
+    if (!text || t.isReply || t.retweeted_tweet) continue;
+
+    const date = t.createdAt ? new Date(t.createdAt) : new Date();
+    posts.push({
+      text,
+      postedAt: Number.isNaN(date.getTime()) ? new Date() : date,
+      url: t.url,
+      engagement: {
+        likeCount: t.likeCount,
+        replyCount: t.replyCount,
+        retweetCount: t.retweetCount,
+        quoteCount: t.quoteCount,
+        viewCount: t.viewCount,
+        bookmarkCount: t.bookmarkCount,
+        isReply: t.isReply ?? false,
+        conversationId: t.conversationId,
+      },
+    });
+  }
+  return { posts, bio, followers };
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/** One page, retrying once on a 429 (honoring Retry-After if the API sends one). */
+async function fetchPage(url: URL): Promise<LastTweetsResponse> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const res = await fetch(url, {
+      headers: { "X-API-Key": config.TWITTERAPI_IO_KEY! },
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (res.status === 429 && attempt === 0) {
+      const retryAfter = Number(res.headers.get("retry-after"));
+      await sleep(Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : MIN_REQUEST_INTERVAL_MS);
+      continue;
+    }
+    if (!res.ok) throw new TwitterApiIoError(res.status, await res.text());
+    return (await res.json()) as LastTweetsResponse;
+  }
+  throw new TwitterApiIoError(429, "rate limited after retry");
+}
+
+/**
+ * Paginate `/twitter/user/last_tweets` by cursor until maxPosts or the feed
+ * runs out. The free tier allows 1 request/5s, so pages are spaced out. When
+ * `sinceDays` is set, pagination stops early once a page reaches past the
+ * cutoff with at least `minPosts` collected — the feed is newest-first, so
+ * everything after that would be discarded by the recency window anyway.
+ */
+async function fetchTweets(
+  userName: string,
+  maxPosts: number,
+  opts?: { sinceDays: number; minPosts: number },
+): Promise<RawTweet[]> {
+  if (!config.TWITTERAPI_IO_KEY) throw new Error("TWITTERAPI_IO_KEY not configured");
+  const cutoff = opts ? Date.now() - opts.sinceDays * 86_400_000 : 0;
+  const all: RawTweet[] = [];
+  let cursor = "";
+  let lastRequestAt = 0;
+  for (let page = 0; page < MAX_PAGES && all.length < maxPosts; page++) {
+    const wait = lastRequestAt + MIN_REQUEST_INTERVAL_MS - Date.now();
+    if (wait > 0) await sleep(wait);
+
+    const url = new URL("/twitter/user/last_tweets", config.TWITTERAPI_IO_BASE_URL);
+    url.searchParams.set("userName", userName);
+    if (cursor) url.searchParams.set("cursor", cursor);
+    lastRequestAt = Date.now();
+
+    const body = await fetchPage(url);
+    if (body.status !== "success") throw new Error(`twitterapi.io: ${body.msg ?? "unknown error"}`);
+
+    const tweets = body.data?.tweets ?? [];
+    all.push(...tweets);
+
+    if (opts && all.length >= opts.minPosts) {
+      const oldest = tweets[tweets.length - 1]?.createdAt;
+      const oldestMs = oldest ? new Date(oldest).getTime() : NaN;
+      if (Number.isFinite(oldestMs) && oldestMs < cutoff) break;
+    }
+    if (!body.has_next_page || !body.next_cursor) break;
+    cursor = body.next_cursor;
+  }
+  return all.length > maxPosts ? all.slice(0, maxPosts) : all;
+}
+
+/** Pull a user's public X history via twitterapi.io — richer than the Apify actor. */
+export async function pullXProfileViaTwitterApiIo(
+  handle: string,
+  maxPosts = 200,
+  opts?: { sinceDays: number; minPosts: number },
+): Promise<ProfilePull> {
+  const raw = await fetchTweets(handle, maxPosts, opts);
+  const { posts, bio, followers } = parseTwitterApiIoTweets(raw);
+  return { posts, meta: { bio, followers, handle } };
+}
+
+export interface XMention {
+  externalId: string;
+  url: string | null;
+  authorHandle: string;
+  authorReach: number;
+  content: string;
+  postedAt: Date;
+}
+
+/**
+ * Public mentions of a handle (replies, quotes, @-mentions) via
+ * /twitter/user/mentions. Verified live 2026-07-06: unlike last_tweets, this
+ * endpoint returns `tweets` at the TOP level, newest first, 20/page — one page
+ * per fetch cycle is enough, the ingest job runs several times a day.
+ */
+export async function pullXMentions(handle: string): Promise<XMention[]> {
+  if (!config.TWITTERAPI_IO_KEY) throw new Error("TWITTERAPI_IO_KEY not configured");
+  const url = new URL("/twitter/user/mentions", config.TWITTERAPI_IO_BASE_URL);
+  url.searchParams.set("userName", handle);
+  const body = (await fetchPage(url)) as LastTweetsResponse & { tweets?: RawTweet[] };
+  if (body.status !== "success") throw new Error(`twitterapi.io mentions: ${body.msg ?? "unknown error"}`);
+
+  const tweets = body.tweets ?? body.data?.tweets ?? [];
+  const mentions: XMention[] = [];
+  for (const t of tweets) {
+    const text = (t.text ?? "").trim();
+    const author = (t as { author?: { userName?: string; followers?: number } }).author;
+    if (!t.id || !text || !author?.userName) continue;
+    if (author.userName.toLowerCase() === handle.toLowerCase()) continue; // their own tweet in the thread
+    const date = t.createdAt ? new Date(t.createdAt) : new Date();
+    mentions.push({
+      externalId: t.id,
+      url: t.url ?? null,
+      authorHandle: author.userName,
+      authorReach: author.followers ?? 0,
+      content: text,
+      postedAt: Number.isNaN(date.getTime()) ? new Date() : date,
+    });
+  }
+  return mentions;
+}

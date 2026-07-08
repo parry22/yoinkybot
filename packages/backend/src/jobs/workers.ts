@@ -1,0 +1,119 @@
+import type PgBoss from "pg-boss";
+import {
+  QUEUES,
+  type EmbedLinkJob,
+  type ExtractJob,
+  type OfferAnglesJob,
+  type TranscribeJob,
+} from "./boss.js";
+import { handleTranscribe } from "./transcribe.js";
+import { handleExtract } from "./extract.js";
+import { handleEmbedLink } from "./embed-link.js";
+import { handleSurfaceTick } from "./resurface.js";
+import { handleClusterRebuild } from "./cluster.js";
+import { handleVoiceRebuild } from "../voice/profile.js";
+import { maybeOfferAngles } from "./offer-angles.js";
+import { alertAdmin } from "../lib/alerts.js";
+import { handleTrendFetch } from "./trend-fetch.js";
+import { handleTrendMatch } from "./trend-match.js";
+import { handleIngestProfile } from "../strategist/connect.js";
+import { handleDiagnose } from "../strategist/diagnosis.js";
+import { handleProgressReport } from "../strategist/progress.js";
+import { handleMentionsFetch } from "../engagement/service.js";
+import { handlePeerIngest } from "../benchmark/peers.js";
+import { handleWeeklyPlan } from "./weekly-plan.js";
+import { handlePerformancePulse } from "../strategist/performance.js";
+import type { IngestProfileJob, DiagnoseJob } from "./boss.js";
+
+/**
+ * Log a worker failure with enough context to trace it (queue, job id, payload),
+ * then rethrow so pg-boss fails the job and the queue's retry policy applies.
+ */
+function logged<T>(queue: string, fn: (data: T, jobId: string) => Promise<unknown>) {
+  return async (jobs: Array<{ id: string; data: T }>) => {
+    const job = jobs[0];
+    if (!job) return;
+    try {
+      await fn(job.data, job.id);
+    } catch (err) {
+      console.error(`job failed [${queue}] id=${job.id} data=${JSON.stringify(job.data).slice(0, 300)}`, err);
+      // Throttled per queue — a crash-looping job pages once an hour, not per retry.
+      void alertAdmin(`job:${queue}`, `job failing [${queue}]: ${err instanceof Error ? err.message : String(err)}`);
+      throw err;
+    }
+  };
+}
+
+// Extraction is the ingest bottleneck: a 120-post connect is ~120 extract jobs
+// + ~150 embed/link jobs, each an LLM/embedding round-trip. Sequential, that's
+// 8-10 minutes of "reading"; four independent workers per queue cut it to ~2-3.
+// Each registration is its own single-job worker, so one failure never takes a
+// batch with it. Tradeoff, accepted: belief reconciliation ordering becomes
+// near-chronological (within a 4-job window) instead of strictly chronological.
+const INGEST_CONCURRENCY = 4;
+
+export async function registerWorkers(boss: PgBoss): Promise<void> {
+  await boss.work<TranscribeJob>(QUEUES.transcribe, logged(QUEUES.transcribe, (d: TranscribeJob) => handleTranscribe(d)));
+  for (let i = 0; i < INGEST_CONCURRENCY; i++) {
+    await boss.work<ExtractJob>(QUEUES.extract, logged(QUEUES.extract, (d: ExtractJob) => handleExtract(d)));
+    await boss.work<EmbedLinkJob>(QUEUES.embedLink, logged(QUEUES.embedLink, (d: EmbedLinkJob) => handleEmbedLink(d)));
+  }
+  // Every job on this queue is a direct per-moment send (trend match, or an
+  // in-chat "turn into angles" tap) — there is no ambient scan anymore, see
+  // the retired hourly tick note below.
+  await boss.work<OfferAnglesJob>(
+    QUEUES.offerAngles,
+    logged(QUEUES.offerAngles, (d: OfferAnglesJob) => maybeOfferAngles(d)),
+  );
+  await boss.work(QUEUES.surfaceTick, logged(QUEUES.surfaceTick, () => handleSurfaceTick()));
+  await boss.work(QUEUES.clusterRebuild, logged(QUEUES.clusterRebuild, () => handleClusterRebuild()));
+  await boss.work(QUEUES.voiceRebuild, logged(QUEUES.voiceRebuild, () => handleVoiceRebuild()));
+  await boss.work(QUEUES.trendFetch, logged(QUEUES.trendFetch, () => handleTrendFetch()));
+  await boss.work(QUEUES.trendMatch, logged(QUEUES.trendMatch, () => handleTrendMatch()));
+  await boss.work<IngestProfileJob>(
+    QUEUES.ingestProfile,
+    logged(QUEUES.ingestProfile, (d: IngestProfileJob) => handleIngestProfile(d)),
+  );
+  await boss.work<DiagnoseJob>(QUEUES.diagnose, logged(QUEUES.diagnose, (d: DiagnoseJob) => handleDiagnose(d)));
+  await boss.work(QUEUES.progressReport, logged(QUEUES.progressReport, () => handleProgressReport()));
+  await boss.work(QUEUES.mentionsFetch, logged(QUEUES.mentionsFetch, () => handleMentionsFetch()));
+  await boss.work(QUEUES.peerIngest, logged(QUEUES.peerIngest, () => handlePeerIngest()));
+  await boss.work(QUEUES.weeklyPlan, logged(QUEUES.weeklyPlan, () => handleWeeklyPlan()));
+  await boss.work(QUEUES.performancePulse, logged(QUEUES.performancePulse, () => handlePerformancePulse()));
+
+  // Proactive engine tick: hourly; cadence/quiet-hour gates live in the handler.
+  // This single tick now also offers to turn the resurfaced idea into angles
+  // (see resurface.ts) — the old separate hourly angle-offer sweep scanned for
+  // ambient "shareable" moments that nothing has produced since the browser
+  // extension was removed, so it's retired rather than left running empty.
+  await boss.schedule(QUEUES.surfaceTick, "0 * * * *");
+  // Memory map rebuild + voice rebuild: quiet early-morning dailies.
+  await boss.schedule(QUEUES.clusterRebuild, "30 3 * * *");
+  await boss.schedule(QUEUES.voiceRebuild, "15 4 * * *");
+  // Trends: fetch a few times daily; match once daily mid-morning IST for the ICP.
+  await boss.schedule(QUEUES.trendFetch, "0 */8 * * *");
+  await boss.schedule(QUEUES.trendMatch, "30 4 * * *"); // 10:00 IST
+  // Public mentions ingest (classification + scoring only — the hourly
+  // proactive tick decides delivery, replies get priority in that slot).
+  await boss.schedule(QUEUES.mentionsFetch, "15 */6 * * *");
+  // Peer watchlist ingest: weekly, Sunday night — Monday's progress report
+  // folds the comparison in. Peers are compared over time, never tracked live.
+  await boss.schedule(QUEUES.peerIngest, "0 20 * * 0");
+  // Strategist progress read: weekly (handler enforces the 2-4 week per-user gap).
+  await boss.schedule(QUEUES.progressReport, "0 5 * * 1"); // Mondays 10:30 IST
+  // The week-opening working note: right after the progress read on Mondays.
+  await boss.schedule(QUEUES.weeklyPlan, "30 5 * * 1"); // Mondays 11:00 IST
+  // Next-day performance pulse: daily, before the morning window.
+  await boss.schedule(QUEUES.performancePulse, "45 4 * * *"); // 10:15 IST
+
+  // Retired schedules — pg-boss persists these in its own table independent of
+  // the code, so removing a boss.schedule() call above does nothing on an
+  // install that already registered it. Drop them explicitly.
+  for (const retired of ["macro.match", QUEUES.offerAngles]) {
+    try {
+      await boss.unschedule(retired);
+    } catch {
+      // never scheduled on this install — fine
+    }
+  }
+}

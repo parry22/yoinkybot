@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+
+# Node
+node_modules/
+dist/
+.next/
+coverage/
+*.log
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Local Claude Code tooling state (contains local permission history — never share)
+.claude/
