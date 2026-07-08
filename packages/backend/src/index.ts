@@ -13,11 +13,18 @@ async function main(): Promise<void> {
   await registerWorkers(boss);
 
   const bot = createBot();
+  // The bot's own t.me link, derived from Telegram rather than hardcoded or
+  // borrowed from an unrelated config value — always correct for whichever
+  // token is actually configured.
+  const botLink = bot ? `https://t.me/${(await bot.api.getMe()).username}` : "https://telegram.org";
 
   // Telegram-native: the only HTTP surface is health + webhooks.
   const app = Fastify({ logger: { level: isDev ? "info" : "warn" } });
 
   app.get("/health", async () => ({ ok: true }));
+  // Telegram-only, no web dashboard — anyone landing on the bare domain in a
+  // browser should bounce straight to the actual bot, not see a raw 404.
+  app.get("/", async (_req, reply) => reply.redirect(botLink));
   await app.register(webhookRoutes);
 
   await app.listen({ port: config.PORT, host: "0.0.0.0" });
@@ -33,7 +40,16 @@ async function main(): Promise<void> {
     } else {
       // Local dev: no public HTTPS URL, fall back to long polling.
       await bot.api.deleteWebhook();
-      void bot.start({ onStart: () => console.log("telegram bot polling (dev)") });
+      // Fire-and-forget by design (bot.start's promise only resolves on
+      // shutdown) — but it must still be caught. If a webhook gets registered
+      // elsewhere for this same token (e.g. a prod instance switching modes),
+      // Telegram kills this poll with a 409 "terminated by setWebhook
+      // request" — expected, not an operational problem, so log it locally
+      // instead of letting it surface as an unhandled rejection that pages
+      // the admin for something that isn't actually broken.
+      bot.start({ onStart: () => console.log("telegram bot polling (dev)") }).catch((err) => {
+        console.warn("polling loop ended (likely superseded by a webhook elsewhere):", err instanceof Error ? err.message : err);
+      });
     }
   }
 }
