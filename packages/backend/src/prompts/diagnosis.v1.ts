@@ -112,6 +112,16 @@ LANGUAGE
 - Never flatter without evidence. Every positive observation needs the same grounding as every
   critical one.
 - Write every "read" field to them, not as a report about them.
+
+DENSITY — this is a diagnosis, not an essay. Length limits are hard:
+- Every "read" field: 3 sentences maximum. Verdict first, evidence second, implication third.
+  If you need a fourth sentence, the first three weren't sharp enough.
+- Every array entry (positions, beliefs, swings, patterns): ONE sentence carrying the claim plus
+  its proof (count, date, or short quote). Not a paragraph.
+- Never narrate what they posted back to them. Every sentence must be something they could act
+  on or disagree with. "You post about AI often" is coverage, not diagnosis — cut it.
+- Fewer, sharper findings beat complete coverage. 2 owned positions that are undeniable beat 4
+  that are stretched.
 ${CHAT_STYLE_RULES}
 
 SELF-CHECK BEFORE RETURNING

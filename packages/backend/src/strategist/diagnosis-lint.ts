@@ -62,6 +62,30 @@ export function lintDiagnosis(d: Diagnosis): Violation[] {
     v.push({ path: "headline", rule: "headline-too-long", detail: "headline must be 2-3 sentences" });
   }
 
+  // Density: reads are capped at 3 sentences, array entries at one sentence-ish
+  // line. Bloat here is what turns the delivered diagnosis into a braindump.
+  const reads: Array<[string, string]> = [
+    ["intellectual_fingerprint.read", d.intellectual_fingerprint.read],
+    ["voice_signature.read", d.voice_signature.read],
+    ["outside_in_gap.read", d.outside_in_gap.read],
+  ];
+  for (const [path, text] of reads) {
+    if (sentenceCount(text) > 3 || text.length > 500) {
+      v.push({ path, rule: "read-too-long", detail: "read fields are 3 sentences max: verdict, evidence, implication" });
+    }
+  }
+  const entries: Array<[string, string]> = [
+    ...d.intellectual_fingerprint.owned_positions.map((p, i) => [`owned_positions[${i}]`, p] as [string, string]),
+    ...d.intellectual_fingerprint.latent_beliefs.map((p, i) => [`latent_beliefs[${i}]`, p] as [string, string]),
+    ...d.outside_in_gap.missed_swings.map((s, i) => [`missed_swings[${i}]`, s] as [string, string]),
+    ...d.unsaid_patterns.map((u, i) => [`unsaid_patterns[${i}].idea`, u.idea] as [string, string]),
+  ];
+  for (const [path, text] of entries) {
+    if (text.length > 300) {
+      v.push({ path, rule: "entry-too-long", detail: "array entries are one claim + proof, not a paragraph" });
+    }
+  }
+
   // Groundedness: recurrence claims need dates attached to the evidence.
   d.intellectual_fingerprint.owned_positions.forEach((p, i) => {
     if (!DATE_TOKEN.test(p)) {

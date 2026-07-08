@@ -66,6 +66,28 @@ describe("lintDiagnosis", () => {
     expect(lintDiagnosis(d).some((x) => x.rule === "needs-evidence")).toBe(true);
   });
 
+  it("flags a read field that runs past 3 sentences", () => {
+    const d = clean();
+    d.voice_signature.read =
+      "You write short. You write declarative. You avoid hashtags entirely. Your variation coefficient sits at 0.71 which is alive.";
+    const v = lintDiagnosis(d);
+    expect(v.some((x) => x.rule === "read-too-long" && x.path === "voice_signature.read")).toBe(true);
+  });
+
+  it("flags a read field that is too long by characters even at 3 sentences", () => {
+    const d = clean();
+    d.outside_in_gap.read = `${"Your posting pattern leans heavily toward announcing your own work and thinking rather than entering conversations that are already happening around you in your space, ".repeat(3)}which is a ratio problem.`;
+    expect(lintDiagnosis(d).some((x) => x.rule === "read-too-long" && x.path === "outside_in_gap.read")).toBe(true);
+  });
+
+  it("flags paragraph-length array entries", () => {
+    const d = clean();
+    d.outside_in_gap.missed_swings = [
+      "The May 2026 OpenAI pricing storm was the single biggest conversation in your space this year and it passed without a word from you, even though you had written adjacent material about platform pricing three separate times before it happened and your audience would clearly have expected you to weigh in, which makes it a costly silence and one worth understanding since these moments are exactly where outside-in posting builds reach.",
+    ];
+    expect(lintDiagnosis(d).some((x) => x.rule === "entry-too-long" && x.path === "missed_swings[0]")).toBe(true);
+  });
+
   it("renders violations as a corrective instruction", () => {
     const d = clean();
     d.headline = "Vague — thing.";

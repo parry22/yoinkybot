@@ -187,30 +187,35 @@ export function unsaidPatternKeyboard(
   return kb;
 }
 
-/** Split the diagnosis into a few readable Telegram messages (session-style). */
+/**
+ * Split the diagnosis into a few readable Telegram messages (session-style).
+ * Plain text only — these are sent without parse_mode, so markdown would show
+ * as literal asterisks. Structure comes from the emoji headers, blank lines,
+ * and bullets instead.
+ */
 export function formatDiagnosis(d: Diagnosis): string[] {
   const f = d.intellectual_fingerprint;
   const o = d.outside_in_gap;
   const parts: string[] = [];
-  parts.push(`Alright — I read through your history. Straight read, no fluff:\n\n${d.headline}`);
+  parts.push(d.headline);
   parts.push(
-    `🧠 *Intellectual fingerprint*\n${f.read}` +
-      (f.owned_positions.length ? `\n\nWhat's genuinely yours:\n${f.owned_positions.map((p) => `• ${p}`).join("\n")}` : "") +
-      (f.latent_beliefs.length ? `\n\nWhat you believe but haven't fully said:\n${f.latent_beliefs.map((p) => `• ${p}`).join("\n")}` : ""),
+    `🧠 ${f.read}` +
+      (f.owned_positions.length ? `\n\nGenuinely yours:\n${f.owned_positions.map((p) => `• ${p}`).join("\n")}` : "") +
+      (f.latent_beliefs.length ? `\n\nBelieved but never said outright:\n${f.latent_beliefs.map((p) => `• ${p}`).join("\n")}` : ""),
   );
-  parts.push(`🗣 *Voice*\n${d.voice_signature.read}${d.voice_signature.drift ? `\n\nDrift: ${d.voice_signature.drift}` : ""}`);
+  parts.push(`🗣 ${d.voice_signature.read}${d.voice_signature.drift ? `\n\n• Drift: ${d.voice_signature.drift}` : ""}`);
   parts.push(
-    `🌍 *Outside-in gap*\n${o.read}` +
+    `🌍 ${o.read}` +
       (o.missed_swings.length ? `\n\nSwings you didn't take:\n${o.missed_swings.map((s) => `• ${s}`).join("\n")}` : ""),
   );
   if (d.consistency_audit.length) {
     parts.push(
-      `⚖️ *Contradictions worth mining*\n${d.consistency_audit.map((c) => `• ${c.tension}\n  → ${c.why_interesting}`).join("\n\n")}`,
+      `⚖️ Contradictions worth mining:\n\n${d.consistency_audit.map((c) => `• ${c.tension}\n  → ${c.why_interesting}`).join("\n\n")}`,
     );
   }
   if (d.unsaid_patterns.length) {
     parts.push(
-      `💎 *The unsaid — your highest-value territory*\n${d.unsaid_patterns.map((u) => `• ${u.idea}\n  (${u.evidence})`).join("\n\n")}`,
+      `💎 The unsaid. Your highest-value territory:\n\n${d.unsaid_patterns.map((u) => `• ${u.idea}\n  (${u.evidence})`).join("\n\n")}`,
     );
   }
   return parts;
