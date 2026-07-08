@@ -30,10 +30,15 @@ function resolveProvider(): EmbeddingProvider {
   throw new Error("no embedding provider configured (set OPENAI_API_KEY or QWEN_API_KEY)");
 }
 
-/** Embed a batch of texts. Order of results matches input order. */
-export async function embed(texts: string[], userId: string | null): Promise<number[][]> {
-  if (texts.length === 0) return [];
-  const provider = resolveProvider();
+// DashScope (Qwen) rejects any single request with more than 10 inputs. OpenAI
+// allows far more, but 10 is small enough to cost nothing extra there either,
+// so one limit covers both providers without branching on which is active.
+const MAX_BATCH_SIZE = 10;
+
+async function embedChunk(
+  texts: string[],
+  provider: EmbeddingProvider,
+): Promise<{ embeddings: number[][]; promptTokens: number }> {
   const res = await fetch(`${provider.baseUrl}/embeddings`, {
     method: "POST",
     headers: {
@@ -52,15 +57,30 @@ export async function embed(texts: string[], userId: string | null): Promise<num
     data: Array<{ index: number; embedding: number[] }>;
     usage?: { prompt_tokens: number };
   };
+  return {
+    embeddings: data.data.sort((a, b) => a.index - b.index).map((d) => d.embedding),
+    promptTokens: data.usage?.prompt_tokens ?? 0,
+  };
+}
+
+/** Embed a batch of texts. Order of results matches input order. */
+export async function embed(texts: string[], userId: string | null): Promise<number[][]> {
+  if (texts.length === 0) return [];
+  const provider = resolveProvider();
+  const chunks: string[][] = [];
+  for (let i = 0; i < texts.length; i += MAX_BATCH_SIZE) chunks.push(texts.slice(i, i + MAX_BATCH_SIZE));
+
+  const results = await Promise.all(chunks.map((chunk) => embedChunk(chunk, provider)));
+  const promptTokens = results.reduce((sum, r) => sum + r.promptTokens, 0);
   await recordUsage({
     userId,
     eventType: "embed",
-    tokensIn: data.usage?.prompt_tokens ?? 0,
+    tokensIn: promptTokens,
     tokensOut: 0,
     model: provider.model,
-    cost: ((data.usage?.prompt_tokens ?? 0) * provider.costPer1M) / 1_000_000,
+    cost: (promptTokens * provider.costPer1M) / 1_000_000,
   });
-  return data.data.sort((a, b) => a.index - b.index).map((d) => d.embedding);
+  return results.flatMap((r) => r.embeddings);
 }
 
 export async function embedOne(text: string, userId: string | null): Promise<number[]> {
