@@ -2,7 +2,7 @@ import { z } from "zod";
 import { InlineKeyboard } from "grammy";
 import { llmCall, extractJson } from "../llm/gateway.js";
 import { strategistSession } from "../prompts/strategist-session.v1.js";
-import { strategistProfiling, fieldSpec } from "../prompts/strategist-session.v2.js";
+import { strategistProfiling, fieldSpec, FALLBACK_QUESTION } from "../prompts/strategist-session.v2.js";
 import { diagnosisReveal } from "../prompts/diagnosis-reveal.v1.js";
 import { gapAnalysis } from "../prompts/gap-analysis.v1.js";
 import { computeGap } from "./gap.js";
@@ -427,15 +427,21 @@ async function runProfilingTurn(userId: string, message: string, state: Strategi
     : undefined;
   const turnsInPhase = state.phase === phase ? (state.turnsInPhase ?? 0) : 0;
 
-  const [history, relevant, profileRow] = await Promise.all([
-    loadHistory(userId),
-    hybridSearch(userId, message, 4).catch(() => []),
-    getProfile(userId),
-  ]);
+  // A plain, deterministic fallback so a transient LLM/DB hiccup never dead-ends
+  // the intake — the machine already knows the next field, so just ask it.
+  const fallbackReply =
+    phase === "profiling" && field
+      ? FALLBACK_QUESTION[field]
+      : "Send me your X handle or LinkedIn and I'll read your history from here.";
 
-  let reply = "Say more?";
+  let reply = fallbackReply;
   let actions: ProfileAction[] = [];
   try {
+    const [history, relevant, profileRow] = await Promise.all([
+      loadHistory(userId),
+      hybridSearch(userId, message, 4).catch(() => []),
+      getProfile(userId),
+    ]);
     const res = await llmCall({
       userId,
       eventType: "strategist_profiling",
@@ -468,8 +474,9 @@ async function runProfilingTurn(userId: string, message: string, state: Strategi
     reply = parsed.reply || reply;
     actions = parsed.actions;
   } catch (err) {
-    console.error("profiling turn failed", err);
-    reply = "Give me a sec — lost my thread there. Say that again?";
+    // Keep the deterministic fallback question (set above) rather than a generic
+    // "lost my thread" dead-end — the conversation still moves forward.
+    console.error("profiling turn failed; falling back to the plain field question", err);
   }
 
   // connect_transition just talks (delivering the Stage 8 hand-off); it captures

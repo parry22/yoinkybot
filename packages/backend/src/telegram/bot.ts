@@ -7,15 +7,14 @@ import {
   type User,
 } from "../lib/auth.js";
 import { createCapture } from "../capture/service.js";
-import { searchAndSynthesize, hybridSearch } from "../memory/search.js";
 import { forgetMemory } from "../memory/forget.js";
 import { draftFromAngle } from "../drafting/angle-draft.js";
 import { converseWithUser, saveTurn } from "./conversation.js";
 import { maybeOfferAngles, createIdeaMoment } from "../jobs/offer-angles.js";
 import { otherUnconnectedPlatform } from "../strategist/connect.js";
-import { currentDiagnosis, diagnosisById, formatDiagnosis, unsaidPatternKeyboard, runDiagnosis } from "../strategist/diagnosis.js";
+import { diagnosisById } from "../strategist/diagnosis.js";
 import { getPlan, formatPlan } from "../strategist/plan.js";
-import { getStage, getState, setState, setStage, isOnboardingPhase, isProfilingPhase } from "../strategist/state.js";
+import { getStage, getState, setState, setStage, isOnboardingPhase } from "../strategist/state.js";
 import { runSessionTurn } from "../strategist/session-machine.js";
 import {
   PROFILE_FIELDS,
@@ -24,12 +23,10 @@ import {
   TONE_TAXONOMY,
   ALL_TONE_KEYS,
 } from "../strategist/profile.js";
-import { currentVoiceProfile, buildVoiceProfile } from "../voice/profile.js";
+import { buildVoiceProfile } from "../voice/profile.js";
 import { entitlementsFor } from "../billing/entitlements.js";
 import { createCheckout, foundingSeatsLeft } from "../billing/dodo.js";
-import { query } from "../db/pool.js";
-import { getBoss, QUEUES } from "../jobs/boss.js";
-import { clearState, resetUserData } from "../strategist/state.js";
+import { resetUserData } from "../strategist/state.js";
 import { recordReplyOutcome } from "../engagement/service.js";
 import { parseRepurposeCommand, repurposeContent, recordRepurposeUse } from "../drafting/repurpose.js";
 import { parsePeersCommand, addPeer, removePeer, listPeers } from "../benchmark/peers.js";
@@ -39,10 +36,8 @@ import {
   type Channel,
   connectAccount,
   runDraft,
-  runCheck,
   deliverRepurposed,
   positionsText,
-  statusText,
   deliverTurnOutput,
 } from "./actions.js";
 import { runSerializedTurn } from "./turns.js";
@@ -149,32 +144,7 @@ export function createBot(): Bot | undefined {
     await ctx.reply("You're already set up. Send me a thought, or /status to see where we are.");
   });
 
-  bot.command("ask", async (ctx) => {
-    const user = await requireUser(ctx);
-    if (!user) return;
-    const q = ctx.match?.trim();
-    if (!q) return void (await ctx.reply("Usage: /ask what have I said about pricing?"));
-    await ctx.replyWithChatAction("typing");
-    const { answer } = await searchAndSynthesize(user.id, q);
-    await ctx.reply(answer);
-  });
-
-  bot.command("forget", async (ctx) => {
-    const user = await requireUser(ctx);
-    if (!user) return;
-    const q = ctx.match?.trim();
-    if (!q) return void (await ctx.reply("Usage: /forget the thing you want gone"));
-    const matches = await hybridSearch(user.id, q, 3);
-    if (matches.length === 0) return void (await ctx.reply("Nothing in memory matches that."));
-    const kb = new InlineKeyboard();
-    for (const m of matches) {
-      kb.text(`🗑 ${m.content.slice(0, 40)}…`, `cf:${m.id}`).row();
-    }
-    kb.text("Cancel", "cf:cancel");
-    await ctx.reply("Delete which? This is permanent.", { reply_markup: kb });
-  });
-
-  // Nuke everything derived from your work and restart the connect flow.
+  // Nuke everything derived from your work and restart onboarding from scratch.
   bot.command("clear", async (ctx) => {
     const user = await requireUser(ctx);
     if (!user) return;
@@ -216,84 +186,6 @@ export function createBot(): Bot | undefined {
     await beginConnect(ctx, user, platform, handle);
   });
 
-  bot.command("diagnosis", async (ctx) => {
-    const user = await requireUser(ctx);
-    if (!user) return;
-    const diag = await currentDiagnosis(user.id);
-    if (!diag) {
-      await ctx.reply("I haven't read you yet. Run /connect with your handle, or send me a few of your takes and then /diagnose.");
-      return;
-    }
-    for (const chunk of formatDiagnosis(diag.dimensions)) await ctx.reply(chunk);
-    if (diag.dimensions.unsaid_patterns.length) {
-      await ctx.reply(
-        "Want me to turn any of these into content right now? Tap one:",
-        { reply_markup: unsaidPatternKeyboard(diag.id, diag.dimensions.unsaid_patterns) },
-      );
-    }
-  });
-
-  // Manual diagnosis trigger: reads whatever's captured, then opens the session.
-  bot.command("diagnose", async (ctx) => {
-    const user = await requireUser(ctx);
-    if (!user) return;
-    // Guard re-entry: a user who's already through onboarding shouldn't be thrown
-    // back into the paced session arc (goals/plan again). Refresh their read in
-    // place and just show it, rather than re-opening the strategist session.
-    const stage = await getStage(user.id);
-    if (stage === "active" || stage === "plan_active") {
-      await ctx.reply("Re-reading everything with your latest thinking. One sec.");
-      const refreshed = await runDiagnosis(user.id, { deliver: false }).catch(() => null);
-      if (!refreshed) {
-        await ctx.reply("Couldn't refresh the read just now — try again in a bit. Your existing /diagnosis still stands.");
-        return;
-      }
-      for (const chunk of formatDiagnosis(refreshed)) await ctx.reply(chunk);
-      return;
-    }
-    await ctx.reply("Reading through everything now. Give me a minute and I'll open with what stands out.");
-    await getBoss().send(QUEUES.diagnose, { userId: user.id, attempt: 0 });
-  });
-
-  // Load a sample body of work and run the whole flow — for trying Yoinky without connecting.
-  bot.command("demo", async (ctx) => {
-    const user = await requireUser(ctx);
-    if (!user) return;
-    // Fresh slate so the demo run is clean — and idempotent. Previously this
-    // left captures/memories in place, so each /demo stacked another copy of the
-    // seed on top of the last. Clear the derived artifacts AND the prior seed
-    // corpus (deleting the x_import captures cascades their memories + moments).
-    for (const t of ["unlock_items", "brand_plans", "goals", "brand_diagnoses", "surfacings", "drafts", "positions", "clusters", "voice_profiles"]) {
-      await query(`DELETE FROM ${t} WHERE user_id = $1`, [user.id]);
-    }
-    await query(`DELETE FROM captures WHERE user_id = $1 AND source = 'x_import'`, [user.id]);
-    await query(`UPDATE users SET strategist_stage = 'new' WHERE id = $1`, [user.id]);
-    await clearState(user.id);
-
-    const posts = [
-      "Distribution is the most underrated skill for founders. The best product loses to a decent one with an audience.",
-      "Hot take: most technical founders overrate product polish and underrate storytelling.",
-      "Hiring is a memory problem, not a sourcing problem — you forget the great people you already met.",
-      "Raising venture money forces a growth curve most founders don't actually want.",
-      "Solo founders plus AI tooling might be the most underrated business model of the decade.",
-      "Everyone obsesses over the product. Almost nobody obsesses over whether anyone will hear about it.",
-      "The founders who win in crowded markets built an audience before they needed one.",
-      "I keep replying to threads about creator burnout but I've never written my own take on it.",
-      "Most 'thought leadership' is just repackaged consensus. Real positioning means saying something a smart peer would disagree with.",
-      "Cold outreach works far better than founders admit. They just hate doing the reps.",
-      "The moat isn't the product. It's the distribution advantage you compound while competitors polish features.",
-      "I've changed my mind on remote work twice. The honest answer is it depends entirely on the stage of the company.",
-    ];
-    const boss = getBoss();
-    for (const p of posts) {
-      const { capture } = await createCapture({ userId: user.id, source: "x_import", rawText: p, metadata: { published: true }, enqueue: false });
-      await boss.send(QUEUES.extract, { captureId: capture.id, userId: user.id });
-    }
-    // The diagnose job waits for extraction to finish, then delivers + starts goals.
-    await boss.send(QUEUES.diagnose, { userId: user.id, attempt: 0 });
-    await ctx.reply("Loaded a sample founder profile. Reading through it now. Give me about a minute, then I'll open with what I found.");
-  });
-
   bot.command("plan", async (ctx) => {
     const user = await requireUser(ctx);
     if (!user) return;
@@ -303,49 +195,28 @@ export function createBot(): Bot | undefined {
 
   bot.command("help", async (ctx) => {
     await ctx.reply(
-      "Everything happens right here in the chat.\n\n" +
-        "Getting started:\n" +
-        "/connect x your_handle  — I read your real history\n" +
-        "/demo  — walk the whole thing on a sample profile\n\n" +
-        "The work:\n" +
+      "Everything happens right here in the chat. Mostly, just talk to me.\n\n" +
+        "Getting set up:\n" +
+        "Send /start and I'll walk you through a few questions, then read your real history.\n\n" +
+        "The work (all of this works in plain words too):\n" +
         "/plan  — the throughline and unlock list we built\n" +
         "/draft your idea  — I turn a thought into a post in your voice\n" +
         "/repurpose  — reshape a finished post for another platform, or pull scattered takes into one piece\n" +
-        "/check paste a draft  — I tell you if it drifts from your positions\n" +
-        "/voice  — the voice I've learned, or rebuild it\n" +
         "/positions  — the beliefs I've pulled from your work\n" +
-        "/peers  — watch a few peers, compare territory (never raw numbers)\n" +
-        "/ask a question  — I search everything you've told me\n\n" +
+        "/peers  — watch a few peers, compare territory (never raw numbers)\n\n" +
         "Housekeeping:\n" +
-        "/diagnosis  — the full structured read\n" +
-        "/status  — where we are\n" +
-        "/forget  — delete something for good\n" +
         "/settings  — quiet hours, timezone, how often I reach out\n" +
         "/clear  — wipe everything and start over\n" +
         "/upgrade  — unlock the paid work\n\n" +
-        "Or just talk to me. All of the above works in plain words too — \"draft me a post about X\", " +
-        "\"what have I said about pricing\" — and bring me a thought and I'll find the story in it.",
+        "Or just say what you want: \"draft me a post about X\", \"does this contradict what I've said\", " +
+        "\"what have I said about pricing\", \"where am I at\". Bring me a thought and I'll find the story in it.",
     );
-  });
-
-  bot.command("status", async (ctx) => {
-    const user = await requireUser(ctx);
-    if (!user) return;
-    await ctx.reply(await statusText(user));
   });
 
   bot.command("positions", async (ctx) => {
     const user = await requireUser(ctx);
     if (!user) return;
     await ctx.reply(await positionsText(user.id));
-  });
-
-  bot.command("check", async (ctx) => {
-    const user = await requireUser(ctx);
-    if (!user) return;
-    const draft = ctx.match?.trim();
-    if (!draft) return void (await ctx.reply("Paste your draft: /check <your draft post>"));
-    await withTyping(ctxChannel(ctx), () => runCheck(user, draft, ctxChannel(ctx)));
   });
 
   bot.command("draft", async (ctx) => {
@@ -413,22 +284,6 @@ export function createBot(): Bot | undefined {
     });
   });
 
-  bot.command("voice", async (ctx) => {
-    const user = await requireUser(ctx);
-    if (!user) return;
-    const arg = ctx.match?.trim();
-    if (arg === "build" || arg === "rebuild") {
-      const ent = await entitlementsFor(user.id);
-      if (!ent.voiceProfile) return void (await ctx.reply("Voice profile is a paid feature — /upgrade first."));
-      await ctx.replyWithChatAction("typing");
-      const r = await buildVoiceProfile(user.id);
-      return void (await ctx.reply(r.ok ? "Voice profile rebuilt ✓ — /voice to see it." : r.reason));
-    }
-    const profile = await currentVoiceProfile(user.id);
-    if (!profile) return void (await ctx.reply("No voice profile yet (needs ~50 memories). /voice build once you're there."));
-    await ctx.reply(`Your voice (v${profile.version}, from ${profile.built_from_memory_count} memories):\n\n${JSON.stringify(profile.traits, null, 2).slice(0, 3500)}`);
-  });
-
   bot.command("upgrade", async (ctx) => {
     const user = await requireUser(ctx);
     if (!user) return;
@@ -474,6 +329,10 @@ export function createBot(): Bot | undefined {
       await ctx.reply("Don't know that one. /help lists everything — or just say what you want in plain words.");
       return;
     }
+    // Immediate "I'm on it" the instant we process the update — matters most on a
+    // cold start, so a slow first turn reads as thinking, not offline. withTyping
+    // then keeps it alive for the rest of the turn.
+    void ctx.replyWithChatAction("typing").catch(() => {});
     // Serialize per user: one turn at a time, and messages typed while a turn
     // is running merge into the next turn (people send one thought as several
     // fragments — answer the whole thought once, like a person would).
@@ -533,13 +392,12 @@ export function createBot(): Bot | undefined {
           console.error("clear: message deletion sweep failed", err),
         );
         await resetUserData(user.id);
-        // A fresh message in the now-empty chat — it gets tracked by the
-        // outgoing transformer like everything from here on.
-        await ctx.reply(
-          "Done. Clean slate. Connect an account and I'll read it from scratch:\n" +
-            "/connect x <your @handle>\n/connect linkedin <your profile url>\n\n" +
-            "Or /demo to walk the whole thing on a sample profile.",
-        );
+        // Restart the profile-first onboarding from scratch (same as /start), so
+        // /clear lands them back at question one rather than a dead "connect an
+        // account" prompt. The fresh message gets tracked like everything else.
+        await setStage(user.id, "profiling");
+        await setState(user.id, { phase: "profiling", profile: {} });
+        await ctx.reply(`Done. Clean slate.\n\n${PROFILE_OPENER}`);
         return;
       }
       await ctx.editMessageText("Cancelled. Nothing was deleted.");
@@ -807,21 +665,15 @@ export function createBot(): Bot | undefined {
   // Populate the "/" command menu in Telegram clients.
   void bot.api
     .setMyCommands([
+      { command: "start", description: "Set up your profile, then I read your real history" },
       { command: "connect", description: "Connect your X/LinkedIn so I can read your work" },
-      { command: "demo", description: "Load a sample profile and run the whole flow" },
-      { command: "diagnose", description: "Read what you've captured (then re-view with /diagnosis)" },
       { command: "plan", description: "Your throughline, unlock list, and cadence" },
-      { command: "status", description: "Where you are and what's next" },
       { command: "draft", description: "Write a post from your thinking, in your voice" },
       { command: "repurpose", description: "Reshape finished content, or synthesize scattered takes" },
-      { command: "check", description: "Does this draft contradict your positions?" },
-      { command: "voice", description: "View or build your voice profile" },
       { command: "positions", description: "The beliefs I've extracted from you" },
       { command: "peers", description: "Watch a few peers — territory comparison, not a scoreboard" },
-      { command: "ask", description: "Search everything you've captured" },
-      { command: "forget", description: "Permanently delete a memory" },
       { command: "settings", description: "Quiet hours, timezone, proactive frequency" },
-      { command: "clear", description: "Wipe everything and start account connection over" },
+      { command: "clear", description: "Wipe everything and start over" },
       { command: "upgrade", description: "Unlock paid features" },
       { command: "help", description: "What Yoinky can do" },
     ])

@@ -88,7 +88,7 @@ full prior implementation if it ever needs to come back.
 
 | Area | Path | What it does |
 |---|---|---|
-| Telegram bot | `src/telegram/` | grammY bot, command handlers, conversation state, `/settings`. Commands: `start, help, connect, diagnose, diagnosis, goals(implicit), plan, ask, draft, check, voice, positions, repurpose, peers, forget, settings, status, upgrade, clear, demo`. Plain-language equivalents of most commands run through the agentic chat layer (see §3a). |
+| Telegram bot | `src/telegram/` | grammY bot, command handlers, conversation state. Commands (deliberately lean — 2026-07-11): `start, help, connect, plan, draft, repurpose, positions, peers, settings, clear, upgrade`. Everything else (check, search/ask, status, diagnosis refresh, voice, forget) is done in plain language via the agentic chat layer (see §3a) — those slash commands were removed. |
 | Strategist flow | `src/strategist/` | The a16z Personal Brand Strategist onboarding. Profile-first arc: profiling (Stages 1-7) → connect → gap analysis → three-month plan → proactive. `session-machine.ts` is the state machine; `state.ts` persists it; `profile.ts` owns the stated profile; `gap.ts` computes the stated-vs-actual gap. See §3b. |
 | Capture pipeline | `src/capture/` | Immutable capture of user input + imports (X via twitterapi.io→Apify, LinkedIn via Apify). Captures are never mutated. |
 | Memory core | `src/memory/` | Extraction → embed → link → search (RRF hybrid). `positions.ts` (stated positions), `confidence.ts`, `forget.ts` (hard delete). |

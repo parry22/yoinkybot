@@ -97,6 +97,36 @@ export function fieldSpec(field: ProfileField, profile: BrandProfile | null): st
   }
 }
 
+/**
+ * Plain, user-facing fallback questions per field. Used only when the LLM turn
+ * fails — the machine still knows the deterministic next field, so it asks it
+ * directly instead of dead-ending the intake on a generic error.
+ */
+export const FALLBACK_QUESTION: Record<ProfileField, string> = {
+  niche: "What's the broad space you work in?",
+  sub_niche_angle: "Narrow that for me: what specifically, and for whom?",
+  credibility_source: "What gives you the standing to talk about this? Your actual experience here.",
+  unique_pov: "What's something people in your space believe that you think is actually wrong?",
+  primary_goal: "What are you really optimizing for right now: a job, leads, authority, selling a product, funding, pure audience, or networking?",
+  secondary_goals: "Anything else you're aiming for alongside that?",
+  audience_who: "Who specifically needs to be reading this? Not everyone, the actual people.",
+  audience_sophistication: "Are you writing for beginners who need things explained, or peers who want insider nuance?",
+  audience_pain_point: "What does that audience most struggle with, or most want answered?",
+  inspiration_creators: "Two or three people whose voice or trajectory in this space you actually admire?",
+  tone_selections: "What modes feel like you: analytical, contrarian, build-in-public, how-to, shitposting, manifesto? Pick any that fit.",
+  formality_gradient: "Where do you sit: corporate-LinkedIn-safe, or raw and unfiltered?",
+  vulnerability_threshold: "How much are you willing to show: failures, doubts, the messy parts, or pure authority?",
+  content_pillars: "What are the recurring themes you'd want your content to live in?",
+  camera_comfort: "Do you do video, or is this writing-only?",
+  visual_comfort: "Writing-only, or comfortable with carousels and visuals?",
+  primary_platform: "Which is your primary platform: X, LinkedIn, or both?",
+  platform_adaptation: "Want content adapted per platform, or kept to one?",
+  posting_capacity: "Honestly, how many posts a week can you commit to?",
+  employer_restrictions: "Anything you legally or professionally can't say? NDA, compliance, that kind of thing.",
+  topics_off_limits: "Any topics you refuse to touch, no matter how relevant?",
+  anonymity_needs: "Do you want your real name on this, or something more private?",
+};
+
 export const strategistProfiling: Prompt<StrategistProfilingVars> = {
   id: "strategist-profiling",
   version: 2,

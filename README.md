@@ -21,6 +21,14 @@ connect your accounts, get diagnosed, build a plan, and ship content.
 
 <!-- Keep newest-first. Update this whenever a change ships that a reader of the repo should know about. -->
 
+- **2026-07-11 — Leaner commands, resilient intake, cold-start feedback.**
+  Removed the `check`, `ask`, `forget`, `status`, `diagnosis`, `diagnose`, `demo`,
+  and `voice` slash commands (all still available in plain language via the chat
+  brain). `/clear` now restarts the profile-first onboarding from question one
+  instead of a dead "connect an account" prompt. The intake never dead-ends on a
+  transient LLM hiccup anymore — it falls back to asking the next question
+  plainly. And a typing indicator fires the instant a message is received, so a
+  slow cold start reads as thinking, not offline.
 - **2026-07-11 — `/clear` now deletes the visible chat too.** Every Telegram
   message (yours and the bot's) is tracked as it's sent; `/clear` batch-deletes
   all of them before wiping the DB, so a reset actually clears the conversation,
@@ -91,11 +99,12 @@ pnpm dev                                   # backend + bot on :3001 (runs migrat
 ```
 
 Everything else is in Telegram — DM the bot and use `/help`. The core loop:
-`/connect` your X/LinkedIn → I ingest and `/diagnosis` your presence → you answer a couple of
-goal questions → confirm your `/plan` → I work it proactively (unlock nudges, trend moments,
-consistency, drafting). Other commands: `/ask`, `/draft`, `/check`, `/voice`, `/positions`,
-`/repurpose`, `/peers`, `/settings`, `/clear`, `/upgrade`, `/status`. `/clear` wipes everything
-and restarts the connect flow.
+`/start` walks you through the profile intake → you `/connect` your X/LinkedIn → I read your
+history and reveal the gap → confirm your `/plan` → I work it proactively (unlock nudges, trend
+moments, consistency, drafting). The command set is deliberately lean: `/connect`, `/plan`,
+`/draft`, `/repurpose`, `/positions`, `/peers`, `/settings`, `/clear`, `/upgrade`. Everything
+else is plain language — "does this contradict what I've said", "what have I said about pricing",
+"where am I at". `/clear` wipes everything (including the chat history) and restarts onboarding.
 
 Local dev without a public HTTPS URL runs the Telegram bot in **long-polling** mode automatically.
 In production set `PUBLIC_URL=https://…` and the bot switches to webhooks
