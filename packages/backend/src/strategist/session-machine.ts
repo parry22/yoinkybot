@@ -485,8 +485,13 @@ async function runProfilingTurn(userId: string, message: string, state: Strategi
     actions = parsed.actions;
   } catch (err) {
     // Keep the deterministic fallback question (set above) rather than a generic
-    // "lost my thread" dead-end — the conversation still moves forward.
+    // "lost my thread" dead-end — the conversation still moves forward. But a
+    // failed LLM turn is never normal: page the admin (hourly-throttled) with
+    // the real error so a dead key/model config can't hide behind fallbacks.
     console.error("profiling turn failed; falling back to the plain field question", err);
+    void import("../lib/alerts.js").then(({ alertAdmin }) =>
+      alertAdmin("llm:profiling-turn", `Profiling turn LLM call failed — users are getting fallback questions. Error: ${err instanceof Error ? err.message : String(err)}`),
+    );
   }
 
   // connect_transition just talks (delivering the Stage 8 hand-off); it captures

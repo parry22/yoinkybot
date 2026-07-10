@@ -24,7 +24,11 @@ async function main(): Promise<void> {
   // Telegram-native: the only HTTP surface is health + webhooks.
   const app = Fastify({ logger: { level: isDev ? "info" : "warn" } });
 
-  app.get("/health", async () => ({ ok: true }));
+  // `llm` reports whether the single LLM route is configured (key presence only,
+  // never the key) — so "the bot replies but sounds like a broken robot" is
+  // diagnosable with one curl instead of a log dive. Every conversational turn
+  // needs OPENROUTER_API_KEY; without it the bot can only serve fallback lines.
+  app.get("/health", async () => ({ ok: true, llm: Boolean(config.OPENROUTER_API_KEY) }));
   // Telegram-only, no web dashboard — anyone landing on the bare domain in a
   // browser should bounce straight to the actual bot, not see a raw 404.
   app.get("/", async (_req, reply) => reply.redirect(botLink));
@@ -53,6 +57,22 @@ async function main(): Promise<void> {
       bot.start({ onStart: () => console.log("telegram bot polling (dev)") }).catch((err) => {
         console.warn("polling loop ended (likely superseded by a webhook elsewhere):", err instanceof Error ? err.message : err);
       });
+    }
+
+    // The bot without an LLM key is a zombie: it delivers, but every turn falls
+    // back to canned lines (exactly the "asks the same question forever" bug).
+    // Scream at boot AND page the admin so this can never be a silent state.
+    if (!config.OPENROUTER_API_KEY) {
+      console.error(
+        "OPENROUTER_API_KEY is NOT set — every conversational turn will fail into fallback lines. " +
+          "Set it in the service env and redeploy. /health reports llm:false until then.",
+      );
+      void import("./lib/alerts.js").then(({ alertAdmin }) =>
+        alertAdmin(
+          "llm:unconfigured",
+          "OPENROUTER_API_KEY is not set on this deploy — the bot is running but can only send canned fallback lines. Set it in the service env and redeploy.",
+        ),
+      );
     }
   }
 }

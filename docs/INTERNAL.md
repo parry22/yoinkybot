@@ -337,6 +337,13 @@ deletion — set them in the deploy dashboard only.
 - **Prod vs dev bot:** with `PUBLIC_URL=https://…` the bot uses webhooks; without
   it, long-polling. No flag to flip.
 - **Alerts:** job failures/crashes DM `ADMIN_TELEGRAM_ID` via the bot (throttled).
+  Failed live conversation turns (profiling/session/converse) also DM the admin
+  with the underlying error, hourly-throttled per kind — a dead LLM route pages
+  instead of hiding behind fallback lines.
+- **LLM health:** `GET /health` returns `{ok, llm}` where `llm` is
+  `OPENROUTER_API_KEY` presence. `llm:false` = the bot can only send canned
+  fallbacks (the "asks the same question forever" symptom); boot also logs a
+  loud error and DMs the admin. See DEPLOY.md troubleshooting.
 - **Cost & abuse:** `usage_events` is the source of truth for per-user spend; the
   daily call cap (`LLM_DAILY_CALL_CAP`) bounds interactive spam.
 - **Keep-alive:** `.github/workflows/keepalive.yml` pings the service to survive

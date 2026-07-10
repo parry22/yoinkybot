@@ -111,6 +111,24 @@ the moment `PUBLIC_URL` starts with `https://`, no flag needed.
 pnpm verify   # typecheck + full unit suite — the gate
 ```
 
+## Troubleshooting: the bot replies but sounds like a robot
+
+If every message gets the same canned line (the same onboarding question over
+and over, "lost my thread", "my head glitched"), the deploy is running but the
+LLM route is down — almost always a missing `OPENROUTER_API_KEY` on the
+service env (it's REQUIRED since the single-model change; the old Qwen/Kimi
+keys no longer route anything). Diagnose with one curl:
+
+```bash
+curl https://<your-service-url>/health
+# {"ok":true,"llm":true}   → key present, look at logs for turn errors
+# {"ok":true,"llm":false}  → set OPENROUTER_API_KEY in the env and redeploy
+```
+
+The boot log also prints a loud error and DMs `ADMIN_TELEGRAM_ID` when the key
+is missing, and every failed live turn DMs the admin (hourly-throttled) with
+the real underlying error.
+
 ## Notes
 
 - **Single instance only.** Don't scale the backend service beyond 1 replica —

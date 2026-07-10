@@ -21,6 +21,12 @@ connect your accounts, get diagnosed, build a plan, and ship content.
 
 <!-- Keep newest-first. Update this whenever a change ships that a reader of the repo should know about. -->
 
+- **2026-07-11 — A dead LLM route can't hide anymore.** `/health` now reports
+  `llm: true|false` (key presence), boot screams and DMs the admin when
+  `OPENROUTER_API_KEY` is missing, and every failed live turn DMs the admin the
+  real error (hourly-throttled). Context: prod was set up before the
+  single-model change and never got `OPENROUTER_API_KEY`, so every turn fell to
+  canned fallback lines — invisibly. See DEPLOY.md troubleshooting.
 - **2026-07-11 — Onboarding actually listens now.** Fixed the intake loop: the
   paced-session turns read chat history *before* the just-sent message was saved,
   so the strategist reacted a turn late and re-asked the same question. The

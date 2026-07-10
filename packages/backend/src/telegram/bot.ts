@@ -718,6 +718,9 @@ async function handleTextTurn(user: User, text: string, ctx: Context): Promise<v
         }
       } catch (err) {
         console.error("session turn failed", err);
+        void import("../lib/alerts.js").then(({ alertAdmin }) =>
+          alertAdmin("llm:session-turn", `Onboarding session turn failed — user saw the lost-my-thread line. Error: ${err instanceof Error ? err.message : String(err)}`),
+        );
         await ctx.reply("give me a sec, lost my thread there. say that again?");
       }
       return;
@@ -780,6 +783,9 @@ async function handleConversation(user: User, text: string, channel: Channel): P
     result = await converseWithUser(user.id, text);
   } catch (err) {
     console.error("conversation failed, filing message as a fallback", err);
+    void import("../lib/alerts.js").then(({ alertAdmin }) =>
+      alertAdmin("llm:converse-turn", `Conversation turn failed — user saw the glitch line. Error: ${err instanceof Error ? err.message : String(err)}`),
+    );
     // Never lose a thought to an LLM error.
     await createCapture({ userId: user.id, source: "telegram_text", rawText: text });
     await saveTurn(user.id, "user", text).catch(() => {});
