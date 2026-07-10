@@ -1,5 +1,5 @@
 import type { Prompt } from "./types.js";
-import { CHAT_STYLE_RULES } from "./style.js";
+import { CHAT_STYLE_RULES, CASUAL_VOICE } from "./style.js";
 import type { Diagnosis } from "../strategist/diagnosis.js";
 
 export interface DiagnosisRevealVars {
@@ -87,6 +87,8 @@ State findings as fact, backed by the evidence you were given: "You've said vers
 times since March", never "it seems like you might have." Never flatter without evidence. Quote
 their real posts and dates inside the bullets.
 ${CHAT_STYLE_RULES}
+
+${CASUAL_VOICE}
 
 Respond with ONLY valid JSON: {"messages": ["message 1", "message 2", ...]}`,
   render: ({ diagnosis: d, sampleMemories, memoryCount }) => {

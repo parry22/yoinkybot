@@ -3,10 +3,10 @@ import { query, queryOne } from "../db/pool.js";
 import { findUserIdByTelegramId } from "../lib/auth.js";
 
 /**
- * Telegram gives bots no "list messages in a chat" API, so making /clear
- * actually clear the visible chat requires tracking every message_id as it
- * happens. This module is that tracking: one row per message (in or out),
- * plus the batch-delete sweep /clear runs before wiping the DB.
+ * Telegram gives bots no "list messages in a chat" API, so actually clearing
+ * the visible chat when a user wipes their account requires tracking every
+ * message_id as it happens. This module is that tracking: one row per message
+ * (in or out), plus the batch-delete sweep run before wiping the DB.
  */
 
 export async function recordMessage(userId: string, chatId: number, messageId: number): Promise<void> {
@@ -61,8 +61,8 @@ const DELETE_BATCH_SIZE = 100;
  * Best-effort delete of every tracked message in this user's chat(s). Chunks
  * into batches of 100 (the API limit); if a batch call itself fails (e.g. one
  * stale id in it), falls back to deleting that batch's messages one at a time
- * so a single bad id can't sink the rest. Never throws — /clear must still wipe
- * the DB even if Telegram deletion is partial (message too old, chat gone).
+ * so a single bad id can't sink the rest. Never throws — the wipe must still
+ * hit the DB even if Telegram deletion is partial (message too old, chat gone).
  */
 export async function deleteAllTrackedMessages(api: Api, userId: string): Promise<{ attempted: number; deleted: number }> {
   const rows = await query<{ chat_id: string; message_id: string }>(

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { enforceStyle } from "./style.js";
+import { enforceStyle, casualize } from "./style.js";
 
 describe("enforceStyle", () => {
   it("replaces em/en dashes with a comma clause break", () => {
@@ -30,5 +30,35 @@ describe("enforceStyle", () => {
 
   it("handles empty input", () => {
     expect(enforceStyle("")).toBe("");
+  });
+});
+
+describe("casualize", () => {
+  it("lowercases the opening letter of an ordinary sentence", () => {
+    expect(casualize("On it, drafting that now.")).toBe("on it, drafting that now.");
+    expect(casualize("Got it.")).toBe("got it.");
+  });
+
+  it("still applies enforceStyle (em dashes, hashtags)", () => {
+    expect(casualize("Cool — pulling your history #now")).toBe("cool, pulling your history");
+  });
+
+  it("leaves a proper-noun or acronym opener capitalized", () => {
+    // Would read as "linkedIn"/"aI" if we blindly lowercased char 0.
+    expect(casualize("LinkedIn is where you're quiet.")).toBe("LinkedIn is where you're quiet.");
+    expect(casualize("AI changed that.")).toBe("AI changed that.");
+    expect(casualize("X is your main channel.")).toBe("X is your main channel.");
+  });
+
+  it("finds the first real letter past a leading emoji", () => {
+    expect(casualize("✍️ Here you go:")).toBe("✍️ here you go:");
+  });
+
+  it("lowercases the pronoun 'I' opener into casual 'i'm'", () => {
+    expect(casualize("I'm reading your history now.")).toBe("i'm reading your history now.");
+  });
+
+  it("handles empty input", () => {
+    expect(casualize("")).toBe("");
   });
 });

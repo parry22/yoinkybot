@@ -1,5 +1,5 @@
 import type { Prompt } from "./types.js";
-import { CHAT_STYLE_RULES } from "./style.js";
+import { CHAT_STYLE_RULES, CASUAL_VOICE } from "./style.js";
 
 export interface MacroMatchVars {
   discourse: Array<{ title: string; snippet: string; url: string }>;
@@ -22,6 +22,8 @@ when unsure, return no match.
 
 why_now is shown directly to the user, so it must sound like you talking to them, not a report.
 ${CHAT_STYLE_RULES}
+
+${CASUAL_VOICE}
 
 Respond with ONLY valid JSON:
 {"match":null} or

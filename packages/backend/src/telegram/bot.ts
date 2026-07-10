@@ -13,15 +13,16 @@ import { converseWithUser, saveTurn } from "./conversation.js";
 import { maybeOfferAngles, createIdeaMoment } from "../jobs/offer-angles.js";
 import { otherUnconnectedPlatform } from "../strategist/connect.js";
 import { diagnosisById } from "../strategist/diagnosis.js";
-import { getPlan, formatPlan } from "../strategist/plan.js";
-import { getStage, getState, setState, setStage, isOnboardingPhase } from "../strategist/state.js";
+import { getStage, getState, setState, setStage, isOnboardingPhase, isProfilingPhase } from "../strategist/state.js";
 import { runSessionTurn } from "../strategist/session-machine.js";
+import { FALLBACK_QUESTION } from "../prompts/strategist-session.v2.js";
 import {
   PROFILE_FIELDS,
   getProfile,
   upsertProfileField,
   TONE_TAXONOMY,
   ALL_TONE_KEYS,
+  type ProfileField,
 } from "../strategist/profile.js";
 import { buildVoiceProfile } from "../voice/profile.js";
 import { entitlementsFor } from "../billing/entitlements.js";
@@ -32,12 +33,12 @@ import { parseRepurposeCommand, repurposeContent, recordRepurposeUse } from "../
 import { parsePeersCommand, addPeer, removePeer, listPeers } from "../benchmark/peers.js";
 import { parseSettingsCommand, applySettings, SETTINGS_USAGE } from "./settings.js";
 import { trackOutgoingMessages, recordMessage, deleteAllTrackedMessages } from "./message-log.js";
+import { casualize } from "../prompts/style.js";
 import {
   type Channel,
   connectAccount,
   runDraft,
   deliverRepurposed,
-  positionsText,
   deliverTurnOutput,
 } from "./actions.js";
 import { runSerializedTurn } from "./turns.js";
@@ -104,8 +105,8 @@ export function createBot(): Bot | undefined {
   }
   bot = new Bot(config.TELEGRAM_BOT_TOKEN);
 
-  // Track every outgoing message's (chat_id, message_id) so /clear can delete
-  // the visible chat, not just derived data. Registered on bot.api.config, so
+  // Track every outgoing message's (chat_id, message_id) so wiping everything can
+  // delete the visible chat, not just derived data. Registered on bot.api.config, so
   // grammY re-applies it to every per-update ctx.api AND direct bot.api calls
   // from job/worker code (sendTelegram, sendTelegramSequence) — see message-log.ts.
   bot.api.config.use(trackOutgoingMessages);
@@ -126,39 +127,33 @@ export function createBot(): Bot | undefined {
     if (payload) {
       const linked = await consumeTelegramLinkToken(payload, ctx.from!.id);
       if (linked) {
-        await ctx.reply("Linked to your Yoink account. Send me a thought — voice or text — and it's captured.");
+        await ctx.reply("linked to your yoink account. send me a thought, voice or text, and it's captured.");
         return;
       }
     }
     const user = await findOrCreateUserByTelegram(ctx.from!.id);
     const stage = await getStage(user.id);
-    if (stage === "new") {
-      // Profile-first: draw out who they are BEFORE reading their history, so the
-      // diagnosis lands as a stated-vs-actual gap instead of a cold read.
-      await setStage(user.id, "profiling");
-      await setState(user.id, { phase: "profiling", profile: {} });
-      await ctx.reply(PROFILE_OPENER);
+    // Only a genuinely finished user is "set up" — everyone else (new, or partway
+    // through onboarding) should be in the intake, not told they're done.
+    if (stage === "active" || stage === "plan_active") {
+      await ctx.reply("you're all set up. send me a thought whenever, or /plan to see where we're headed.");
       return;
     }
-    // Returning or mid-flow user — don't reset their progress.
-    await ctx.reply("You're already set up. Send me a thought, or /status to see where we are.");
-  });
-
-  // Nuke everything derived from your work and restart onboarding from scratch.
-  bot.command("clear", async (ctx) => {
-    const user = await requireUser(ctx);
-    if (!user) return;
-    const kb = new InlineKeyboard()
-      .text("Yes, wipe everything", "clr:confirm")
-      .row()
-      .text("Cancel", "clr:cancel");
-    await ctx.reply(
-      "This wipes everything: your captured history, memories, positions, diagnosis, goals, plan, " +
-        "and deletes every message in this chat, ours and yours. You'll start over from connecting " +
-        "an account. This can't be undone.\n\n" +
-        "Sure?",
-      { reply_markup: kb },
-    );
+    const st = await getState(user.id);
+    // Mid-intake with real progress → resume where they left off, don't wipe it.
+    if (isProfilingPhase(st) && (st.profile?.captured?.length ?? 0) > 0) {
+      const next = nextIntakeField(st.profile?.captured);
+      await ctx.reply(
+        next
+          ? `picking up where we left off. ${FALLBACK_QUESTION[next as ProfileField]}`
+          : "we're almost there. send me your X handle or LinkedIn and I'll read your history.",
+      );
+      return;
+    }
+    // Fresh start: profile-first, so the diagnosis lands as a stated-vs-actual gap.
+    await setStage(user.id, "profiling");
+    await setState(user.id, { phase: "profiling", profile: {} });
+    await ctx.reply(PROFILE_OPENER);
   });
 
   // Connect a public account so the strategist can ingest your history + diagnose.
@@ -170,8 +165,8 @@ export function createBot(): Bot | undefined {
       const st = await getState(user.id);
       await setState(user.id, { ...st, awaitingConnect: true });
       await ctx.reply(
-        "Connect your public presence so I can read your work and diagnose it. " +
-          "Just send your @handle, or:\n" +
+        "connect your public presence so i can read your work. " +
+          "just send your @handle, or:\n" +
           "/connect x <your @handle>\n/connect linkedin <your profile url>",
       );
       return;
@@ -180,50 +175,35 @@ export function createBot(): Bot | undefined {
     const platform = platformRaw?.toLowerCase();
     const handle = rest.join(" ").trim();
     if ((platform !== "x" && platform !== "linkedin") || !handle) {
-      await ctx.reply("Usage: /connect x <@handle>  or  /connect linkedin <profile url>");
+      await ctx.reply("usage: /connect x <@handle>  or  /connect linkedin <profile url>");
       return;
     }
     await beginConnect(ctx, user, platform, handle);
   });
 
-  bot.command("plan", async (ctx) => {
-    const user = await requireUser(ctx);
-    if (!user) return;
-    const plan = await getPlan(user.id);
-    await ctx.reply(plan ? formatPlan(plan) : "No active plan yet. Once you're diagnosed, I'll build one with you.");
-  });
-
   bot.command("help", async (ctx) => {
     await ctx.reply(
-      "Everything happens right here in the chat. Mostly, just talk to me.\n\n" +
-        "Getting set up:\n" +
-        "Send /start and I'll walk you through a few questions, then read your real history.\n\n" +
-        "The work (all of this works in plain words too):\n" +
-        "/plan  — the throughline and unlock list we built\n" +
-        "/draft your idea  — I turn a thought into a post in your voice\n" +
+      "everything happens right here in the chat. mostly, just talk to me.\n\n" +
+        "getting set up:\n" +
+        "send /start and i'll walk you through a few questions, then read your real history.\n\n" +
+        "the work (all of this works in plain words too):\n" +
+        "/draft your idea  — i turn a thought into a post in your voice\n" +
         "/repurpose  — reshape a finished post for another platform, or pull scattered takes into one piece\n" +
-        "/positions  — the beliefs I've pulled from your work\n" +
         "/peers  — watch a few peers, compare territory (never raw numbers)\n\n" +
-        "Housekeeping:\n" +
-        "/settings  — quiet hours, timezone, how often I reach out\n" +
-        "/clear  — wipe everything and start over\n" +
+        "housekeeping:\n" +
+        "/settings  — quiet hours, timezone, how often i reach out\n" +
         "/upgrade  — unlock the paid work\n\n" +
-        "Or just say what you want: \"draft me a post about X\", \"does this contradict what I've said\", " +
-        "\"what have I said about pricing\", \"where am I at\". Bring me a thought and I'll find the story in it.",
+        "or just say what you want: \"draft me a post about X\", \"does this contradict what i've said\", " +
+        "\"what have i said about pricing\", \"where am i at\", \"what's my plan\", \"what do i believe\", " +
+        "\"wipe everything and start over\". bring me a thought and i'll find the story in it.",
     );
-  });
-
-  bot.command("positions", async (ctx) => {
-    const user = await requireUser(ctx);
-    if (!user) return;
-    await ctx.reply(await positionsText(user.id));
   });
 
   bot.command("draft", async (ctx) => {
     const user = await requireUser(ctx);
     if (!user) return;
     const arg = ctx.match?.trim();
-    if (!arg) return void (await ctx.reply("Tell me what to write: /draft <topic or angle>  (or /draft linkedin <topic>)"));
+    if (!arg) return void (await ctx.reply("tell me what to write: /draft <topic or angle>  (or /draft linkedin <topic>)"));
     // Optional leading platform token: "/draft linkedin <topic>" / "/draft x <topic>".
     // Defaults to X. Everything after the token is the actual brief.
     const platMatch = arg.match(/^(x|twitter|linkedin|li)\s+([\s\S]+)$/i);
@@ -237,7 +217,7 @@ export function createBot(): Bot | undefined {
     const user = await requireUser(ctx);
     if (!user) return;
     const cmd = parseSettingsCommand(ctx.match ?? "");
-    if (!cmd) return void (await ctx.reply(`Didn't catch that.\n\n${SETTINGS_USAGE}`));
+    if (!cmd) return void (await ctx.reply(`didn't catch that.\n\n${SETTINGS_USAGE}`));
     await ctx.reply(await applySettings(user.id, cmd));
   });
 
@@ -247,7 +227,7 @@ export function createBot(): Bot | undefined {
     if (!user) return;
     const cmd = parsePeersCommand(ctx.match ?? "");
     if (!cmd) {
-      await ctx.reply("Usage:\n/peers  — see the watchlist\n/peers add @handle why them\n/peers remove @handle");
+      await ctx.reply("usage:\n/peers  — see the watchlist\n/peers add @handle why them\n/peers remove @handle");
       return;
     }
     if (cmd.kind === "list") return void (await ctx.reply(await listPeers(user.id)));
@@ -262,7 +242,7 @@ export function createBot(): Bot | undefined {
     const parsed = parseRepurposeCommand(ctx.match ?? "");
     if (!parsed) {
       await ctx.reply(
-        "Reshape something that already exists:\n" +
+        "reshape something that already exists:\n" +
           "/repurpose linkedin <paste a post>  (X post, made native to LinkedIn)\n" +
           "/repurpose x <paste a post>  (the reverse)\n" +
           "/repurpose compress <paste a thread>  (thread down to one post)\n" +
@@ -288,13 +268,13 @@ export function createBot(): Bot | undefined {
     const user = await requireUser(ctx);
     if (!user) return;
     const ent = await entitlementsFor(user.id);
-    if (ent.plan !== "free") return void (await ctx.reply(`You're on ${ent.plan} — you've got everything. 🙌`));
+    if (ent.plan !== "free") return void (await ctx.reply(`you're on ${ent.plan}, you've got everything. 🙌`));
     const seats = await foundingSeatsLeft().catch(() => 0);
     const kb = new InlineKeyboard()
       .text(seats > 0 ? `Founding (${seats} left, price locked)` : "Founding (full)", "bill:founding")
       .row()
       .text("Paid", "bill:paid");
-    await ctx.reply("Unlock consistency checks, drafting, voice profile, and macro-moment matching:", { reply_markup: kb });
+    await ctx.reply("unlock consistency checks, drafting, voice profile, and macro-moment matching:", { reply_markup: kb });
   });
 
   // Voice notes / audio → capture with the Telegram file URL; transcription is async.
@@ -314,7 +294,7 @@ export function createBot(): Bot | undefined {
     });
     // The real reply lands after transcription (jobs/transcribe.ts runs the
     // transcript through the conversation brain) — this is just the "I heard you".
-    await ctx.reply("🎙 Got it — listening now, back in a moment.");
+    await ctx.reply("🎙 got it, listening now, back in a moment.");
   });
 
   bot.on("message:text", async (ctx) => {
@@ -326,7 +306,7 @@ export function createBot(): Bot | undefined {
     // command was consumed by its bot.command() handler above. Answer it
     // instead of going silent.
     if (text.startsWith("/")) {
-      await ctx.reply("Don't know that one. /help lists everything — or just say what you want in plain words.");
+      await ctx.reply("don't know that one. /help lists everything, or just say what you want in plain words.");
       return;
     }
     // Immediate "I'm on it" the instant we process the update — matters most on a
@@ -352,7 +332,7 @@ export function createBot(): Bot | undefined {
       return;
     }
     await ctx.reply(
-      "I can't see images or files yet — text and voice are my inputs. Tell me the thought behind it (or paste the text) and I've got it.",
+      "can't see images or files yet, text and voice are my inputs. tell me the thought behind it (or paste the text) and i've got it.",
     );
   });
 
@@ -361,7 +341,7 @@ export function createBot(): Bot | undefined {
   // handler; grammY only lands here when nothing above consumed the update.
   bot.on("message", async (ctx) => {
     if (ctx.chat?.type !== "private") return;
-    await ctx.reply("That one's outside what I can read — I work with text and voice notes.");
+    await ctx.reply("that one's outside what i can read, i work with text and voice notes.");
   });
 
   // Inline reactions on surfacings + forget confirmations.
@@ -373,10 +353,10 @@ export function createBot(): Bot | undefined {
     if (data.startsWith("cf:")) {
       const id = data.slice(3);
       if (id === "cancel") {
-        await ctx.editMessageText("Cancelled.");
+        await ctx.editMessageText("cancelled.");
       } else {
         const ok = await forgetMemory(user.id, id);
-        await ctx.editMessageText(ok ? "Gone. Permanently." : "Already gone.");
+        await ctx.editMessageText(ok ? "gone. permanently." : "already gone.");
       }
       return void (await ctx.answerCallbackQuery());
     }
@@ -385,7 +365,7 @@ export function createBot(): Bot | undefined {
       if (data === "clr:confirm") {
         // Ack immediately — deleting a long chat history can take a few
         // seconds and answerCallbackQuery has its own short timeout.
-        await ctx.answerCallbackQuery({ text: "Wiping everything…" });
+        await ctx.answerCallbackQuery({ text: "wiping everything…" });
         // Delete the visible chat FIRST, while telegram_messages still has the
         // ids — resetUserData wipes that table along with everything else.
         await deleteAllTrackedMessages(ctx.api, user.id).catch((err) =>
@@ -393,14 +373,14 @@ export function createBot(): Bot | undefined {
         );
         await resetUserData(user.id);
         // Restart the profile-first onboarding from scratch (same as /start), so
-        // /clear lands them back at question one rather than a dead "connect an
-        // account" prompt. The fresh message gets tracked like everything else.
+        // wiping everything lands them back at question one rather than a dead
+        // "connect an account" prompt. The fresh message gets tracked like everything else.
         await setStage(user.id, "profiling");
         await setState(user.id, { phase: "profiling", profile: {} });
-        await ctx.reply(`Done. Clean slate.\n\n${PROFILE_OPENER}`);
+        await ctx.reply(`done. clean slate.\n\n${PROFILE_OPENER}`);
         return;
       }
-      await ctx.editMessageText("Cancelled. Nothing was deleted.");
+      await ctx.editMessageText("cancelled. nothing was deleted.");
       return void (await ctx.answerCallbackQuery());
     }
 
@@ -416,7 +396,7 @@ export function createBot(): Bot | undefined {
         for (const memId of surfacing.memory_ids) await forgetMemory(user.id, memId);
       }
       await ctx.answerCallbackQuery({
-        text: reaction === "fire" ? "Noted — more like this." : reaction === "later" ? "Parked." : "Forgotten, permanently.",
+        text: reaction === "fire" ? "noted, more like this." : reaction === "later" ? "parked." : "forgotten, permanently.",
       });
       const ack = reaction === "fire" ? "🔥" : reaction === "later" ? "💤" : "🗑 forgotten";
       try {
@@ -431,7 +411,7 @@ export function createBot(): Bot | undefined {
     const ang = /^ang:([0-9a-f-]{36}):(\d)$/.exec(data);
     if (ang) {
       const [, surfacingId, slot] = ang as unknown as [string, string, string];
-      await ctx.answerCallbackQuery({ text: "Writing it…" });
+      await ctx.answerCallbackQuery({ text: "writing it…" });
       await ctx.replyWithChatAction("typing");
       // Resolve the angle by (surfacing, slot) — the button only carries the slot.
       const angle = await queryOne<{ id: string }>(
@@ -439,15 +419,16 @@ export function createBot(): Bot | undefined {
         [surfacingId, user.id, Number(slot)],
       );
       if (!angle) {
-        await ctx.reply("That angle expired — send the idea again and I'll re-offer.");
+        await ctx.reply("that angle expired, send the idea again and i'll re-offer.");
         return;
       }
       const result = await draftFromAngle(user.id, surfacingId, angle.id);
       if (!result.ok) {
-        await ctx.reply(result.note || "Couldn't write that one.");
+        await ctx.reply(result.note || "couldn't write that one.");
         return;
       }
-      await ctx.reply(`✍️ Draft:\n\n${result.draft}`, {
+      // The draft is content for their feed — only the label around it is casual.
+      await ctx.reply(`✍️ here you go:\n\n${result.draft}`, {
         reply_markup: new InlineKeyboard().text("🔥 love it", `angfb:${surfacingId}:fire`).text("💤 meh", `angfb:${surfacingId}:later`),
       });
       return;
@@ -457,10 +438,10 @@ export function createBot(): Bot | undefined {
     const mk = /^mkang:([0-9a-f-]{36})$/.exec(data);
     if (mk) {
       const [, momentId] = mk as unknown as [string, string];
-      await ctx.answerCallbackQuery({ text: "On it — finding your angles…" });
+      await ctx.answerCallbackQuery({ text: "on it, finding your angles…" });
       await ctx.replyWithChatAction("typing");
       const ok = await maybeOfferAngles({ momentId, userId: user.id }, undefined, { bypassCadence: true });
-      if (!ok) await ctx.reply("Couldn't spin that one up — try rephrasing the idea.");
+      if (!ok) await ctx.reply("couldn't spin that one up, try rephrasing the idea.");
       try {
         await ctx.editMessageReplyMarkup({ reply_markup: new InlineKeyboard().text("✨ angles below", "noop") });
       } catch {
@@ -475,17 +456,17 @@ export function createBot(): Bot | undefined {
     const dx = /^dxang:([0-9a-f-]{36}):(\d)$/.exec(data);
     if (dx) {
       const [, diagId, idxStr] = dx as unknown as [string, string, string];
-      await ctx.answerCallbackQuery({ text: "On it — finding your angles…" });
+      await ctx.answerCallbackQuery({ text: "on it, finding your angles…" });
       const dimensions = await diagnosisById(user.id, diagId);
       const pattern = dimensions?.unsaid_patterns[Number(idxStr)];
       if (!pattern) {
-        await ctx.reply("That diagnosis has moved on — run /diagnosis for the current one.");
+        await ctx.reply("that read's moved on, ask me for a fresh one.");
         return;
       }
       await ctx.replyWithChatAction("typing");
       const momentId = await createIdeaMoment(user.id, pattern.idea, `${pattern.idea}\n\n${pattern.evidence}`);
       const ok = momentId && (await maybeOfferAngles({ momentId, userId: user.id }, undefined, { bypassCadence: true }));
-      if (!ok) await ctx.reply("Couldn't spin that one up — try again in a moment.");
+      if (!ok) await ctx.reply("couldn't spin that one up, try again in a moment.");
       return;
     }
 
@@ -499,10 +480,10 @@ export function createBot(): Bot | undefined {
           ? await queryOne<{ text: string }>(`SELECT content AS text FROM drafts WHERE id = $1 AND user_id = $2`, [id, user.id])
           : await queryOne<{ text: string }>(`SELECT raw_text AS text FROM captures WHERE id = $1 AND user_id = $2`, [id, user.id]);
       if (!source?.text) {
-        await ctx.answerCallbackQuery({ text: "Can't find that content anymore." });
+        await ctx.answerCallbackQuery({ text: "can't find that content anymore." });
         return;
       }
-      await ctx.answerCallbackQuery({ text: "Reshaping it…" });
+      await ctx.answerCallbackQuery({ text: "reshaping it…" });
       await ctx.replyWithChatAction("typing");
       const result = await repurposeContent(user.id, {
         mode: "cross_platform",
@@ -523,10 +504,10 @@ export function createBot(): Bot | undefined {
       const dimensions = await diagnosisById(user.id, diagId);
       const pattern = dimensions?.unsaid_patterns[Number(idxStr)];
       if (!pattern) {
-        await ctx.answerCallbackQuery({ text: "That diagnosis has moved on." });
+        await ctx.answerCallbackQuery({ text: "that read's moved on." });
         return;
       }
-      await ctx.answerCallbackQuery({ text: "Pulling your fragments together…" });
+      await ctx.answerCallbackQuery({ text: "pulling your fragments together…" });
       await ctx.replyWithChatAction("typing");
       const result = await repurposeContent(user.id, {
         mode: "synthesis",
@@ -580,24 +561,24 @@ export function createBot(): Bot | undefined {
         `UPDATE surfacings SET user_reaction = $3, reaction_at = now() WHERE id = $1 AND user_id = $2 RETURNING id`,
         [surfacingId, user.id, reaction],
       );
-      await ctx.answerCallbackQuery({ text: reaction === "fire" ? "Noted — more like this." : "Got it." });
+      await ctx.answerCallbackQuery({ text: reaction === "fire" ? "noted, more like this." : "got it." });
       return;
     }
 
     // Structural nudge: one-tap voice-profile build (offered when the user
     // crosses the 50-memory threshold without a profile).
     if (data === "nudge:voice") {
-      await ctx.answerCallbackQuery({ text: "Building it now…" });
+      await ctx.answerCallbackQuery({ text: "building it now…" });
       const ent = await entitlementsFor(user.id);
       if (!ent.voiceProfile) {
-        await ctx.reply("Voice profile is part of the paid tier. /upgrade and I'll build it the moment you're in.");
+        await ctx.reply("voice profile's part of the paid tier. /upgrade and i'll build it the moment you're in.");
         return;
       }
       await ctx.replyWithChatAction("typing");
       const r = await buildVoiceProfile(user.id);
       await ctx.reply(
         r.ok
-          ? "Done. I've got your voice now, and every draft from here sounds like you wrote it on a good day. /voice to see what I learned."
+          ? "done. i've got your voice now, and every draft from here sounds like you wrote it on a good day."
           : r.reason,
       );
       return;
@@ -607,12 +588,12 @@ export function createBot(): Bot | undefined {
     const bill = /^bill:(founding|paid)$/.exec(data);
     if (bill) {
       const plan = bill[1] as "founding" | "paid";
-      await ctx.answerCallbackQuery({ text: "Building your checkout…" });
+      await ctx.answerCallbackQuery({ text: "building your checkout…" });
       try {
         const { url } = await createCheckout(user.id, user.email, plan);
-        await ctx.reply(`Here's your secure checkout (${plan}):\n${url}`);
+        await ctx.reply(`here's your secure checkout (${plan}):\n${url}`);
       } catch (err) {
-        await ctx.reply(err instanceof Error ? `Couldn't start checkout: ${err.message}` : "Checkout unavailable right now.");
+        await ctx.reply(err instanceof Error ? `couldn't start checkout: ${err.message}` : "checkout's unavailable right now.");
       }
       return;
     }
@@ -623,7 +604,7 @@ export function createBot(): Bot | undefined {
     if (data.startsWith("tone:")) {
       const key = data.slice(5);
       if (key === "__done__") {
-        await ctx.answerCallbackQuery({ text: "Locked in." });
+        await ctx.answerCallbackQuery({ text: "locked in." });
         try {
           await ctx.editMessageReplyMarkup();
         } catch {
@@ -667,13 +648,10 @@ export function createBot(): Bot | undefined {
     .setMyCommands([
       { command: "start", description: "Set up your profile, then I read your real history" },
       { command: "connect", description: "Connect your X/LinkedIn so I can read your work" },
-      { command: "plan", description: "Your throughline, unlock list, and cadence" },
       { command: "draft", description: "Write a post from your thinking, in your voice" },
       { command: "repurpose", description: "Reshape finished content, or synthesize scattered takes" },
-      { command: "positions", description: "The beliefs I've extracted from you" },
       { command: "peers", description: "Watch a few peers — territory comparison, not a scoreboard" },
       { command: "settings", description: "Quiet hours, timezone, proactive frequency" },
-      { command: "clear", description: "Wipe everything and start over" },
       { command: "upgrade", description: "Unlock paid features" },
       { command: "help", description: "What Yoinky can do" },
     ])
@@ -733,14 +711,14 @@ async function handleTextTurn(user: User, text: string, ctx: Context): Promise<v
           const missing = await otherUnconnectedPlatform(user.id).catch(() => null);
           if (missing) {
             await ctx.reply(
-              `Want me to pull your ${missing === "linkedin" ? "LinkedIn" : "X"} too? Different register ` +
+              `want me to pull your ${missing === "linkedin" ? "LinkedIn" : "X"} too? different register ` +
                 "usually shows up there, worth having both in the picture.",
             );
           }
         }
       } catch (err) {
         console.error("session turn failed", err);
-        await ctx.reply("Give me a sec — lost my thread there. Say that again?");
+        await ctx.reply("give me a sec, lost my thread there. say that again?");
       }
       return;
     }
@@ -749,11 +727,11 @@ async function handleTextTurn(user: User, text: string, ctx: Context): Promise<v
 }
 
 const PROFILE_OPENER =
-  "Before I read a single one of your posts, I want to hear it from you. A handful of real " +
-  "questions, then I go read your actual history and show you the gap between what you're trying " +
-  "to build and what's already out there. No forms, just talk.\n\n" +
-  "First one, easy: what's the broad space you work in?\n\n" +
-  "(If you'd rather I just read your history first, say something like \"just diagnose my X @handle\".)";
+  "before i read a single one of your posts, i want to hear it from you. a handful of real " +
+  "questions, then i go read your actual history and show you the gap between what you're trying " +
+  "to build and what's already out there. no forms, just talk.\n\n" +
+  "first one, easy: what's the broad space you work in?\n\n" +
+  "(if you'd rather i just read your history first, say something like \"just diagnose my X @handle\".)";
 
 /** The next uncaptured intake field, computed without importing the session machine (avoids a cycle). */
 function nextIntakeField(captured: string[] | undefined): string | undefined {
@@ -770,7 +748,7 @@ function toneKeyboard(selected: string[]): InlineKeyboard {
       kb.text(`${sel.has(item.key) ? "✅ " : ""}${item.label}`, `tone:${item.key}`).row();
     }
   }
-  kb.text("✓ Done", "tone:__done__");
+  kb.text("✓ done", "tone:__done__");
   return kb;
 }
 
@@ -784,7 +762,7 @@ async function maybeSendToneMenu(userId: string, ctx: Context): Promise<void> {
   if (st.phase !== "profiling" || st.toneMenuSent) return;
   if (nextIntakeField(st.profile?.captured) !== "tone_selections") return;
   const prof = await getProfile(userId);
-  await ctx.reply("Tap the modes that feel like you (more than one is fine), then hit Done:", {
+  await ctx.reply("tap the modes that feel like you (more than one is fine), then hit done:", {
     reply_markup: toneKeyboard(prof?.tone_selections ?? []),
   });
   await setState(userId, { ...st, toneMenuSent: true });
@@ -805,7 +783,7 @@ async function handleConversation(user: User, text: string, channel: Channel): P
     // Never lose a thought to an LLM error.
     await createCapture({ userId: user.id, source: "telegram_text", rawText: text });
     await saveTurn(user.id, "user", text).catch(() => {});
-    await channel.say("Filed that — my head glitched for a sec. Say more?");
+    await channel.say("filed that, my head glitched for a sec. say more?");
     return;
   }
 
@@ -966,7 +944,10 @@ export async function sendTelegramSequence(userId: string, messages: string[]): 
   if (!user?.telegram_id) return false;
   const chatId = Number(user.telegram_id);
   for (let i = 0; i < messages.length; i++) {
-    const text = messages[i]?.trim();
+    // These sequences are always Yoinky speaking (diagnosis/gap/plan reveals,
+    // progress reads), never content for the user's feed — so the casual opener
+    // backstop is safe to apply here.
+    const text = casualize(messages[i] ?? "");
     if (!text) continue;
     if (i > 0) {
       await bot.api.sendChatAction(chatId, "typing").catch(() => {});

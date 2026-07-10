@@ -10,7 +10,7 @@ import { getPlan } from "../strategist/plan.js";
 import { activeGoals } from "../strategist/goals.js";
 import { getStage } from "../strategist/state.js";
 import { getProfile, profileSummaryForPrompt } from "../strategist/profile.js";
-import { enforceStyle } from "../prompts/style.js";
+import { casualize } from "../prompts/style.js";
 
 const HISTORY_TURNS = 10;
 
@@ -164,7 +164,7 @@ export async function converseWithUser(userId: string, message: string): Promise
   });
   const parsed = replySchema.parse(res.parsed);
   const tool = parseChatTool(parsed.tool);
-  const reply = enforceStyle(parsed.reply);
+  const reply = casualize(parsed.reply);
   // A turn must carry something: with no tool and no reply, degrade to a nudge
   // rather than silence.
   const finalReply = reply || (tool ? "" : "Say more?");

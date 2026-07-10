@@ -1,5 +1,5 @@
 import type { Prompt } from "./types.js";
-import { CHAT_STYLE_RULES } from "./style.js";
+import { CHAT_STYLE_RULES, CASUAL_VOICE } from "./style.js";
 
 export interface WeeklyPlanVars {
   throughline: string;
@@ -31,6 +31,8 @@ Method:
   like "happy Monday", no pep talk, no recap of the plan.
 
 ${CHAT_STYLE_RULES}
+
+${CASUAL_VOICE}
 
 Respond with ONLY valid JSON: {"message": "..."}`,
   render: (v) =>

@@ -35,6 +35,10 @@ export const chatToolSchema = z.discriminatedUnion("name", [
     handle: z.string().min(1),
   }),
   z.object({ name: z.literal("forget"), query: z.string().min(1) }),
+  // Destructive: never fires the wipe itself. Offers the same clr:confirm /
+  // clr:cancel button pair the old /clear command did, so nothing is deleted
+  // without an explicit tap.
+  z.object({ name: z.literal("clear_everything") }),
 ]);
 
 export type ChatTool = z.infer<typeof chatToolSchema>;

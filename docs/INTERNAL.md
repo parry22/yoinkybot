@@ -88,7 +88,7 @@ full prior implementation if it ever needs to come back.
 
 | Area | Path | What it does |
 |---|---|---|
-| Telegram bot | `src/telegram/` | grammY bot, command handlers, conversation state. Commands (deliberately lean — 2026-07-11): `start, help, connect, plan, draft, repurpose, positions, peers, settings, clear, upgrade`. Everything else (check, search/ask, status, diagnosis refresh, voice, forget) is done in plain language via the agentic chat layer (see §3a) — those slash commands were removed. |
+| Telegram bot | `src/telegram/` | grammY bot, command handlers, conversation state. Commands (deliberately lean — 2026-07-11): `start, help, connect, draft, repurpose, peers, settings, upgrade`. Everything else (check, search/ask, status, diagnosis refresh, voice, forget, plan, positions, clearing your account) is done in plain language via the agentic chat layer (see §3a) — those slash commands were removed. |
 | Strategist flow | `src/strategist/` | The a16z Personal Brand Strategist onboarding. Profile-first arc: profiling (Stages 1-7) → connect → gap analysis → three-month plan → proactive. `session-machine.ts` is the state machine; `state.ts` persists it; `profile.ts` owns the stated profile; `gap.ts` computes the stated-vs-actual gap. See §3b. |
 | Capture pipeline | `src/capture/` | Immutable capture of user input + imports (X via twitterapi.io→Apify, LinkedIn via Apify). Captures are never mutated. |
 | Memory core | `src/memory/` | Extraction → embed → link → search (RRF hybrid). `positions.ts` (stated positions), `confidence.ts`, `forget.ts` (hard delete). |
@@ -140,12 +140,22 @@ is kept alive for the whole turn (`withTyping`, 4.5s heartbeat).
 `telegram/chat-tools.ts` (zod, schemas only — no imports, so no module cycles)
 and executed by `telegram/actions.ts#executeChatTool`: `draft_post`,
 `repurpose`, `search_memory`, `check_draft`, `show_plan`, `show_positions`,
-`show_status`, `refresh_diagnosis`, `connect_account`, `forget`. Each tool runs
-the *same code path* as its slash command (the commands now call the shared
-executors too), including entitlement gates. What a tool delivered is persisted
-as an assistant turn so the next turn's history reflects what actually happened.
-The executor is channel-based (`Channel = {say, typing?}`): live chat wraps
-`ctx`, async paths wrap `sendTelegram` (`dmChannel`).
+`show_status`, `refresh_diagnosis`, `connect_account`, `forget`,
+`clear_everything`. Most tools run the *same code path* their slash command
+used to (some, like `show_plan`/`show_positions`/`clear_everything`, never had
+one — plan, positions, and clear are chat-only). Entitlement gates still apply.
+What a tool delivered is persisted as an assistant turn so the next turn's
+history reflects what actually happened. The executor is channel-based
+(`Channel = {say, typing?}`): live chat wraps `ctx`, async paths wrap
+`sendTelegram` (`dmChannel`).
+
+`clear_everything` is the one destructive tool: it never wipes anything itself,
+it only surfaces the same `clr:confirm`/`clr:cancel` inline buttons the removed
+`/clear` command used, and the existing `callback_query:data` handler in
+`bot.ts` does the actual wipe + onboarding restart. The prompt is instructed to
+call it only on an unambiguous "wipe everything / start completely over"
+request — never on vague frustration or a request to forget one specific
+thing (that's the separate `forget` tool).
 
 **Every input type gets an answer.** Voice notes are acked, transcribed
 (`jobs/transcribe.ts`), then the transcript runs through the same brain and the
@@ -158,11 +168,34 @@ When adding a capability: add the schema to `chat-tools.ts`, the executor case
 to `actions.ts`, document it in the `converse.v2` tool list, and keep the slash
 command a thin wrapper over the same executor.
 
-**Message tracking + `/clear`** (`telegram/message-log.ts`, added 2026-07-11).
-Telegram gives bots no "list messages in a chat" API, so making `/clear`
-actually clear the visible chat requires recording every message_id as it
-happens — it cannot be backfilled for history that predates this. Two hooks,
-both registered once in `createBot()` right after `new Bot(...)`:
+**Voice: casual for Yoinky, polished for the user's feed** (2026-07-11). There are
+two registers and they must not bleed into each other, because they share
+`prompts/style.ts`:
+- **Yoinky's own chatter** (chat replies, onboarding questions, the
+  diagnosis/gap/plan reveals, proactive DMs, plan/progress reads) is casual
+  texting: lowercase, short, contractions, dry. Driven by the `CASUAL_VOICE`
+  block, which is appended *after* `CHAT_STYLE_RULES` in the ~13 Yoinky-voice
+  prompts, plus the deterministic `casualize()` backstop (enforceStyle + lowercase
+  the opener, leaving proper-noun/acronym openers like LinkedIn/AI/X alone).
+  `casualize()` runs at the finalization points: `conversation.ts`,
+  `session-machine.ts` replies, and inside `sendTelegramSequence`.
+- **Content written for the user's public feed** (post drafts, reply drafts,
+  repurposed posts, angle hooks) stays properly capitalized. Its prompts
+  (`draft.v1`, `reply-draft.v1`, `repurpose.v1`, `generate-angles.v1`) use
+  `CHAT_STYLE_RULES`/`POST_WRITING_RULES` but **must never** get `CASUAL_VOICE`,
+  and `casualize()`/`enforceStyle` is never run over their output as a
+  lowercasing pass. `sendTelegram` (single-message) is deliberately NOT
+  casualized because it carries this content; only `sendTelegramSequence` is.
+  When a chat wrapper embeds content (e.g. `"✍️ here you go:\n\n{draft}"`), only
+  the label is casual — the draft body keeps its own capitalization.
+
+**Message tracking + wiping everything** (`telegram/message-log.ts`, added
+2026-07-11; the `/clear` command itself was removed 2026-07-11, superseded by
+the `clear_everything` chat tool above — the mechanism below is unchanged).
+Telegram gives bots no "list messages in a chat" API, so actually clearing the
+visible chat on a wipe requires recording every message_id as it happens — it
+cannot be backfilled for history that predates this. Two hooks, both
+registered once in `createBot()` right after `new Bot(...)`:
 - **Outgoing:** `trackOutgoingMessages`, a `bot.api.config.use(...)` transformer.
   It filters on "does the response carry a `message_id`" rather than a
   hardcoded method list, so any send-shaped call is covered automatically and
@@ -175,8 +208,9 @@ both registered once in `createBot()` right after `new Bot(...)`:
   directly (never `ctx.message`, which would also resolve for other update
   shapes) and `ctx.chat?.type === "private"`.
 - Both write to `telegram_messages` (migration `0015`, one row per message).
-  `/clear`'s `clr:confirm` handler calls `deleteAllTrackedMessages(ctx.api,
-  userId)` — chunks ids into batches of 100 (the `deleteMessages` API cap),
+  The `clr:confirm` callback handler in `bot.ts` calls
+  `deleteAllTrackedMessages(ctx.api, userId)` — chunks ids into batches of 100
+  (the `deleteMessages` API cap),
   falling back to per-message `deleteMessage` calls if a batch fails, never
   throwing — BEFORE `resetUserData`, since that wipes `telegram_messages` along
   with everything else. Best-effort by design: a message too old or already
@@ -264,8 +298,8 @@ Design invariants:
 - **Captures are immutable**; memories are derived and re-derivable from captures.
 - **Forget is hard deletion**, not a tombstone.
 - `brand_profiles` is the stated profile (one row/user, `0013`); it is user-stated
-  input, distinct from `brand_diagnoses` (derived analysis). `/clear`
-  (`resetUserData`) wipes it with everything else.
+  input, distinct from `brand_diagnoses` (derived analysis). Wiping the account
+  (`resetUserData`) clears it with everything else.
 - `profile_id` is stored separately from `user_id` on memories/positions/moments
   (agency prep); they are equal in v1.
 

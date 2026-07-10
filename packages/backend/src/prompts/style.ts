@@ -28,6 +28,53 @@ export function enforceStyle(text: string): string {
   return out.trim();
 }
 
+/**
+ * The deterministic backstop for Yoinky's CASUAL (texting) register — enforceStyle
+ * plus lowercasing the opening letter so a reply reads like a text, not a memo.
+ *
+ * ONLY for Yoinky's own speech (chat replies, onboarding questions, reveals,
+ * proactive DMs). NEVER run it over content written for the user's public feed
+ * (drafts, reply drafts, repurposed posts, angle hooks) — that would wreck their
+ * capitalization. The prompt (CASUAL_VOICE) drives the full-message casual tone;
+ * this only guarantees the opener isn't capitalized, and it deliberately leaves a
+ * proper-noun or acronym opener alone (LinkedIn, AI, X, a name) so we don't
+ * mangle "linkedIn" or "aI".
+ */
+export function casualize(text: string): string {
+  const t = enforceStyle(text);
+  if (!t) return t;
+  // First word that actually contains a letter (skip a leading emoji/punctuation).
+  const m = t.match(/[A-Za-z][A-Za-z'’]*/);
+  if (!m || m.index === undefined) return t;
+  const word = m[0];
+  const hasInternalCap = /[A-Z]/.test(word.slice(1)); // LinkedIn, iOS, McKinsey
+  const lettersOnly = word.replace(/[^A-Za-z]/g, "");
+  const isAcronym = lettersOnly.length > 0 && lettersOnly === lettersOnly.toUpperCase(); // X, AI, EU
+  if (hasInternalCap || isAcronym) return t;
+  return t.slice(0, m.index) + word[0]!.toLowerCase() + t.slice(m.index + 1);
+}
+
+/**
+ * The casual texting register for Yoinky's OWN voice — chat replies, onboarding
+ * questions, the diagnosis/gap reveals, proactive DMs, plan/progress reads.
+ *
+ * Layered AFTER CHAT_STYLE_RULES in the Yoinky-voice prompts only. Do NOT add it
+ * to the prompts that write content for the user's public feed (draft, angles,
+ * reply-draft, repurpose) — that content stays properly written and capitalized;
+ * only Yoinky's own chatter goes lowercase.
+ */
+export const CASUAL_VOICE = `HOW YOU TEXT (you're in a Telegram DM — text like a real person, not an assistant):
+- lowercase. don't capitalize the start of your message or of sentences. keep caps only on the
+  things people always capitalize mid-text: names, X, LinkedIn, real acronyms.
+- keep it short. a line or two, usually. fragments are fine. this is texting, not an email or a memo.
+- contractions always (i'm, you're, that's, don't, gonna). cut filler and throat-clearing.
+- no "hi"/"hey there" openers for their own sake, no sign-offs, no "let me know if you need anything".
+  just say the thing.
+- stay this casual even when you're kicking off a task or running a feature. "on it, drafting that
+  now" not "I'll draft that for you." "cool, pulling your X" not "On it, pulling your history."
+- dry and real, never peppy or corporate-excited ("love that!", "amazing!", "happy to!"). understate it.
+- one emoji at most, and only when it actually lands. usually none.`;
+
 /** Condensed rules for short, conversational Yoinky-authored text (not full posts). */
 export const CHAT_STYLE_RULES = `HOW YOU WRITE (non-negotiable):
 - Never use em dashes. Use a period and a new sentence, or a comma, or a shorter sentence.

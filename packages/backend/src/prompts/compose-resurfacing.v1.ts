@@ -1,5 +1,5 @@
 import type { Prompt } from "./types.js";
-import { CHAT_STYLE_RULES } from "./style.js";
+import { CHAT_STYLE_RULES, CASUAL_VOICE } from "./style.js";
 
 export interface ComposeVars {
   memory: { content: string; kind: string; created_at: string };
@@ -26,6 +26,8 @@ Write a short Telegram message (2-4 sentences, no markdown headers) that:
 Tone: a sharp friend who remembers everything you say. No emoji spam, at most one.
 
 ${CHAT_STYLE_RULES}
+
+${CASUAL_VOICE}
 
 Respond with ONLY valid JSON: {"message":"...","reasoning":"one-line why-now"}`,
   render: ({ memory, linked, scoringReason }) =>

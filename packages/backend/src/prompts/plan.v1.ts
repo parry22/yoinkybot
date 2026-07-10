@@ -1,5 +1,5 @@
 import type { Prompt } from "./types.js";
-import { CHAT_STYLE_RULES } from "./style.js";
+import { CHAT_STYLE_RULES, CASUAL_VOICE } from "./style.js";
 
 export interface PlanVars {
   headline: string;
@@ -34,6 +34,8 @@ Produce:
    and goal. This guides proactive macro-moment matching.
 
 ${CHAT_STYLE_RULES}
+
+${CASUAL_VOICE}
 
 Respond with ONLY valid JSON:
 {"throughline":"...","unlock_list":[{"idea":"...","rationale":"...","priority":1}],"outside_in":"..."}

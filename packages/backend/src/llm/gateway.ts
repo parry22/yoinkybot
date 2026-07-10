@@ -94,8 +94,11 @@ export async function fetchWithTimeout(
   }
 }
 
-/** Single OpenRouter call to the configured chat model. */
-async function callModel(req: LlmRequest): Promise<LlmResponse> {
+/** Single OpenRouter call to the configured chat model. `useJsonMode` is separate
+ *  from `req.json` so the caller can retry WITHOUT response_format when a provider
+ *  rejects it (OpenRouter routes GLM across providers, and not all accept
+ *  response_format json_object — that 400 must degrade, not kill the turn). */
+async function callModel(req: LlmRequest, useJsonMode: boolean): Promise<LlmResponse> {
   if (!config.OPENROUTER_API_KEY) throw new Error("OPENROUTER_API_KEY not configured");
   const ignore = config.OPENROUTER_PROVIDER_IGNORE.split(",").map((s) => s.trim()).filter(Boolean);
   const model = config.MODEL_CHAT;
@@ -111,7 +114,7 @@ async function callModel(req: LlmRequest): Promise<LlmResponse> {
       model,
       max_tokens: req.maxTokens ?? 1024,
       temperature: 0.2,
-      ...(req.json ? { response_format: { type: "json_object" } } : {}),
+      ...(useJsonMode ? { response_format: { type: "json_object" } } : {}),
       ...(ignore.length ? { provider: { ignore } } : {}),
       messages: [
         { role: "system", content: req.system },
@@ -176,15 +179,30 @@ export async function llmCall(req: LlmRequest): Promise<LlmResponse> {
   // System jobs (null userId) are exempt; per-user work is capped per day.
   if (req.userId && !(await underDailyCap(req.userId))) throw new LlmBudgetError();
 
-  const res = await withRetries(() => callModel(req), 3);
+  // JSON requests ask for response_format json_object first. If the routed
+  // provider rejects it (a non-retriable 400 — happens because OpenRouter spreads
+  // GLM across providers with uneven support), fall back to plain mode and lean
+  // on the prompt's "respond with ONLY valid JSON" + extractJson. Without this,
+  // provider roulette silently broke every structured call (the onboarding loop).
+  let res: LlmResponse;
+  try {
+    res = await withRetries(() => callModel(req, req.json === true), 3);
+  } catch (err) {
+    if (req.json && err instanceof LlmHttpError && err.status === 400) {
+      console.warn("response_format rejected by provider; retrying without json mode");
+      res = await withRetries(() => callModel(req, false), 3);
+    } else {
+      throw err;
+    }
+  }
 
   if (req.json) {
     try {
       res.parsed = extractJson(res.text);
     } catch {
-      // One corrective retry: re-ask with the failure appended.
+      // One corrective retry (plain mode): re-ask with the failure appended.
       const retry = await withRetries(() =>
-        callModel({ ...req, user: `${req.user}\n\nYour previous reply was not valid JSON. Respond with ONLY valid JSON.` }),
+        callModel({ ...req, user: `${req.user}\n\nYour previous reply was not valid JSON. Respond with ONLY valid JSON.` }, false),
       );
       retry.parsed = extractJson(retry.text);
       return retry;

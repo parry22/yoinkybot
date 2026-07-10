@@ -124,7 +124,7 @@ export async function maybeOfferAngles(
     );
     // Callback data is capped at 64 bytes by Telegram — reference the angle by
     // slot (1-3), not its UUID, so `ang:<surfacingId>:<slot>` stays well under.
-    keyboard.text(`Write #${i + 1}`, `ang:${surfacing.id}:${i + 1}`);
+    keyboard.text(`write #${i + 1}`, `ang:${surfacing.id}:${i + 1}`);
   }
   keyboard.row().text("💤 not now", `angfb:${surfacing.id}:later`);
 
@@ -136,12 +136,12 @@ export async function maybeOfferAngles(
   // Trend offers get the rare, premium treatment; browsing moments stay casual.
   const lead =
     moment.kind === "trend"
-      ? `🎯 The conversation came to you: "${moment.title ?? "a live discussion"}" is trending right now${moment.why_now ? ` — ${moment.why_now}` : ""}.`
+      ? `🎯 the conversation came to you: "${moment.title ?? "a live discussion"}" is trending right now${moment.why_now ? `, ${moment.why_now}` : ""}.`
       : moment.title
-        ? `You spent time on "${moment.title}".`
-        : "Something you saved is worth a post.";
+        ? `you spent time on "${moment.title}".`
+        : "something you saved is worth a post.";
   const body = angles.map((a, i) => `${i + 1}) ${a.label}: ${a.hook}`).join("\n");
-  const message = `${lead} Here are 3 ways to tell this story:\n\n${body}`;
+  const message = `${lead} here are 3 ways to tell this story:\n\n${body}`;
 
   return sendTelegram(job.userId, message, undefined, keyboard);
 }

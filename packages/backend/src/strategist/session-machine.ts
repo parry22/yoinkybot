@@ -11,6 +11,7 @@ import { hybridSearch } from "../memory/search.js";
 import { query, queryOne } from "../db/pool.js";
 import { sendTelegramSequence } from "../telegram/bot.js";
 import { saveTurn } from "../telegram/conversation.js";
+import { casualize } from "../prompts/style.js";
 import { currentDiagnosis, diagnosisById, type Diagnosis } from "./diagnosis.js";
 import { submitGoal, GOAL_TYPES } from "./goals.js";
 import { generatePlanDraft, generateThreeMonthPlan, confirmPlan, setPlanCadence, getPlan } from "./plan.js";
@@ -322,6 +323,7 @@ export function applyProfileActions(
     pushed: [...(state.profile?.pushed ?? [])],
     unresolved: [...(state.profile?.unresolved ?? [])],
     pillarsDrafted: [...(state.profile?.pillarsDrafted ?? [])],
+    stuck: state.profile?.stuck ?? 0,
   };
   const turns = state.turnsInPhase ?? 0;
   const effects: ProfileEffect[] = [];
@@ -434,14 +436,19 @@ async function runProfilingTurn(userId: string, message: string, state: Strategi
       ? FALLBACK_QUESTION[field]
       : "Send me your X handle or LinkedIn and I'll read your history from here.";
 
+  // Context loads are best-effort: a DB hiccup on any of them must NOT kill the
+  // turn (that was the loop bug — a failed getProfile threw before the LLM ran,
+  // so nothing was ever captured and the same field was re-asked forever). The
+  // LLM turn is what drives the conversation, so it always runs.
+  const [history, relevant, profileRow] = await Promise.all([
+    loadHistory(userId).catch(() => [] as Array<{ role: "user" | "assistant"; content: string }>),
+    hybridSearch(userId, message, 4).catch(() => []),
+    getProfile(userId).catch(() => null),
+  ]);
+
   let reply = fallbackReply;
   let actions: ProfileAction[] = [];
   try {
-    const [history, relevant, profileRow] = await Promise.all([
-      loadHistory(userId),
-      hybridSearch(userId, message, 4).catch(() => []),
-      getProfile(userId),
-    ]);
     const res = await llmCall({
       userId,
       eventType: "strategist_profiling",
@@ -449,7 +456,10 @@ async function runProfilingTurn(userId: string, message: string, state: Strategi
       system: strategistProfiling.system,
       user: strategistProfiling.render({
         phase,
-        history,
+        // Include the message they just sent — it's not persisted until the end
+        // of this turn, so without this the model can't see what it's answering
+        // and re-asks the same question a turn late (the "not listening" bug).
+        history: [...history, { role: "user", content: message }],
         profileSoFar: profileSummaryForPrompt(profileRow),
         nextField: field ?? null,
         fieldSpec: field ? fieldSpec(field, profileRow) : "",
@@ -511,11 +521,41 @@ async function runProfilingTurn(userId: string, message: string, state: Strategi
     }
   }
 
+  // Hard anti-loop backstop: if we're still on the same field this turn didn't
+  // capture, count it; after a few tries, mark it unresolved and move on so no
+  // question can ever be asked forever, whatever the reason (model, DB, network).
+  if (phase === "profiling" && field && finalState.phase === "profiling") {
+    const stillOnField = nextProfileField(finalState.profile) === field;
+    if (stillOnField) {
+      const stuck = (state.profile?.stuck ?? 0) + 1;
+      if (stuck >= 3) {
+        const cur = finalState.profile ?? {};
+        finalState = {
+          ...finalState,
+          profile: {
+            ...cur,
+            captured: [...(cur.captured ?? []), field],
+            unresolved: [...(cur.unresolved ?? []), field],
+            stuck: 0,
+          },
+        };
+        await upsertProfileField(userId, field, "", { unresolved: true }).catch(() => {});
+        const next = nextProfileField(finalState.profile);
+        reply = next ? `No worries, we can come back to that. ${FALLBACK_QUESTION[next]}` : reply;
+      } else {
+        finalState = { ...finalState, profile: { ...(finalState.profile ?? {}), stuck } };
+      }
+    } else {
+      finalState = { ...finalState, profile: { ...(finalState.profile ?? {}), stuck: 0 } };
+    }
+  }
+
+  const spoken = casualize(reply);
   await saveTurn(userId, "user", message);
-  await saveTurn(userId, "assistant", reply);
+  await saveTurn(userId, "assistant", spoken);
   await setState(userId, finalState);
 
-  return { reply, capture: reduced.capture, offerAngles: reduced.offerAngles, offerSecondPlatform: false };
+  return { reply: spoken, capture: reduced.capture, offerAngles: reduced.offerAngles, offerSecondPlatform: false };
 }
 
 /**
@@ -540,7 +580,7 @@ export async function runSessionTurn(userId: string, message: string): Promise<S
     : ((await currentDiagnosis(userId))?.dimensions ?? null);
   if (!diag) {
     // No diagnosis to ground the session — shouldn't happen; degrade gracefully.
-    const reply = "Give me a moment — I'm still reading through your work. Try again shortly.";
+    const reply = "give me a sec, still reading through your stuff. try me again in a moment.";
     await saveTurn(userId, "user", message);
     await saveTurn(userId, "assistant", reply);
     return { reply, capture: false, offerAngles: false, offerSecondPlatform: false };
@@ -573,7 +613,9 @@ export async function runSessionTurn(userId: string, message: string): Promise<S
       system: strategistSession.system,
       user: strategistSession.render({
         phase,
-        history,
+        // Include the just-sent message (not persisted until end of turn) so the
+        // strategist reacts to what they actually said, not a turn behind.
+        history: [...history, { role: "user", content: message }],
         diagnosis: diag,
         covered,
         remainingBeats: remainingBeats(covered),
@@ -601,7 +643,7 @@ export async function runSessionTurn(userId: string, message: string): Promise<S
     }
   }
   const { reply: rawReply, actions } = parseSessionResponse(envelope);
-  const reply = rawReply || "Say more?";
+  const reply = casualize(rawReply || "say more?");
 
   // Reduce against a state pinned to the effective phase.
   const reduced = applyActions({ ...state, phase, covered, planCovered, turnsInPhase }, actions, reaction);
@@ -670,8 +712,8 @@ export async function runSessionTurn(userId: string, message: string): Promise<S
 // ── The diagnosis reveal ───────────────────────────────────────────────────────
 
 const REVEAL_FALLBACK =
-  "I read through everything you've put out. There's a sharper throughline here than you're using. " +
-  "Before I get into the whole read, does anything about how you've been showing up feel off to you?";
+  "read through everything you've put out. there's a sharper throughline in here than you're using. " +
+  "before i get into the whole read, does anything about how you've been showing up feel off to you?";
 
 /**
  * Fired once ingestion + diagnosis complete: deliver the FULL five-dimension
@@ -730,8 +772,8 @@ export async function openSession(userId: string, diagnosisId: string, dimension
 }
 
 const GAP_FALLBACK =
-  "I read your whole history against everything you just told me. There's a real gap between what " +
-  "you're aiming for and what's actually out there. Before I lay it all out, does anything about " +
+  "read your whole history against everything you just told me. there's a real gap between what " +
+  "you're aiming for and what's actually out there. before i lay it all out, does anything about " +
   "how you've been showing up already feel off to you?";
 
 /**
@@ -811,24 +853,24 @@ export async function openPlanSession(userId: string, gapText?: string): Promise
 
   if (!plan) {
     await sendTelegramSequence(userId, [
-      "I hit a snag building your three-month plan just now. Give me a moment and say 'plan' to try again.",
+      "hit a snag building your three-month plan just now. give me a moment and say 'plan' to try again.",
     ]);
     return;
   }
 
   const messages: string[] = [];
-  messages.push(`Here's the shift that closes the biggest gap:\n\n${plan.repositioning}`);
-  messages.push(`🎯 What you become known for:\n${plan.throughline}`);
+  messages.push(`here's the shift that closes the biggest gap:\n\n${plan.repositioning}`);
+  messages.push(`🎯 what you become known for:\n${plan.throughline}`);
   for (const m of plan.months) messages.push(`${m.label}\n${m.objective}`);
   if (plan.unlock.length) {
     messages.push(
-      "First pieces, pulled straight from what you're already sitting on:\n" +
+      "first pieces, pulled straight from what you're already sitting on:\n" +
         plan.unlock.slice(0, 3).map((u, i) => `${i + 1}. ${u.idea}`).join("\n"),
     );
   }
   messages.push(
-    `Cadence: ${plan.perWeek} posts a week, the honest number you gave me. ` +
-      "If that lands, say the word and I'll lock it in and start working it with you.",
+    `cadence: ${plan.perWeek} posts a week, the honest number you gave me. ` +
+      "if that lands, say the word and i'll lock it in and start working it with you.",
   );
 
   await setState(userId, {

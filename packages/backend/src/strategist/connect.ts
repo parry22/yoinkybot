@@ -105,9 +105,9 @@ export async function handleIngestProfile(job: IngestProfileJob): Promise<void> 
       await query(`UPDATE connected_accounts SET status = 'failed' WHERE id = $1`, [account.id]);
       await sendTelegram(
         job.userId,
-        `I couldn't pull any posts from ${shown} on ${label}. Two usual reasons: the handle is off, ` +
-          `or the account is private/has almost nothing public. Double-check the handle and try /connect again, ` +
-          `or send me a few of your actual takes and I'll work from those.`,
+        `couldn't pull any posts from ${shown} on ${label}. two usual reasons: the handle's off, ` +
+          `or the account's private/has almost nothing public. double-check the handle and try connecting again, ` +
+          `or send me a few of your actual takes and i'll work from those.`,
       );
       return;
     }
@@ -117,8 +117,8 @@ export async function handleIngestProfile(job: IngestProfileJob): Promise<void> 
     const eta = estimateIngestMinutes(usable.length);
     await sendTelegram(
       job.userId,
-      `Got ${usable.length} posts from your last ~3 months on ${label}. ` +
-        `Give me about ${eta} minute${eta === 1 ? "" : "s"} to actually read them, then I'll come back with the full diagnosis.`,
+      `got ${usable.length} posts from your last ~3 months on ${label}. ` +
+        `give me about ${eta} minute${eta === 1 ? "" : "s"} to actually read them, then i'll come back with the full read.`,
     ).catch(() => {});
 
     // Only now that we have a real pull, replace the old imported corpus (incl.
@@ -173,8 +173,8 @@ export async function handleIngestProfile(job: IngestProfileJob): Promise<void> 
     await query(`UPDATE connected_accounts SET status = 'failed' WHERE id = $1`, [account.id]);
     await sendTelegram(
       job.userId,
-      `Something broke while pulling ${shown} from ${label}. Give it another go with /connect in a minute — ` +
-        `if it keeps failing, send me a few of your takes directly and I'll diagnose from those.`,
+      `something broke while pulling ${shown} from ${label}. give it another go with /connect in a minute. ` +
+        `if it keeps failing, send me a few of your takes directly and i'll read those instead.`,
     ).catch(() => {});
     throw err;
   }

@@ -49,6 +49,9 @@ export interface ProfileCursor {
   pushed?: ProfileField[];
   unresolved?: ProfileField[];
   pillarsDrafted?: string[]; // Stage 5 pillars derived in code, awaiting confirmation
+  /** Consecutive turns spent on the same current field without capturing it —
+   *  the anti-loop backstop force-advances once this crosses a threshold. */
+  stuck?: number;
 }
 
 export interface StrategistState {
@@ -91,14 +94,15 @@ export async function clearState(userId: string): Promise<void> {
 }
 
 /**
- * Full account reset (the /clear command): wipe everything derived from the
- * user's work — captures, memories, positions, the diagnosis, goals, plan,
- * chat history, drafts, repurposed content, mentions/replies, peer benchmarks,
- * usage history, connected accounts — and put them back at the 'new' stage so
- * they start the connect flow over. The user row itself (Telegram identity)
- * and their billing subscription are kept. All deletes run in one transaction
- * so a partial wipe can never strand the account half-cleared. The copy that
- * introduces /clear promises "everything", so this list must stay exhaustive.
+ * Full account reset (triggered by the clear_everything chat tool, confirmed via
+ * the clr:confirm button): wipe everything derived from the user's work —
+ * captures, memories, positions, the diagnosis, goals, plan, chat history,
+ * drafts, repurposed content, mentions/replies, peer benchmarks, usage history,
+ * connected accounts — and put them back at the 'new' stage so they start the
+ * connect flow over. The user row itself (Telegram identity) and their billing
+ * subscription are kept. All deletes run in one transaction so a partial wipe
+ * can never strand the account half-cleared. The confirmation copy promises
+ * "everything", so this list must stay exhaustive.
  *
  * Child tables are deleted before their parents; deleting `memories` cascades
  * to `memory_links`, and `surfacings` cascades to any `angles` under it.

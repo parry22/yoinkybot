@@ -46,9 +46,8 @@ export async function connectAccount(
     platform === "x" ? !!(config.TWITTERAPI_IO_KEY || config.APIFY_TOKEN) : !!config.APIFY_TOKEN;
   if (!canIngest) {
     const msg =
-      `${platform === "x" ? "X" : "LinkedIn"} ingestion isn't configured on this instance yet.\n\n` +
-      "To try the full flow now: send me a handful of your actual takes (just type them), then /diagnose — " +
-      "or /demo to load a sample profile and watch the whole thing run.";
+      `${platform === "x" ? "X" : "LinkedIn"} ingestion isn't wired up on this instance yet.\n\n` +
+      "to try the full thing now, just type me a handful of your actual takes and i'll read those instead.";
     await channel.say(msg);
     return msg;
   }
@@ -57,8 +56,8 @@ export async function connectAccount(
   const st = await getState(user.id);
   if (st.awaitingConnect) await setState(user.id, { ...st, awaitingConnect: false });
   const msg =
-    `On it — pulling your ${platform === "x" ? "X" : "LinkedIn"} history now. This takes a few minutes; ` +
-    "I'll come back with a full read once I've actually gone through it. A shallow diagnosis is worse than none.";
+    `on it, pulling your ${platform === "x" ? "X" : "LinkedIn"} history now. takes a few minutes. ` +
+    "i'll come back once i've actually read the whole thing, a shallow read is worse than none.";
   await channel.say(msg);
   return msg;
 }
@@ -72,7 +71,7 @@ export async function runDraft(
 ): Promise<string> {
   const ent = await entitlementsFor(user.id);
   if (!ent.drafting) {
-    const msg = "Drafting is a paid feature — /upgrade to have me write for you.";
+    const msg = "drafting's a paid thing, hit /upgrade and i'll write for you.";
     await channel.say(msg);
     return msg;
   }
@@ -91,8 +90,10 @@ export async function runDraft(
   const otherPlatform = platform === "x" ? "li" : "x";
   const otherLabel = platform === "x" ? "♻️ LinkedIn version" : "♻️ X version";
   const kb = row ? new InlineKeyboard().text(otherLabel, `rpz:d:${row.id}:${otherPlatform}`) : undefined;
-  await channel.say(`✍️ Draft:\n\n${res.draft}`, kb);
-  return `✍️ Draft (${platform}):\n\n${res.draft}`;
+  // The draft itself is content for their feed, so it keeps its own capitalization;
+  // only the little label around it is Yoinky talking.
+  await channel.say(`✍️ here you go:\n\n${res.draft}`, kb);
+  return `✍️ draft (${platform}):\n\n${res.draft}`;
 }
 
 /** One repurposed variant at a time: the output, any honest caveats, and a used/skip loop. */
@@ -107,7 +108,8 @@ export async function deliverRepurposed(
   const kb = result.id
     ? new InlineKeyboard().text("✅ posted it", `rpu:${result.id}:used`).text("⏭ not this one", `rpu:${result.id}:skip`)
     : undefined;
-  const text = `♻️\n\n${result.output}${result.notes ? `\n\n(${result.notes})` : ""}`;
+  // The reshaped post is content — leave it exactly as written, notes stay lowercase.
+  const text = `♻️ here's the reshaped version:\n\n${result.output}${result.notes ? `\n\n(${result.notes})` : ""}`;
   await channel.say(text, kb);
   return text;
 }
@@ -116,15 +118,15 @@ export async function deliverRepurposed(
 export async function runCheck(user: User, draft: string, channel: Channel): Promise<string> {
   const ent = await entitlementsFor(user.id);
   if (!ent.consistencyChecks) {
-    const msg = "Consistency checks are a paid feature — /upgrade to turn them on.";
+    const msg = "consistency checks are a paid thing, /upgrade to turn them on.";
     await channel.say(msg);
     return msg;
   }
   const result = await checkConsistency(user.id, draft);
   const body = result.clear
-    ? "✅ Clear — no tension with your positions or throughline."
+    ? "✅ clear, no tension with your positions or throughline."
     : result.flags
-        .map((f) => `⚠️ ${f.positionId === "throughline" ? "Off your throughline" : "Contradicts"}: "${f.statement}"\n→ ${f.explanation}`)
+        .map((f) => `⚠️ ${f.positionId === "throughline" ? "off your throughline" : "contradicts"}: "${f.statement}"\n→ ${f.explanation}`)
         .join("\n\n");
   await channel.say(body);
   return body;
@@ -133,13 +135,13 @@ export async function runCheck(user: User, draft: string, channel: Channel): Pro
 /** The /positions body: active beliefs with confidence, or the empty-state nudge. */
 export async function positionsText(userId: string): Promise<string> {
   const positions = await activePositions(userId, { includeStale: true });
-  if (positions.length === 0) return "No positions yet — send me your takes or /connect an account.";
+  if (positions.length === 0) return "no positions yet, send me your takes or connect an account.";
   const lines = positions.map((p) => {
     const pct = Math.round(p.confidence * 100);
     const n = p.source_memory_ids.length;
     return `• ${p.statement}\n   ${pct}% held · said ${n} time${n === 1 ? "" : "s"}`;
   });
-  return "What you've staked out (confidence decays if you stop saying it):\n\n" + lines.join("\n");
+  return "what you've staked out (confidence decays if you stop saying it):\n\n" + lines.join("\n");
 }
 
 /** The /status body: stage, counts, plan, and the next move. */
@@ -156,16 +158,16 @@ export async function statusText(user: User): Promise<string> {
   ]);
   const c = counts[0];
   const next: Record<string, string> = {
-    new: "Start with /connect so I can read your work.",
-    connected: "I'm reading your history — /diagnosis will be ready shortly.",
-    diagnosed: "See /diagnosis, then tell me your goal to get a plan.",
-    goals_set: "Goal locked — say the word and I'll finish your /plan.",
-    plan_active: "Plan's live. Keep capturing; I'll bring you moments and angles.",
+    new: "start by connecting an account so i can read your work. just drop your @handle.",
+    connected: "i'm reading your history right now, the read'll be ready shortly.",
+    diagnosed: "you've got a read, tell me your goal and i'll build a plan.",
+    goals_set: "goal's locked, say the word and i'll finish your plan.",
+    plan_active: "plan's live. keep capturing and i'll bring you moments and angles.",
   };
   return (
-    `Stage: ${stage} · plan: ${ent.plan}\n` +
+    `stage: ${stage} · plan: ${ent.plan}\n` +
     `${c?.memories ?? 0} memories · ${c?.positions ?? 0} positions\n` +
-    (plan ? `Throughline: ${plan.throughline}\n` : "") +
+    (plan ? `throughline: ${plan.throughline}\n` : "") +
     `\n${next[stage] ?? ""}`
   );
 }
@@ -185,7 +187,7 @@ export async function executeChatTool(user: User, tool: ChatTool, channel: Chann
     case "repurpose": {
       const parsed = parseRepurposeCommand(`${tool.form} ${tool.text}`);
       if (!parsed) {
-        const msg = "Couldn't work out what to reshape there — paste the post and tell me the target.";
+        const msg = "couldn't work out what to reshape there. paste the post and tell me where it's going.";
         await channel.say(msg);
         return msg;
       }
@@ -211,7 +213,7 @@ export async function executeChatTool(user: User, tool: ChatTool, channel: Chann
 
     case "show_plan": {
       const plan = await getPlan(user.id);
-      const msg = plan ? formatPlan(plan) : "No active plan yet. Once you're diagnosed, I'll build one with you.";
+      const msg = plan ? formatPlan(plan) : "no plan yet. once i've read you, i'll build one with you.";
       await channel.say(msg);
       return msg;
     }
@@ -231,7 +233,7 @@ export async function executeChatTool(user: User, tool: ChatTool, channel: Chann
     case "refresh_diagnosis": {
       const stage = await getStage(user.id);
       if (stage === "new") {
-        const msg = "Nothing to read yet — hand me your @handle (or a few of your takes) first.";
+        const msg = "nothing to read yet, hand me your @handle (or a few of your takes) first.";
         await channel.say(msg);
         return msg;
       }
@@ -239,7 +241,7 @@ export async function executeChatTool(user: User, tool: ChatTool, channel: Chann
         // Post-onboarding: refresh in place, never re-open the paced session arc.
         const refreshed = await runDiagnosis(user.id, { deliver: false }).catch(() => null);
         if (!refreshed) {
-          const msg = "Couldn't refresh the read just now — try again in a bit. Your existing /diagnosis still stands.";
+          const msg = "couldn't refresh the read just now, try again in a bit. your existing read still stands.";
           await channel.say(msg);
           return msg;
         }
@@ -247,7 +249,7 @@ export async function executeChatTool(user: User, tool: ChatTool, channel: Chann
         return "(delivered a refreshed diagnosis)";
       }
       await getBoss().send(QUEUES.diagnose, { userId: user.id, attempt: 0 });
-      const msg = "Reading through everything now. Give me a minute and I'll open with what stands out.";
+      const msg = "reading through everything now. give me a minute and i'll open with what stands out.";
       await channel.say(msg);
       return msg;
     }
@@ -258,15 +260,29 @@ export async function executeChatTool(user: User, tool: ChatTool, channel: Chann
     case "forget": {
       const matches = await hybridSearch(user.id, tool.query, 3);
       if (matches.length === 0) {
-        const msg = "Nothing in memory matches that.";
+        const msg = "nothing in memory matches that.";
         await channel.say(msg);
         return msg;
       }
       const kb = new InlineKeyboard();
       for (const m of matches) kb.text(`🗑 ${m.content.slice(0, 40)}…`, `cf:${m.id}`).row();
       kb.text("Cancel", "cf:cancel");
-      await channel.say("Delete which? This is permanent.", kb);
+      await channel.say("which one? this is permanent.", kb);
       return "(offered forget choices — waiting on their pick)";
+    }
+
+    case "clear_everything": {
+      // Never wipes directly — same clr:confirm/clr:cancel callback data the
+      // old /clear command used, handled in telegram/bot.ts's callback_query
+      // listener (deletes the visible chat, then resetUserData, then restarts
+      // onboarding). This only surfaces the confirmation.
+      const kb = new InlineKeyboard().text("Yes, wipe everything", "clr:confirm").row().text("Cancel", "clr:cancel");
+      const msg =
+        "this wipes everything: your captured history, memories, positions, the read, goals, plan, " +
+        "and deletes every message in this chat, mine and yours. you'll start over from scratch. " +
+        "can't be undone.\n\nsure?";
+      await channel.say(msg, kb);
+      return "(offered the wipe-everything confirmation — waiting on their tap)";
     }
   }
 }
@@ -297,7 +313,7 @@ export async function deliverTurnOutput(
   let keyboard: InlineKeyboard | undefined;
   if (result.offerAngles && !result.tool) {
     const momentId = await createIdeaMoment(user.id, text, text);
-    if (momentId) keyboard = new InlineKeyboard().text("✍️ Turn this into angles", `mkang:${momentId}`);
+    if (momentId) keyboard = new InlineKeyboard().text("✍️ turn this into angles", `mkang:${momentId}`);
   }
   if (result.reply) await channel.say(result.reply, keyboard);
 
@@ -308,7 +324,7 @@ export async function deliverTurnOutput(
       await saveTurn(user.id, "assistant", trace.slice(0, 1500)).catch(() => {});
     } catch (err) {
       console.error(`chat tool ${result.tool.name} failed`, err);
-      await channel.say("That one didn't go through on my end. Give it another shot in a moment.");
+      await channel.say("that one didn't go through on my end. give it another shot in a sec.");
     }
   }
 }

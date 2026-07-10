@@ -1,5 +1,5 @@
 import type { Prompt } from "./types.js";
-import { CHAT_STYLE_RULES } from "./style.js";
+import { CHAT_STYLE_RULES, CASUAL_VOICE } from "./style.js";
 
 export interface PlanV2Vars {
   headline: string;
@@ -44,6 +44,8 @@ Produce:
    should watch for and bring them, given the throughline and goal.
 
 ${CHAT_STYLE_RULES}
+
+${CASUAL_VOICE}
 
 Respond with ONLY valid JSON:
 {"repositioning":"...","throughline":"...","months":[{"label":"Month 1: ...","objective":"..."},{"label":"Month 2: ...","objective":"..."},{"label":"Month 3: ...","objective":"..."}],"unlock_list":[{"idea":"...","rationale":"...","priority":1}],"outside_in":"..."}

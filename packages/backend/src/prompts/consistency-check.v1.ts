@@ -1,5 +1,5 @@
 import type { Prompt } from "./types.js";
-import { CHAT_STYLE_RULES } from "./style.js";
+import { CHAT_STYLE_RULES, CASUAL_VOICE } from "./style.js";
 
 export interface ConsistencyVars {
   draft: string;
@@ -30,6 +30,8 @@ specific tension. Also note reinforcements (draft strongly restates a position) 
 informational, not flags.
 
 ${CHAT_STYLE_RULES}
+
+${CASUAL_VOICE}
 
 Respond with ONLY valid JSON:
 {"contradictions":[{"position_id":"...","explanation":"..."}],

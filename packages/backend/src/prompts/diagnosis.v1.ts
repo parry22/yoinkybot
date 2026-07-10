@@ -1,5 +1,5 @@
 import type { Prompt } from "./types.js";
-import { CHAT_STYLE_RULES } from "./style.js";
+import { CHAT_STYLE_RULES, CASUAL_VOICE } from "./style.js";
 
 export interface DiagnosisVars {
   posts: Array<{ content: string; kind: string; created_at: string; source: string }>;
@@ -123,6 +123,8 @@ DENSITY — this is a diagnosis, not an essay. Length limits are hard:
 - Fewer, sharper findings beat complete coverage. 2 owned positions that are undeniable beat 4
   that are stretched.
 ${CHAT_STYLE_RULES}
+
+${CASUAL_VOICE}
 
 SELF-CHECK BEFORE RETURNING
 - Does every claim trace to an actual memory with an approximate date? If not, cut it.

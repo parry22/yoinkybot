@@ -1,5 +1,5 @@
 import type { Prompt } from "./types.js";
-import { CHAT_STYLE_RULES } from "./style.js";
+import { CHAT_STYLE_RULES, CASUAL_VOICE } from "./style.js";
 import type { SessionPhase, DiagnosisBeat, PlanBeat } from "../strategist/state.js";
 
 export interface StrategistSessionVars {
@@ -102,6 +102,8 @@ postable thought of their own, set capture true, and if they'd want it turned in
 set offer_angles true.
 
 ${CHAT_STYLE_RULES}
+
+${CASUAL_VOICE}
 
 Respond with ONLY valid JSON:
 {"reply":"the single message you send","actions":[{"type":"beat_covered","beat":"..."}|{"type":"advance_phase"}|{"type":"goal_field","field":"optimizing_for|timeframe|success","value":"..."}|{"type":"goal_captured"}|{"type":"plan_beat_covered","beat":"throughline|unlock|cadence"}|{"type":"cadence","perWeek":3,"note":"..."}|{"type":"commit_plan"}|{"type":"capture"}|{"type":"offer_angles"}]}

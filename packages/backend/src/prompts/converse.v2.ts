@@ -1,5 +1,5 @@
 import type { Prompt } from "./types.js";
-import { CHAT_STYLE_RULES } from "./style.js";
+import { CHAT_STYLE_RULES, CASUAL_VOICE } from "./style.js";
 
 export interface ConverseVars {
   message: string;
@@ -28,8 +28,9 @@ export interface ConverseVars {
  * v2 gives the brain the same tools the commands use: it decides each turn
  * whether to just talk, to file the thought, or to CALL A TOOL (draft,
  * repurpose, memory search, consistency check, connect, diagnosis refresh,
- * plan/positions/status, forget). The executor in telegram/actions.ts runs the
- * tool through the identical code path as its slash command.
+ * plan/positions/status, forget, clear-everything). The executor in
+ * telegram/actions.ts runs the tool through the identical code path as its
+ * (now-removed, for plan/positions/clear) slash command used to.
  */
 export const converse: Prompt<ConverseVars> = {
   id: "converse",
@@ -67,6 +68,12 @@ The system executes it right after your reply is delivered, in this same chat:
 - connect_account {platform: "x"|"linkedin", handle}: start actually scraping + reading a
   profile's history. ONLY for THEIR OWN account. Takes minutes and costs real work.
 - forget {query}: find what they want deleted and offer the permanent-delete picker.
+- clear_everything {}: wipe their whole account (captures, memories, positions, diagnosis, plan,
+  chat history) and restart onboarding from scratch. Doesn't delete anything itself, it surfaces a
+  yes/no confirmation, so it's safe to call the moment you're sure this is what they mean. ONLY for
+  an unambiguous, explicit request to wipe/reset/start completely over ("wipe everything and start
+  over", "delete all my data", "reset my whole account"). NEVER for vague frustration ("this isn't
+  working", "forget it") or a request to forget one specific thing (that's the forget tool).
 
 WHEN TO ACT VS WHEN TO TALK:
 - If their message asks for something a tool does — even sideways ("can you make that punchier
@@ -120,7 +127,11 @@ Decide two flags:
 
 ${CHAT_STYLE_RULES}
 
-Keep replies to 1-4 sentences (Telegram). Substance over length. Respond with ONLY valid JSON:
+${CASUAL_VOICE}
+
+keep replies short, a line or two, like a text. substance over length. the "reply" string itself
+must follow the casual register above (lowercase, no memo tone) even when you're also calling a
+tool. respond with ONLY valid JSON:
 {"reply": "...", "tool": {"name": "...", ...args} | null, "capture": true|false, "offer_angles": true|false}`,
   render: (v) => {
     const block: string[] = [];

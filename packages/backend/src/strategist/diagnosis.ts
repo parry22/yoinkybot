@@ -57,7 +57,7 @@ export async function handleDiagnose(job: DiagnoseJob): Promise<void> {
     // One honesty check-in on a big profile so silence reads as "working", not
     // "broken" — fires once, never repeats on subsequent re-checks.
     if (attempt === SLOW_PING_ATTEMPT && !job.pingedSlow) {
-      await sendTelegram(job.userId, "Still reading, you've posted a lot. Almost through it.").catch(() => {});
+      await sendTelegram(job.userId, "still reading, you've posted a lot. almost through it.").catch(() => {});
     }
     await getBoss().send(
       QUEUES.diagnose,
@@ -76,7 +76,7 @@ export async function handleDiagnose(job: DiagnoseJob): Promise<void> {
     console.error(`diagnosis generation failed for ${job.userId}`, err);
     await sendTelegram(
       job.userId,
-      "I hit a snag putting your diagnosis together just now. Nothing you did. Give it another go with /diagnose in a couple of minutes and I'll pick it right back up.",
+      "hit a snag putting your read together just now. nothing you did. ask me to read you again in a couple minutes and i'll pick it right back up.",
     ).catch(() => {});
   }
 }
@@ -103,7 +103,7 @@ export async function runDiagnosis(
     if (opts.deliver) {
       await sendTelegram(
         userId,
-        "I don't have enough of your thinking yet to give you a real diagnosis — connect an account, or send me a handful more of your actual takes first. A shallow read would just waste your time.",
+        "i don't have enough of your thinking yet to give you a real read. connect an account, or send me a handful more of your actual takes first. a shallow read would just waste your time.",
       );
     }
     return null;
@@ -224,22 +224,22 @@ export function formatDiagnosis(d: Diagnosis): string[] {
   parts.push(d.headline);
   parts.push(
     `🧠 ${f.read}` +
-      (f.owned_positions.length ? `\n\nGenuinely yours:\n${f.owned_positions.map((p) => `• ${p}`).join("\n")}` : "") +
-      (f.latent_beliefs.length ? `\n\nBelieved but never said outright:\n${f.latent_beliefs.map((p) => `• ${p}`).join("\n")}` : ""),
+      (f.owned_positions.length ? `\n\ngenuinely yours:\n${f.owned_positions.map((p) => `• ${p}`).join("\n")}` : "") +
+      (f.latent_beliefs.length ? `\n\nbelieved but never said outright:\n${f.latent_beliefs.map((p) => `• ${p}`).join("\n")}` : ""),
   );
-  parts.push(`🗣 ${d.voice_signature.read}${d.voice_signature.drift ? `\n\n• Drift: ${d.voice_signature.drift}` : ""}`);
+  parts.push(`🗣 ${d.voice_signature.read}${d.voice_signature.drift ? `\n\n• drift: ${d.voice_signature.drift}` : ""}`);
   parts.push(
     `🌍 ${o.read}` +
-      (o.missed_swings.length ? `\n\nSwings you didn't take:\n${o.missed_swings.map((s) => `• ${s}`).join("\n")}` : ""),
+      (o.missed_swings.length ? `\n\nswings you didn't take:\n${o.missed_swings.map((s) => `• ${s}`).join("\n")}` : ""),
   );
   if (d.consistency_audit.length) {
     parts.push(
-      `⚖️ Contradictions worth mining:\n\n${d.consistency_audit.map((c) => `• ${c.tension}\n  → ${c.why_interesting}`).join("\n\n")}`,
+      `⚖️ contradictions worth mining:\n\n${d.consistency_audit.map((c) => `• ${c.tension}\n  → ${c.why_interesting}`).join("\n\n")}`,
     );
   }
   if (d.unsaid_patterns.length) {
     parts.push(
-      `💎 The unsaid. Your highest-value territory:\n\n${d.unsaid_patterns.map((u) => `• ${u.idea}\n  (${u.evidence})`).join("\n\n")}`,
+      `💎 the unsaid. your highest-value territory:\n\n${d.unsaid_patterns.map((u) => `• ${u.idea}\n  (${u.evidence})`).join("\n\n")}`,
     );
   }
   return parts;

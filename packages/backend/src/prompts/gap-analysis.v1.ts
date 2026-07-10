@@ -1,5 +1,5 @@
 import type { Prompt } from "./types.js";
-import { CHAT_STYLE_RULES } from "./style.js";
+import { CHAT_STYLE_RULES, CASUAL_VOICE } from "./style.js";
 import type { Diagnosis } from "../strategist/diagnosis.js";
 
 export interface GapAnalysisVars {
@@ -68,6 +68,8 @@ DELIVER AS SEPARATE MESSAGES, IN THIS ORDER (adjust to which findings are actual
 Aim for 6-8 messages total. Only deliver what the evidence supports; skip or shorten thin sections.
 State findings as fact backed by the evidence, never "it seems like."
 ${CHAT_STYLE_RULES}
+
+${CASUAL_VOICE}
 
 Respond with ONLY valid JSON: {"messages": ["message 1", "message 2", ...]}`,
   render: ({ profileSummary, diagnosis: d, gap, sampleMemories, memoryCount }) => {

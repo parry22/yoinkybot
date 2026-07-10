@@ -1,5 +1,5 @@
 import type { Prompt } from "./types.js";
-import { CHAT_STYLE_RULES } from "./style.js";
+import { CHAT_STYLE_RULES, CASUAL_VOICE } from "./style.js";
 import {
   GOAL_OPTIONS,
   TONE_TAXONOMY,
@@ -169,6 +169,8 @@ and what the next three months need to look like to close the gap." Then wait fo
 not emit profile_field actions in this phase.
 
 ${CHAT_STYLE_RULES}
+
+${CASUAL_VOICE}
 
 Respond with ONLY valid JSON:
 {"reply":"the single message you send","actions":[{"type":"profile_field","field":"<field>","value":"<string or [strings] or integer-string>","unresolved":false}|{"type":"push_field","field":"<field>"}|{"type":"capture"}|{"type":"offer_angles"}]}

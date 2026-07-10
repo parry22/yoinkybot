@@ -21,6 +21,36 @@ connect your accounts, get diagnosed, build a plan, and ship content.
 
 <!-- Keep newest-first. Update this whenever a change ships that a reader of the repo should know about. -->
 
+- **2026-07-11 — Onboarding actually listens now.** Fixed the intake loop: the
+  paced-session turns read chat history *before* the just-sent message was saved,
+  so the strategist reacted a turn late and re-asked the same question. The
+  current message is now included in the turn — it captures answers immediately,
+  handles off-topic replies, and refers back to what you said. Also hardened the
+  path end to end: per-turn DB reads are non-fatal (a hiccup can't dead-end the
+  intake), the LLM gateway falls back to plain mode when a routed provider rejects
+  JSON mode (was silently breaking every structured call), a backstop advances
+  past any field after a few tries so nothing can loop, and `/start` no longer
+  claims "already set up" while you're mid-onboarding.
+- **2026-07-11 — Removed `/plan`, `/positions`, `/clear`.** All three are now
+  plain-language only. `/plan` and `/positions` already had `show_plan` /
+  `show_positions` chat tools, so nothing else changed there. `/clear` gets a
+  new `clear_everything` chat tool (`chat-tools.ts`, `actions.ts`) that — like
+  the old command — never wipes directly; it surfaces the same yes/no
+  `clr:confirm`/`clr:cancel` buttons the existing callback handler in `bot.ts`
+  already processed, so the destructive path is unchanged, only its entry point
+  moved to natural language. The prompt is told to only fire it on an
+  unambiguous "wipe everything / start completely over" request, never on
+  vague frustration.
+- **2026-07-11 — Casual texting voice.** Yoinky now talks like a real person
+  texting, not an assistant: lowercase, short, contractions, dry, casual even
+  while kicking off a task. Driven by a shared `CASUAL_VOICE` prompt block
+  injected into every Yoinky-*voice* prompt (chat, onboarding, the reveals,
+  plan/progress/proactive DMs) plus a deterministic `casualize()` backstop that
+  lowercases the opener (leaving proper-noun/acronym openers like LinkedIn/AI/X
+  alone). Content written **for the user's public feed** — post drafts, reply
+  drafts, repurposed posts, angle hooks — deliberately stays properly
+  capitalized; only Yoinky's own chatter goes lowercase. Hardcoded acks and
+  task-execution scaffolding were rewritten to match.
 - **2026-07-11 — Leaner commands, resilient intake, cold-start feedback.**
   Removed the `check`, `ask`, `forget`, `status`, `diagnosis`, `diagnose`, `demo`,
   and `voice` slash commands (all still available in plain language via the chat
@@ -100,11 +130,12 @@ pnpm dev                                   # backend + bot on :3001 (runs migrat
 
 Everything else is in Telegram — DM the bot and use `/help`. The core loop:
 `/start` walks you through the profile intake → you `/connect` your X/LinkedIn → I read your
-history and reveal the gap → confirm your `/plan` → I work it proactively (unlock nudges, trend
-moments, consistency, drafting). The command set is deliberately lean: `/connect`, `/plan`,
-`/draft`, `/repurpose`, `/positions`, `/peers`, `/settings`, `/clear`, `/upgrade`. Everything
-else is plain language — "does this contradict what I've said", "what have I said about pricing",
-"where am I at". `/clear` wipes everything (including the chat history) and restarts onboarding.
+history and reveal the gap → confirm your plan → I work it proactively (unlock nudges, trend
+moments, consistency, drafting). The command set is deliberately lean: `/connect`, `/draft`,
+`/repurpose`, `/peers`, `/settings`, `/upgrade`. Everything else is plain language — "does this
+contradict what I've said", "what have I said about pricing", "where am I at", "what's my plan",
+"what do I believe", "wipe everything and start over" (wipes everything, chat history included,
+and restarts onboarding).
 
 Local dev without a public HTTPS URL runs the Telegram bot in **long-polling** mode automatically.
 In production set `PUBLIC_URL=https://…` and the bot switches to webhooks

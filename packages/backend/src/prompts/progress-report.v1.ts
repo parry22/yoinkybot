@@ -1,5 +1,5 @@
 import type { Prompt } from "./types.js";
-import { CHAT_STYLE_RULES } from "./style.js";
+import { CHAT_STYLE_RULES, CASUAL_VOICE } from "./style.js";
 
 export interface ProgressVars {
   throughline: string;
@@ -88,6 +88,8 @@ people to be watching, or has anyone new become more relevant to where you're he
 question total, never two stacked.
 
 ${CHAT_STYLE_RULES}
+
+${CASUAL_VOICE}
 
 Respond with ONLY valid JSON: {"messages": ["...", "..."]}
 

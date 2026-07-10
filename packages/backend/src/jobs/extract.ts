@@ -94,7 +94,7 @@ export async function handleExtract(job: ExtractJob): Promise<void> {
       );
       await sendTelegram(
         job.userId,
-        `Updated what I believe you think. ${lines.join(". ")}. The old version stays in your history, say the word if I read that wrong.`,
+        `updated what i think you think. ${lines.join(". ")}. the old version stays in your history, say the word if i read that wrong.`,
       ).catch(() => {});
     }
   } catch (err) {
