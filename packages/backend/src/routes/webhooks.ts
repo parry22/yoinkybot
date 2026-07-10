@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { webhookCallback } from "grammy";
+import type { Update } from "grammy/types";
 import { config } from "../config.js";
 import { getBot } from "../telegram/bot.js";
 import { verifyWebhookSignature } from "../billing/webhook.js";
@@ -38,16 +38,41 @@ export async function webhookRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // Only wire the webhook route when we actually intend to run in webhook mode
-  // (see index.ts) — grammY's Bot instance can't be consumed by both
-  // webhookCallback() and bot.start() (long polling) at once.
+  // (see index.ts) — grammY's Bot instance can't be consumed by both a webhook
+  // route and bot.start() (long polling) at once.
+  //
+  // The route acks Telegram IMMEDIATELY and processes the update detached.
+  // grammY's webhookCallback awaits the full handler with a 10s timeout — but a
+  // real turn (retrieval + LLM, worst case with retries) can run well past
+  // that, and an unacked/failed webhook makes Telegram REDELIVER the update:
+  // the whole turn replays and the user sees duplicate or ghost replies.
+  // Because updates can also be redelivered across restarts, recently seen
+  // update_ids are dropped (in-memory is correct: single instance by design).
   const bot = getBot();
   const usingWebhooks = config.PUBLIC_URL.startsWith("https://");
   if (bot && config.TELEGRAM_BOT_TOKEN && usingWebhooks) {
-    app.post(
-      "/webhooks/telegram",
-      webhookCallback(bot, "fastify", {
-        secretToken: config.TELEGRAM_WEBHOOK_SECRET || undefined,
-      }),
-    );
+    const seen = new Set<number>();
+    const seenOrder: number[] = [];
+    const SEEN_MAX = 5_000;
+
+    app.post("/webhooks/telegram", async (req, reply) => {
+      const secret = config.TELEGRAM_WEBHOOK_SECRET;
+      if (secret && req.headers["x-telegram-bot-api-secret-token"] !== secret) {
+        return reply.code(401).send({ error: "unauthorized" });
+      }
+      const update = req.body as Update | undefined;
+      const id = update?.update_id;
+      if (typeof id !== "number") return { ok: true };
+      if (seen.has(id)) return { ok: true }; // redelivery — already handled
+      seen.add(id);
+      seenOrder.push(id);
+      if (seenOrder.length > SEEN_MAX) seen.delete(seenOrder.shift()!);
+
+      // Detached on purpose; bot.catch is the error boundary for handlers.
+      void bot.handleUpdate(update as Update).catch((err) => {
+        console.error("telegram update processing failed", err);
+      });
+      return { ok: true };
+    });
   }
 }

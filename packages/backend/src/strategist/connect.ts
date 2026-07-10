@@ -160,9 +160,11 @@ export async function handleIngestProfile(job: IngestProfileJob): Promise<void> 
       [account.id, imported, JSON.stringify(pull.meta)],
     );
     // Advance the stage (only forward — never regress a user who's further along).
+    // 'profile_set' is the profile-first arc reaching connect; 'new' is the
+    // connect-first escape hatch.
     await query(
       `UPDATE users SET strategist_stage = 'connected'
-       WHERE id = $1 AND strategist_stage = 'new'`,
+       WHERE id = $1 AND strategist_stage IN ('new','profile_set')`,
       [job.userId],
     );
     // Kick the diagnosis readiness check; it waits for extraction to finish.

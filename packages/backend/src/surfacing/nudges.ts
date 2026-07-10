@@ -80,10 +80,14 @@ export async function sendColdStartCheckin(userId: string): Promise<boolean> {
 
 // ── Structural nudges ────────────────────────────────────────────────────────
 
-export type NudgeKind = "voice" | "goals_stall" | "shipping_stall";
+export type NudgeKind = "profile_stall" | "connect_stall" | "voice" | "goals_stall" | "shipping_stall";
 
 /** Don't repeat the same nudge inside this window. */
 export const NUDGE_DEDUP_DAYS = 10;
+
+/** Idle time before nudging a dropped-off onboarding, in hours. */
+export const PROFILE_STALL_HOURS = 20;
+export const CONNECT_STALL_HOURS = 24;
 
 export interface NudgeInputs {
   memoryCount: number;
@@ -97,18 +101,35 @@ export interface NudgeInputs {
   cadencePerWeek: number;
   draftsLast14d: number;
   daysSinceProgressReport: number;
+  /** Onboarding drop-off signals. */
+  onboardingIdleHours: number;
+  hasConnectedAccount: boolean;
+  statedNiche: string | null;
   /** Kinds nudged within the dedup window. */
   recentNudgeKinds: NudgeKind[];
 }
 
 /**
- * Pick the one structural nudge worth sending, or null. Priority order: the
- * voice threshold (a capability they've earned but haven't claimed), then a
- * stalled diagnosis→goals hop, then a stalled shipping cadence (only when the
- * progress report isn't already about to cover the same ground).
+ * Pick the one structural nudge worth sending, or null. Onboarding drop-offs come
+ * first (a stalled intake or an un-connected finished profile is the costliest
+ * place to lose someone), then the voice threshold, then diagnosis→goals, then a
+ * stalled shipping cadence.
  */
 export function pickNudge(i: NudgeInputs): NudgeKind | null {
   const recent = new Set(i.recentNudgeKinds);
+  // Dropped off mid-intake (Stages 1-7): a follow-up beats silence.
+  if (!recent.has("profile_stall") && i.stage === "profiling" && i.onboardingIdleHours >= PROFILE_STALL_HOURS) {
+    return "profile_stall";
+  }
+  // Finished the profile but never connected an account (Stage 8 stall).
+  if (
+    !recent.has("connect_stall") &&
+    i.stage === "profile_set" &&
+    !i.hasConnectedAccount &&
+    i.onboardingIdleHours >= CONNECT_STALL_HOURS
+  ) {
+    return "connect_stall";
+  }
   if (!recent.has("voice") && i.memoryCount >= VOICE_MIN_MEMORIES && !i.hasVoiceProfile) return "voice";
   if (!recent.has("goals_stall") && i.stage === "diagnosed" && i.diagnosisAgeDays >= 3 && !i.hasGoals) {
     return "goals_stall";
@@ -137,6 +158,9 @@ async function gatherNudgeInputs(userId: string): Promise<NudgeInputs> {
     cadence_per_week: string | null;
     drafts_14d: string;
     last_progress_at: string | null;
+    has_account: boolean;
+    last_activity: string | null;
+    stated_niche: string | null;
   }>(
     `SELECT
        (SELECT count(*) FROM memories WHERE user_id = $1 AND status = 'active')::text AS memory_count,
@@ -147,7 +171,10 @@ async function gatherNudgeInputs(userId: string): Promise<NudgeInputs> {
        (SELECT confirmed_at::text FROM brand_plans WHERE user_id = $1 AND status = 'active' ORDER BY confirmed_at DESC LIMIT 1) AS plan_confirmed_at,
        (SELECT cadence->>'perWeek' FROM brand_plans WHERE user_id = $1 AND status = 'active' ORDER BY confirmed_at DESC LIMIT 1) AS cadence_per_week,
        (SELECT count(*) FROM drafts WHERE user_id = $1 AND created_at > now() - interval '14 days')::text AS drafts_14d,
-       (SELECT max(delivered_at)::text FROM surfacings WHERE user_id = $1 AND type = 'progress_report') AS last_progress_at`,
+       (SELECT max(delivered_at)::text FROM surfacings WHERE user_id = $1 AND type = 'progress_report') AS last_progress_at,
+       EXISTS(SELECT 1 FROM connected_accounts WHERE user_id = $1) AS has_account,
+       (SELECT max(created_at)::text FROM chat_messages WHERE user_id = $1) AS last_activity,
+       (SELECT niche FROM brand_profiles WHERE user_id = $1) AS stated_niche`,
     [userId],
   );
   const recent = await query<{ kind: NudgeKind }>(
@@ -168,11 +195,23 @@ async function gatherNudgeInputs(userId: string): Promise<NudgeInputs> {
     cadencePerWeek: Number(row?.cadence_per_week ?? 0),
     draftsLast14d: Number(row?.drafts_14d ?? 0),
     daysSinceProgressReport: row?.last_progress_at ? (now - new Date(row.last_progress_at).getTime()) / DAY : Infinity,
+    onboardingIdleHours: row?.last_activity ? (now - new Date(row.last_activity).getTime()) / 3_600_000 : Infinity,
+    hasConnectedAccount: row?.has_account ?? false,
+    statedNiche: row?.stated_niche ?? null,
     recentNudgeKinds: recent.map((r) => r.kind).filter(Boolean),
   };
 }
 
 const NUDGE_MESSAGES: Record<NudgeKind, (i: NudgeInputs) => { text: string; keyboard?: InlineKeyboard }> = {
+  profile_stall: (i) => ({
+    text: i.statedNiche
+      ? `We were partway through setting you up, you'd started telling me about ${i.statedNiche}, and then it went quiet. Still keen to see where you actually stand? Pick up whenever, I just need a few more answers.`
+      : `We started setting up your profile and then it went quiet. No rush, but I only need a few more answers before I can read your history and show you the gap. Want to pick up?`,
+  }),
+  connect_stall: () => ({
+    text:
+      `You built the whole profile, that's the hard part done. One step left: send your X handle or LinkedIn and I'll read your actual history and show you exactly where you stand against it.`,
+  }),
   voice: (i) => ({
     text:
       `You're past ${VOICE_MIN_MEMORIES} memories now. That's enough signal for me to build your voice profile, ` +

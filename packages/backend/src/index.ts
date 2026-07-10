@@ -13,10 +13,13 @@ async function main(): Promise<void> {
   await registerWorkers(boss);
 
   const bot = createBot();
+  // Initialize eagerly: the webhook route calls bot.handleUpdate directly
+  // (no webhookCallback), which requires botInfo to be loaded up front.
+  if (bot) await bot.init();
   // The bot's own t.me link, derived from Telegram rather than hardcoded or
   // borrowed from an unrelated config value — always correct for whichever
   // token is actually configured.
-  const botLink = bot ? `https://t.me/${(await bot.api.getMe()).username}` : "https://telegram.org";
+  const botLink = bot ? `https://t.me/${bot.botInfo.username}` : "https://telegram.org";
 
   // Telegram-native: the only HTTP surface is health + webhooks.
   const app = Fastify({ logger: { level: isDev ? "info" : "warn" } });

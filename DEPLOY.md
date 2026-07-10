@@ -57,10 +57,10 @@ ADMIN_TELEGRAM_ID=<your own Telegram numeric user id — get it from @userinfobo
 GROQ_API_KEY=<from console.groq.com / your local .env>
 GROQ_STT_MODEL=whisper-large-v3-turbo
 
-QWEN_API_KEY=<from DashScope / your local .env>
+OPENROUTER_API_KEY=<from openrouter.ai / your local .env>   # REQUIRED — the only LLM route
+
+QWEN_API_KEY=<from DashScope / your local .env>             # embeddings only
 QWEN_BASE_URL=https://dashscope-intl.aliyuncs.com/compatible-mode/v1
-QWEN_MODEL_CHEAP=qwen-turbo
-QWEN_MODEL_FRONTIER=qwen-max
 QWEN_EMBEDDING_MODEL=text-embedding-v4
 EMBEDDING_DIMS=1536
 
@@ -75,9 +75,9 @@ DODO_ENV=test_mode
 it resolves to the `db` service's private network address automatically, so
 you never hardcode an IP. Paste it exactly like that.
 
-**Drop in when ready:** `ANTHROPIC_API_KEY=...` — the gateway automatically
-prefers Claude for every frontier-tier call the moment this is set. Add the
-line, redeploy, done.
+**Switching models:** every LLM call goes to one model (`z-ai/glm-5.2` via
+OpenRouter). To change it, set `MODEL_CHAT=<openrouter/model-id>` and redeploy —
+no code change. There is no tier routing or provider fallback to configure.
 
 ## 4. Point your domain at it (Namecheap)
 

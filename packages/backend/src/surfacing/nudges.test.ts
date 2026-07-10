@@ -44,6 +44,9 @@ const base = (o: Partial<NudgeInputs> = {}): NudgeInputs => ({
   cadencePerWeek: 3,
   draftsLast14d: 2,
   daysSinceProgressReport: 3,
+  onboardingIdleHours: 0,
+  hasConnectedAccount: true,
+  statedNiche: null,
   recentNudgeKinds: [],
   ...o,
 });
@@ -75,5 +78,19 @@ describe("pickNudge", () => {
   });
   it("returns null when everything is healthy", () => {
     expect(pickNudge(base())).toBeNull();
+  });
+  it("nudges a stalled profile intake after the idle window", () => {
+    expect(pickNudge(base({ stage: "profiling", onboardingIdleHours: 22 }))).toBe("profile_stall");
+    expect(pickNudge(base({ stage: "profiling", onboardingIdleHours: 4 }))).toBeNull();
+  });
+  it("nudges a finished-but-unconnected profile to connect", () => {
+    expect(pickNudge(base({ stage: "profile_set", hasConnectedAccount: false, onboardingIdleHours: 30 }))).toBe("connect_stall");
+    expect(pickNudge(base({ stage: "profile_set", hasConnectedAccount: true, onboardingIdleHours: 30 }))).toBeNull();
+  });
+  it("does not re-nudge onboarding stalls inside the dedup window", () => {
+    expect(pickNudge(base({ stage: "profiling", onboardingIdleHours: 30, recentNudgeKinds: ["profile_stall"] }))).toBeNull();
+  });
+  it("onboarding stalls outrank later nudges", () => {
+    expect(pickNudge(base({ stage: "profiling", onboardingIdleHours: 30, memoryCount: 60, hasVoiceProfile: false }))).toBe("profile_stall");
   });
 });

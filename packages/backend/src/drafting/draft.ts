@@ -3,6 +3,7 @@ import { llmCall } from "../llm/gateway.js";
 import { draftPost } from "../prompts/draft.v1.js";
 import { hybridSearch } from "../memory/search.js";
 import { currentVoiceProfile } from "../voice/profile.js";
+import { getProfile, profileSummaryForPrompt } from "../strategist/profile.js";
 import { enforceStyle } from "../prompts/style.js";
 
 const draftSchema = z.object({
@@ -43,6 +44,8 @@ export async function generateDraft(
     return { ok: false, draft: "", note: "No memories match this request — capture some thinking on it first.", sources: [] };
   }
 
+  const brandProfile = await getProfile(userId).catch(() => null);
+
   const res = await llmCall({
     userId,
     eventType: "draft",
@@ -53,6 +56,8 @@ export async function generateDraft(
       platform,
       memories: memories.map((m) => ({ id: m.id, content: m.content, kind: m.kind })),
       voiceTraits: profile.traits,
+      profileSummary: brandProfile ? profileSummaryForPrompt(brandProfile) : undefined,
+      offLimits: brandProfile?.topics_off_limits ?? [],
     }),
     json: true,
     maxTokens: 1500,

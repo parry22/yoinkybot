@@ -1,27 +1,33 @@
 import { z } from "zod";
 import { query, queryOne } from "../db/pool.js";
 import { llmCall } from "../llm/gateway.js";
-import { converse } from "../prompts/converse.v1.js";
+import { converse } from "../prompts/converse.v2.js";
+import { parseChatTool, type ChatTool } from "./chat-tools.js";
 import { activePositions } from "../memory/positions.js";
 import { hybridSearch } from "../memory/search.js";
 import { currentVoiceProfile } from "../voice/profile.js";
 import { getPlan } from "../strategist/plan.js";
 import { activeGoals } from "../strategist/goals.js";
 import { getStage } from "../strategist/state.js";
+import { getProfile, profileSummaryForPrompt } from "../strategist/profile.js";
 import { enforceStyle } from "../prompts/style.js";
 
 const HISTORY_TURNS = 10;
 
 const replySchema = z.object({
-  reply: z.string().min(1),
+  // Empty is legal when a tool call carries the whole turn (e.g. search_memory).
+  reply: z.string().default(""),
   capture: z.boolean().default(false),
   offer_angles: z.boolean().default(false),
+  tool: z.unknown().nullish(),
 });
 
 export interface ConversationResult {
   reply: string;
   capture: boolean;
   offerAngles: boolean;
+  /** A tool the brain decided to call this turn; executed by telegram/actions.ts. */
+  tool?: ChatTool;
 }
 
 async function loadHistory(userId: string): Promise<Array<{ role: "user" | "assistant"; content: string }>> {
@@ -119,11 +125,13 @@ export async function converseWithUser(userId: string, message: string): Promise
     relationshipContext(userId).catch(() => null),
   ]);
 
-  // Plan context (throughline, goal, undeveloped unlocks, onboarding stage).
-  const [plan, goals, stage] = await Promise.all([
+  // Plan context (throughline, goal, undeveloped unlocks, onboarding stage) + the
+  // stated brand profile, so steady-state chat reasons against what they told us.
+  const [plan, goals, stage, brandProfile] = await Promise.all([
     getPlan(userId).catch(() => null),
     activeGoals(userId).catch(() => []),
     getStage(userId).catch(() => "new"),
+    getProfile(userId).catch(() => null),
   ]);
   const pendingUnlocks = (plan?.unlock ?? []).filter((u) => u.status === "pending").map((u) => u.idea);
 
@@ -144,6 +152,7 @@ export async function converseWithUser(userId: string, message: string): Promise
       })),
       voiceTraits: profile?.traits,
       memoryCount: Number(counts[0]?.n ?? 0),
+      profile: brandProfile ? profileSummaryForPrompt(brandProfile) : undefined,
       throughline: plan?.throughline,
       goal: goals[0]?.detail,
       pendingUnlocks,
@@ -154,10 +163,14 @@ export async function converseWithUser(userId: string, message: string): Promise
     maxTokens: 600,
   });
   const parsed = replySchema.parse(res.parsed);
+  const tool = parseChatTool(parsed.tool);
   const reply = enforceStyle(parsed.reply);
+  // A turn must carry something: with no tool and no reply, degrade to a nudge
+  // rather than silence.
+  const finalReply = reply || (tool ? "" : "Say more?");
 
   await saveTurn(userId, "user", message);
-  await saveTurn(userId, "assistant", reply);
+  if (finalReply) await saveTurn(userId, "assistant", finalReply);
 
-  return { reply, capture: parsed.capture, offerAngles: parsed.offer_angles };
+  return { reply: finalReply, capture: parsed.capture, offerAngles: parsed.offer_angles, tool };
 }

@@ -17,30 +17,21 @@ const schema = z.object({
   GROQ_API_KEY: z.string().optional(),
   GROQ_STT_MODEL: z.string().default("whisper-large-v3-turbo"),
 
-  // OpenRouter — the primary LLM route (frontier + cheap tiers). Legacy direct
-  // providers below remain as the floor of the fallback chain.
+  // OpenRouter — the only LLM route. One model for every request (no tiers, no
+  // fallback chain). Set MODEL_CHAT to switch models without a code change.
   OPENROUTER_API_KEY: z.string().optional(),
   OPENROUTER_BASE_URL: z.string().default("https://openrouter.ai/api/v1"),
-  MODEL_FRONTIER: z.string().default("anthropic/claude-sonnet-5"),
-  MODEL_CHEAP_PRIMARY: z.string().default("z-ai/glm-5.2"),
-  MODEL_CHEAP_FLOOR: z.string().default("deepseek/deepseek-v4-flash"),
-  // Comma-separated OpenRouter provider names to exclude (spec: US/EU hosts only
-  // for the cheap tier). Tighten or clear via env without a code change.
+  MODEL_CHAT: z.string().default("z-ai/glm-5.2"),
+  // Comma-separated OpenRouter provider names to exclude when picking a GLM host
+  // (spec: US/EU hosts only). Tighten or clear via env without a code change.
   OPENROUTER_PROVIDER_IGNORE: z.string().default("Baidu,Alibaba,StreamLake"),
 
-  ANTHROPIC_API_KEY: z.string().optional(),
-  KIMI_API_KEY: z.string().optional(),
-  KIMI_BASE_URL: z.string().default("https://api.moonshot.ai/v1"),
-  KIMI_MODEL: z.string().default("kimi-k2.6"),
+  // Embeddings are separate from the chat model (GLM 5.2 is chat-only): OpenAI
+  // when OPENAI_API_KEY is set, else Qwen/DashScope (OpenAI-compatible mode).
   EMBEDDING_MODEL: z.string().default("text-embedding-3-large"),
   EMBEDDING_DIMS: z.coerce.number().default(1536),
-
-  // Qwen (DashScope, OpenAI-compatible mode) — stand-in provider covering both
-  // LLM tiers and embeddings when dedicated Anthropic/Kimi/OpenAI keys aren't set.
   QWEN_API_KEY: z.string().optional(),
   QWEN_BASE_URL: z.string().default("https://dashscope-intl.aliyuncs.com/compatible-mode/v1"),
-  QWEN_MODEL_CHEAP: z.string().default("qwen-turbo"),
-  QWEN_MODEL_FRONTIER: z.string().default("qwen-max"),
   QWEN_EMBEDDING_MODEL: z.string().default("text-embedding-v4"),
 
   TAVILY_API_KEY: z.string().optional(),

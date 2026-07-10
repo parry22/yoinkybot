@@ -17,6 +17,41 @@ said?"), and grounded drafting.
 Yoinky is **Telegram-native — there is no web dashboard.** Everything happens in the chat:
 connect your accounts, get diagnosed, build a plan, and ship content.
 
+## Latest updates
+
+<!-- Keep newest-first. Update this whenever a change ships that a reader of the repo should know about. -->
+
+- **2026-07-11 — Profile-first onboarding + gap analysis.** Onboarding is now an
+  11-stage strategist conversation: it draws out a full stated brand profile
+  (positioning, goal, audience, voice/tone, pillars, format, constraints) one
+  question at a time *before* reading your history, then delivers a **gap
+  analysis** measuring your actual posts against what you said you were building,
+  then a month-by-month plan. New `brand_profiles` table; the profile now grounds
+  drafting (hard-blocks off-limits topics), consistency, and steady-state chat. A
+  connect-first escape hatch still gives the instant cold diagnosis for anyone who
+  drops a handle early, and a drop-off nudge follows up if the intake stalls.
+- **2026-07-10 — Agentic chat layer.** The conversational brain can now *do*
+  things, not just talk: plain language reaches the same code paths as the
+  slash commands via a one-tool-per-turn contract (`converse.v2` +
+  `telegram/chat-tools.ts` + `telegram/actions.ts`) — draft, repurpose, memory
+  search, consistency check, plan/positions/status, diagnosis refresh, connect,
+  forget. Also: per-user turn serialization with burst merging (fragments typed
+  in quick succession get one considered reply), a typing heartbeat for long
+  turns, voice notes get a real conversational reply after transcription,
+  caption-bearing media and unsupported message types are answered instead of
+  ignored, the Telegram webhook fast-acks with update dedup (no more redelivery
+  replays), and "check out @naval on x" no longer scrapes naval as your account.
+- **2026-07-10 — Single-model LLM routing.** Every AI call now goes to one model
+  (**GLM 5.2**, `z-ai/glm-5.2` via OpenRouter). The previous tier system
+  (cheap / cheap_floor / frontier) and the multi-provider fallback chains
+  (Anthropic / Kimi / Qwen) are gone — one model, retries, JSON repair, per-user
+  daily cap. Set `MODEL_CHAT` to switch models without a code change. Embeddings
+  are unchanged (OpenAI, else Qwen — GLM 5.2 is chat-only).
+- **2026-07-08 — Delivery hardening.** Keep-alive survives Render cold starts;
+  the Telegram webhook no longer silently drops updates; embedding batches are
+  chunked to avoid DashScope 400s on trend fetches; the diagnosis reveal is
+  paced instead of one prose dump.
+
 ## Layout
 
 ```
@@ -24,7 +59,9 @@ packages/backend   Fastify monolith: strategist flow (connect/diagnose/goals/pla
                    capture pipeline, moment gate, angle engine, trends (Apify default,
                    Brave/Tavily fallback), memory core, voice/consistency/drafting,
                    DodoPayments billing, the grammY Telegram bot, pg-boss jobs
-docs/PHASES.md     Original build phases; see .claude plan for the narrative-engine phases
+docs/INTERNAL.md   Full internal team guide: architecture, subsystems, ops, conventions
+docs/PHASES.md     Original build phases (historical)
+DEPLOY.md          Railway deploy runbook
 
 # HTTP surface is minimal: /health and webhooks (Dodo billing + Telegram in production).
 # No session auth, no web UI.
@@ -34,9 +71,10 @@ docs/PHASES.md     Original build phases; see .claude plan for the narrative-eng
 
 - Node 20+, pnpm 9+
 - Postgres 16+ with the **pgvector** extension available
-- API keys (all optional in dev; features degrade gracefully): Telegram bot token, Sarvam,
-  OpenAI (embeddings + Whisper fallback), Anthropic (frontier tier), Kimi/Moonshot (cheap tier),
-  Tavily (macro-matching), DodoPayments (billing)
+- API keys (features degrade gracefully where possible): Telegram bot token,
+  **OpenRouter** (the only LLM route — required for any AI feature), OpenAI or
+  Qwen (embeddings), Groq/Sarvam (speech-to-text), Apify (trends), DodoPayments
+  (billing).
 
 ## Setup
 
@@ -52,7 +90,8 @@ Everything else is in Telegram — DM the bot and use `/help`. The core loop:
 `/connect` your X/LinkedIn → I ingest and `/diagnosis` your presence → you answer a couple of
 goal questions → confirm your `/plan` → I work it proactively (unlock nudges, trend moments,
 consistency, drafting). Other commands: `/ask`, `/draft`, `/check`, `/voice`, `/positions`,
-`/clear`, `/upgrade`, `/status`. `/clear` wipes everything and restarts the connect flow.
+`/repurpose`, `/peers`, `/settings`, `/clear`, `/upgrade`, `/status`. `/clear` wipes everything
+and restarts the connect flow.
 
 Local dev without a public HTTPS URL runs the Telegram bot in **long-polling** mode automatically.
 In production set `PUBLIC_URL=https://…` and the bot switches to webhooks
@@ -67,9 +106,12 @@ In production set `PUBLIC_URL=https://…` and the bot switches to webhooks
 
 ## Architecture notes
 
+- **One LLM model, one path.** Every model call goes through `src/llm/gateway.ts`
+  → `z-ai/glm-5.2` via OpenRouter, with retries, a JSON-repair pass, and per-user
+  cost metering into `usage_events`. No tier routing, no fallback chain. Change
+  the model with `MODEL_CHAT`. Embeddings live in `src/llm/embeddings.ts`
+  (OpenAI, else Qwen).
 - **Captures are immutable**; memories are derived and re-derivable. Forget is hard deletion.
-- **Every LLM call** goes through `src/llm/gateway.ts` — tier routing (cheap/frontier, currently
-  both Qwen), retries, and per-user cost metering into `usage_events`.
 - **Prompts are versioned files** in `src/prompts/*.v1.ts`, not inline strings.
 - **Resurfacing selection is deterministic** (`src/surfacing/scoring.ts` — novelty ×
   link-density × recency ÷ surface count); the LLM only composes the message.
@@ -82,4 +124,5 @@ In production set `PUBLIC_URL=https://…` and the bot switches to webhooks
 ```bash
 pnpm test         # unit tests for scoring, quiet hours, parsers, RRF, k-means, webhook signatures
 pnpm typecheck
+pnpm verify       # typecheck + full unit suite — the pre-deploy gate
 ```

@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   applyActions,
+  applyProfileActions,
   parseSessionResponse,
+  parseProfileResponse,
+  nextProfileField,
   canAdvanceDiagnosis,
   unsaidUnlocked,
   gapBeatsCovered,
@@ -12,6 +15,7 @@ import {
   type Action,
 } from "./session-machine.js";
 import { DIAGNOSIS_BEATS, PLAN_BEATS, type StrategistState } from "./state.js";
+import { PROFILE_FIELDS } from "./profile.js";
 
 const base = (o: Partial<StrategistState> = {}): StrategistState => ({ phase: "diagnosis_dialogue", covered: [], ...o });
 const ALL_BEATS = [...DIAGNOSIS_BEATS];
@@ -215,6 +219,77 @@ describe("goalDraftComplete", () => {
   it("requires all three fields", () => {
     expect(goalDraftComplete({ optimizing_for: "x", timeframe: "y" })).toBe(false);
     expect(goalDraftComplete({ optimizing_for: "x", timeframe: "y", success: "z" })).toBe(true);
+  });
+});
+
+describe("parseProfileResponse", () => {
+  it("keeps valid profile actions, drops malformed", () => {
+    const r = parseProfileResponse({
+      reply: "got it",
+      actions: [
+        { type: "profile_field", field: "niche", value: "devtools" },
+        { type: "profile_field", field: "bogus_field", value: "x" },
+        { type: "push_field", field: "unique_pov" },
+        "junk",
+      ],
+    });
+    expect(r.reply).toBe("got it");
+    expect(r.actions).toHaveLength(2);
+    expect(r.actions[0]).toMatchObject({ type: "profile_field", field: "niche" });
+  });
+});
+
+describe("nextProfileField", () => {
+  it("walks the field order, skipping captured", () => {
+    expect(nextProfileField(undefined)).toBe(PROFILE_FIELDS[0]);
+    expect(nextProfileField({ captured: ["niche"] })).toBe("sub_niche_angle");
+  });
+  it("returns undefined when everything is captured", () => {
+    expect(nextProfileField({ captured: [...PROFILE_FIELDS] })).toBeUndefined();
+  });
+});
+
+describe("applyProfileActions", () => {
+  const prof = (o: Partial<StrategistState> = {}): StrategistState => ({ phase: "profiling", ...o });
+
+  it("captures a field, emits a persist effect, advances the cursor", () => {
+    const r = applyProfileActions(prof(), [{ type: "profile_field", field: "niche", value: "devtools" }]);
+    expect(r.nextState.profile?.captured).toEqual(["niche"]);
+    expect(r.effects).toContainEqual({ kind: "persistField", field: "niche", value: "devtools", unresolved: undefined });
+    expect(r.nextState.phase).toBe("profiling");
+  });
+
+  it("records a push and an unresolved field", () => {
+    const pushed = applyProfileActions(prof(), [{ type: "push_field", field: "unique_pov" }]);
+    expect(pushed.nextState.profile?.pushed).toEqual(["unique_pov"]);
+    const unresolved = applyProfileActions(prof({ profile: { captured: [], pushed: ["unique_pov"] } }), [
+      { type: "profile_field", field: "unique_pov", value: "", unresolved: true },
+    ]);
+    expect(unresolved.nextState.profile?.unresolved).toEqual(["unique_pov"]);
+    expect(unresolved.nextState.profile?.captured).toEqual(["unique_pov"]);
+  });
+
+  it("routes content_pillars through a confirmPillars effect", () => {
+    const r = applyProfileActions(prof(), [{ type: "profile_field", field: "content_pillars", value: ["a", "b"] }]);
+    expect(r.effects).toContainEqual({ kind: "confirmPillars", pillars: ["a", "b"] });
+    expect(r.nextState.profile?.captured).toContain("content_pillars");
+  });
+
+  it("finalizes and moves to connect_transition when every field is captured", () => {
+    const almost = PROFILE_FIELDS.slice(0, -1);
+    const last = PROFILE_FIELDS[PROFILE_FIELDS.length - 1]!;
+    const r = applyProfileActions(prof({ profile: { captured: [...almost] } }), [
+      { type: "profile_field", field: last, value: "real_name" },
+    ]);
+    expect(r.effects.some((e) => e.kind === "finalizeProfile")).toBe(true);
+    expect(r.nextState.phase).toBe("connect_transition");
+    expect(r.nextState.awaitingConnect).toBe(true);
+  });
+
+  it("watchdog forces the stuck field unresolved and advances", () => {
+    const r = applyProfileActions(prof({ turnsInPhase: 60 }), []);
+    expect(r.nextState.profile?.unresolved).toContain(PROFILE_FIELDS[0]);
+    expect(r.nextState.profile?.captured).toContain(PROFILE_FIELDS[0]);
   });
 });
 

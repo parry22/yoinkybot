@@ -3,15 +3,34 @@ import { query, queryOne, toVector, withTransaction } from "../db/pool.js";
 import { embed, embedOne } from "../llm/embeddings.js";
 import { llmCall } from "../llm/gateway.js";
 import { planPrompt } from "../prompts/plan.v1.js";
+import { planV2 } from "../prompts/plan.v2.js";
 import { currentDiagnosis } from "./diagnosis.js";
 import { activeGoals } from "./goals.js";
 import { setStage } from "./state.js";
+import { profileSummaryForPrompt, type BrandProfile } from "./profile.js";
 
 const planSchema = z.object({
   throughline: z.string(),
   unlock_list: z.array(z.object({ idea: z.string(), rationale: z.string().default(""), priority: z.number().default(1) })),
   outside_in: z.string().default(""),
 });
+
+const planV2Schema = z.object({
+  repositioning: z.string(),
+  throughline: z.string(),
+  months: z.array(z.object({ label: z.string(), objective: z.string() })).default([]),
+  unlock_list: z.array(z.object({ idea: z.string(), rationale: z.string().default(""), priority: z.number().default(1) })),
+  outside_in: z.string().default(""),
+});
+
+export interface ThreeMonthPlan {
+  planId: string;
+  repositioning: string;
+  throughline: string;
+  months: Array<{ label: string; objective: string }>;
+  unlock: Array<{ idea: string; rationale: string }>;
+  perWeek: number;
+}
 
 export interface PlanView {
   id: string;
@@ -80,6 +99,80 @@ export async function generatePlanDraft(userId: string): Promise<string> {
   }
 
   return "I've built your plan. One thing I won't assume: realistically, how many posts a week can you commit to? Give me an honest number, not an aspirational one.";
+}
+
+/**
+ * Stage 11: generate the three-month plan for a profile-first user, grounded in
+ * their diagnosis, stated profile, and the measured gap. Persists the durable
+ * plan primitives (throughline, unlock items, outside-in, cadence-from-capacity)
+ * plus the repositioning statement + month-by-month roadmap. Returns the shaped
+ * plan for the paced reveal; null if there's no diagnosis to build on.
+ */
+export async function generateThreeMonthPlan(
+  userId: string,
+  profile: BrandProfile,
+  gapText: string,
+): Promise<ThreeMonthPlan | null> {
+  const diag = await currentDiagnosis(userId);
+  if (!diag) return null;
+  const d = diag.dimensions;
+
+  const res = await llmCall({
+    userId,
+    eventType: "plan",
+    tier: planV2.tier,
+    system: planV2.system,
+    user: planV2.render({
+      headline: d.headline,
+      fingerprint: d.intellectual_fingerprint.read,
+      ownedPositions: d.intellectual_fingerprint.owned_positions,
+      unsaidPatterns: d.unsaid_patterns,
+      profileSummary: profileSummaryForPrompt(profile),
+      gapSummary: gapText || "(gap summary unavailable)",
+      primaryGoal: profile.primary_goal,
+      postingCapacity: profile.posting_capacity,
+    }),
+    json: true,
+    maxTokens: 1800,
+  });
+  const parsed = planV2Schema.parse(res.parsed);
+  const perWeek = profile.posting_capacity && profile.posting_capacity > 0 ? profile.posting_capacity : 3;
+
+  await query(`UPDATE brand_plans SET status = 'superseded' WHERE user_id = $1 AND status = 'draft'`, [userId]);
+  const plan = await queryOne<{ id: string }>(
+    `INSERT INTO brand_plans (user_id, diagnosis_id, throughline, outside_in, cadence, roadmap, status)
+     VALUES ($1,$2,$3,$4,$5,$6,'draft') RETURNING id`,
+    [
+      userId,
+      diag.id,
+      parsed.throughline,
+      parsed.outside_in,
+      JSON.stringify({ perWeek, note: "from stated capacity" }),
+      JSON.stringify({ repositioning: parsed.repositioning, months: parsed.months }),
+    ],
+  );
+
+  const sorted = [...parsed.unlock_list].sort((a, b) => a.priority - b.priority).slice(0, 5);
+  if (sorted.length) {
+    const embeddings = await embed(sorted.map((u) => u.idea), userId);
+    for (let i = 0; i < sorted.length; i++) {
+      const u = sorted[i]!;
+      await query(
+        `INSERT INTO unlock_items (user_id, plan_id, idea, rationale, priority, embedding)
+         VALUES ($1,$2,$3,$4,$5,$6::vector)`,
+        [userId, plan!.id, u.idea, u.rationale, i + 1, toVector(embeddings[i]!)],
+      );
+    }
+  }
+
+  return {
+    planId: plan!.id,
+    repositioning: parsed.repositioning,
+    throughline: parsed.throughline,
+    months: parsed.months,
+    unlock: sorted.map((u) => ({ idea: u.idea, rationale: u.rationale })),
+    perWeek,
+  };
 }
 
 export async function confirmPlan(userId: string, planId: string): Promise<boolean> {

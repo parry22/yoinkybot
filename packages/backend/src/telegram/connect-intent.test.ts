@@ -6,17 +6,23 @@ describe("detectConnectIntent", () => {
     expect(detectConnectIntent("can you do a detailed brand diagnosis on my x: @wtfparry")).toEqual({
       platform: "x",
       handle: "wtfparry",
+      owned: true,
     });
   });
 
   it("reads a bare X handle with an intent verb", () => {
-    expect(detectConnectIntent("diagnose my twitter @foo_bar")).toEqual({ platform: "x", handle: "foo_bar" });
+    expect(detectConnectIntent("diagnose my twitter @foo_bar")).toEqual({
+      platform: "x",
+      handle: "foo_bar",
+      owned: true,
+    });
   });
 
   it("takes an X profile URL", () => {
     expect(detectConnectIntent("analyze https://x.com/wtfparry please")).toEqual({
       platform: "x",
       handle: "wtfparry",
+      owned: false,
     });
   });
 
@@ -24,6 +30,7 @@ describe("detectConnectIntent", () => {
     expect(detectConnectIntent("here: https://linkedin.com/in/parry-singh")).toEqual({
       platform: "linkedin",
       handle: "parry-singh",
+      owned: false,
     });
   });
 
@@ -31,7 +38,17 @@ describe("detectConnectIntent", () => {
     expect(detectConnectIntent("connect my linkedin @parrysingh")).toEqual({
       platform: "linkedin",
       handle: "parrysingh",
+      owned: true,
     });
+  });
+
+  it("marks someone else's handle as not owned (chat-brain territory)", () => {
+    expect(detectConnectIntent("check out @naval on x")).toEqual({
+      platform: "x",
+      handle: "naval",
+      owned: false,
+    });
+    expect(detectConnectIntent("read my x @wtfparry")?.owned).toBe(true);
   });
 
   it("does not fire without a concrete handle", () => {

@@ -9,7 +9,8 @@ import { currentVoiceProfile, buildVoiceProfile, VOICE_MIN_MEMORIES } from "../v
 import { computeEvidence } from "./evidence.js";
 import { lintDiagnosis, violationInstruction } from "./diagnosis-lint.js";
 import { sendTelegram } from "../telegram/bot.js";
-import { openSession } from "./session-machine.js";
+import { openSession, openGapSession } from "./session-machine.js";
+import { getProfile, isProfileComplete } from "./profile.js";
 
 const MAX_READINESS_ATTEMPTS = 20; // ~10 min of 30s re-checks
 // Fires the one honesty check-in once total wait (pull time + this polling)
@@ -178,10 +179,17 @@ export async function runDiagnosis(
     await buildVoiceProfile(userId).catch((err) => console.error("post-diagnosis voice build failed", err));
   }
 
-  // Do NOT dump the analysis. Open the paced session: one sharp observation +
-  // one question. The diagnosis is revealed conversationally from here.
+  // Do NOT dump the analysis. Open the paced session. If they completed the
+  // Stage 1-7 profile first (the default arc), deliver the stated-vs-actual GAP
+  // analysis; if they took the connect-first escape hatch (no profile yet),
+  // fall back to the cold diagnosis reveal.
   if (opts.deliver && inserted) {
-    await openSession(userId, inserted.id, parsed);
+    const brandProfile = await getProfile(userId);
+    if (isProfileComplete(brandProfile) && brandProfile) {
+      await openGapSession(userId, inserted.id, parsed, brandProfile);
+    } else {
+      await openSession(userId, inserted.id, parsed);
+    }
   }
   return parsed;
 }

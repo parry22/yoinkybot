@@ -2,7 +2,10 @@ import { z } from "zod";
 import { InlineKeyboard } from "grammy";
 import { llmCall, extractJson } from "../llm/gateway.js";
 import { strategistSession } from "../prompts/strategist-session.v1.js";
+import { strategistProfiling, fieldSpec } from "../prompts/strategist-session.v2.js";
 import { diagnosisReveal } from "../prompts/diagnosis-reveal.v1.js";
+import { gapAnalysis } from "../prompts/gap-analysis.v1.js";
+import { computeGap } from "./gap.js";
 import { reactionSignal as reactionSignalPrompt } from "../prompts/reaction-signal.v1.js";
 import { hybridSearch } from "../memory/search.js";
 import { query, queryOne } from "../db/pool.js";
@@ -10,15 +13,27 @@ import { sendTelegramSequence } from "../telegram/bot.js";
 import { saveTurn } from "../telegram/conversation.js";
 import { currentDiagnosis, diagnosisById, type Diagnosis } from "./diagnosis.js";
 import { submitGoal, GOAL_TYPES } from "./goals.js";
-import { generatePlanDraft, confirmPlan, setPlanCadence, getPlan } from "./plan.js";
+import { generatePlanDraft, generateThreeMonthPlan, confirmPlan, setPlanCadence, getPlan } from "./plan.js";
 import { otherUnconnectedPlatform } from "./connect.js";
+import {
+  PROFILE_FIELDS,
+  upsertProfileField,
+  confirmPillars,
+  finalizeProfile,
+  profileSummaryForPrompt,
+  getProfile,
+  type ProfileField,
+  type BrandProfile,
+} from "./profile.js";
 import {
   DIAGNOSIS_BEATS,
   PLAN_BEATS,
   getState,
   setState,
+  setStage,
   type DiagnosisBeat,
   type PlanBeat,
+  type ProfileCursor,
   type SessionPhase,
   type StrategistState,
 } from "./state.js";
@@ -27,6 +42,9 @@ type ReactionSignal = "closing" | "continuation";
 
 // How many turns in a phase before the watchdog tells the LLM to land it.
 const WATCHDOG: Record<SessionPhase, number> = {
+  profiling: 60, // runaway backstop only; per-field pacing is push-once in the prompt
+  connect_transition: 4,
+  gap_analysis: 8,
   opening: 99,
   diagnosis_dialogue: 8,
   goals: 7,
@@ -182,7 +200,14 @@ export function applyActions(state: StrategistState, actions: Action[], reaction
   // The model reliably paces well but under-emits advance signals and can loop
   // forever. So the machine advances on its own once the phase's work is done.
 
-  if (phase === "diagnosis_dialogue") {
+  if (phase === "gap_analysis") {
+    // The gap analysis is delivered all-up-front (like the cold reveal), then we
+    // sit and talk. Leave for the three-month plan on a genuine closing signal
+    // (real pushback keeps the conversation open); watchdog is the backstop.
+    if (reaction !== "continuation" || turns >= WATCHDOG.gap_analysis) {
+      nextPhase = "plan_build";
+    }
+  } else if (phase === "diagnosis_dialogue") {
     const allRevealed = remainingBeats(covered).length === 0;
     const gateMet = canAdvanceDiagnosis(covered);
     if (allRevealed) {
@@ -233,6 +258,120 @@ export function applyActions(state: StrategistState, actions: Action[], reaction
   return { nextState, effects, capture, offerAngles };
 }
 
+// ── Profiling reducer (Stage 1-7 intake) ─────────────────────────────────────
+
+const profileActionSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("profile_field"),
+    field: z.enum(PROFILE_FIELDS),
+    value: z.union([z.string(), z.array(z.string())]),
+    unresolved: z.boolean().optional(),
+  }),
+  z.object({ type: z.literal("push_field"), field: z.enum(PROFILE_FIELDS) }),
+  z.object({ type: z.literal("capture") }),
+  z.object({ type: z.literal("offer_angles") }),
+]);
+export type ProfileAction = z.infer<typeof profileActionSchema>;
+
+export interface ProfileEffect {
+  kind: "persistField" | "confirmPillars" | "finalizeProfile";
+  field?: ProfileField;
+  value?: string | string[];
+  unresolved?: boolean;
+  pillars?: string[];
+}
+
+export interface ProfileReduceResult {
+  nextState: StrategistState;
+  effects: ProfileEffect[];
+  capture: boolean;
+  offerAngles: boolean;
+}
+
+export function parseProfileResponse(raw: unknown): { reply: string; actions: ProfileAction[] } {
+  const obj = (raw ?? {}) as Record<string, unknown>;
+  const reply = typeof obj.reply === "string" && obj.reply.trim() ? obj.reply.trim() : "";
+  const actions: ProfileAction[] = [];
+  if (Array.isArray(obj.actions)) {
+    for (const a of obj.actions) {
+      const parsed = profileActionSchema.safeParse(a);
+      if (parsed.success) actions.push(parsed.data);
+    }
+  }
+  return { reply, actions };
+}
+
+/** The next field the intake still needs, in ask order. Undefined = all done. */
+export function nextProfileField(cursor: ProfileCursor | undefined): ProfileField | undefined {
+  const captured = new Set(cursor?.captured ?? []);
+  return PROFILE_FIELDS.find((f) => !captured.has(f));
+}
+
+/**
+ * Pure reducer for the Stage 1-7 intake. Deterministic forward progress: a field
+ * captured (answered OR explicitly marked unresolved) is never asked again, so
+ * the intake always advances regardless of what the model emits. When every
+ * field is captured it finalizes the profile and moves to connect_transition.
+ */
+export function applyProfileActions(
+  state: StrategistState,
+  actions: ProfileAction[],
+): ProfileReduceResult {
+  const cursor: Required<ProfileCursor> = {
+    captured: [...(state.profile?.captured ?? [])],
+    pushed: [...(state.profile?.pushed ?? [])],
+    unresolved: [...(state.profile?.unresolved ?? [])],
+    pillarsDrafted: [...(state.profile?.pillarsDrafted ?? [])],
+  };
+  const turns = state.turnsInPhase ?? 0;
+  const effects: ProfileEffect[] = [];
+  let capture = false;
+  let offerAngles = false;
+
+  for (const a of actions) {
+    if (a.type === "capture") capture = true;
+    else if (a.type === "offer_angles") offerAngles = true;
+    else if (a.type === "push_field") {
+      if (!cursor.pushed.includes(a.field)) cursor.pushed.push(a.field);
+    } else if (a.type === "profile_field") {
+      // content_pillars carries its own effect so the confirmed flag is set too.
+      if (a.field === "content_pillars") {
+        const pillars = Array.isArray(a.value) ? a.value : [a.value];
+        effects.push({ kind: "confirmPillars", pillars });
+      } else {
+        effects.push({ kind: "persistField", field: a.field, value: a.value, unresolved: a.unresolved });
+      }
+      if (!cursor.captured.includes(a.field)) cursor.captured.push(a.field);
+      if (a.unresolved && !cursor.unresolved.includes(a.field)) cursor.unresolved.push(a.field);
+    }
+  }
+
+  // Runaway backstop: if the intake has dragged far past its field count, force
+  // the current field unresolved and move on rather than looping forever.
+  if (turns >= WATCHDOG.profiling) {
+    const stuck = nextProfileField(cursor);
+    if (stuck && !cursor.captured.includes(stuck)) {
+      cursor.captured.push(stuck);
+      if (!cursor.unresolved.includes(stuck)) cursor.unresolved.push(stuck);
+      effects.push({ kind: "persistField", field: stuck, value: "", unresolved: true });
+    }
+  }
+
+  const done = nextProfileField(cursor) === undefined;
+  if (done) effects.push({ kind: "finalizeProfile" });
+  const nextPhase: SessionPhase = done ? "connect_transition" : "profiling";
+  const phaseChanged = nextPhase !== (state.phase ?? "profiling");
+
+  const nextState: StrategistState = {
+    ...state,
+    phase: nextPhase,
+    profile: cursor,
+    awaitingConnect: nextPhase === "connect_transition" ? true : state.awaitingConnect,
+    turnsInPhase: phaseChanged ? 0 : turns + 1,
+  };
+  return { nextState, effects, capture, offerAngles };
+}
+
 // ── Orchestrator ─────────────────────────────────────────────────────────────
 
 export interface SessionResult {
@@ -272,6 +411,107 @@ async function classifyReaction(userId: string, lastBotMessage: string, message:
 }
 
 /**
+ * One turn of the Stage 1-7 profile intake (phases profiling + connect_transition).
+ * No diagnosis exists yet. Asks the next uncaptured field one at a time, persists
+ * each answer turn-by-turn (crash-safe + feeds the drop-off nudge), and on
+ * completion finalizes the profile and moves to the connect transition.
+ */
+async function runProfilingTurn(userId: string, message: string, state: StrategistState): Promise<SessionResult> {
+  const phase: SessionPhase = state.phase === "connect_transition" ? "connect_transition" : "profiling";
+  const cursor = state.profile ?? {};
+  const field = phase === "profiling" ? nextProfileField(cursor) : undefined;
+  // The field to ask after capturing the current one, so the model has the next
+  // question's option set in hand and doesn't stall for a turn on it.
+  const following = field
+    ? nextProfileField({ ...cursor, captured: [...(cursor.captured ?? []), field] })
+    : undefined;
+  const turnsInPhase = state.phase === phase ? (state.turnsInPhase ?? 0) : 0;
+
+  const [history, relevant, profileRow] = await Promise.all([
+    loadHistory(userId),
+    hybridSearch(userId, message, 4).catch(() => []),
+    getProfile(userId),
+  ]);
+
+  let reply = "Say more?";
+  let actions: ProfileAction[] = [];
+  try {
+    const res = await llmCall({
+      userId,
+      eventType: "strategist_profiling",
+      tier: strategistProfiling.tier,
+      system: strategistProfiling.system,
+      user: strategistProfiling.render({
+        phase,
+        history,
+        profileSoFar: profileSummaryForPrompt(profileRow),
+        nextField: field ?? null,
+        fieldSpec: field ? fieldSpec(field, profileRow) : "",
+        followingField: following ?? null,
+        followingSpec: following ? fieldSpec(following, profileRow) : "",
+        alreadyPushed: field ? (cursor.pushed ?? []).includes(field) : false,
+        relevantMemories: relevant.map((m) => m.content),
+        landItNow: turnsInPhase >= WATCHDOG[phase],
+      }),
+      json: true,
+      maxTokens: 700,
+    });
+    let envelope = res.parsed;
+    if (envelope === undefined) {
+      try {
+        envelope = extractJson(res.text);
+      } catch {
+        envelope = { reply: res.text };
+      }
+    }
+    const parsed = parseProfileResponse(envelope);
+    reply = parsed.reply || reply;
+    actions = parsed.actions;
+  } catch (err) {
+    console.error("profiling turn failed", err);
+    reply = "Give me a sec — lost my thread there. Say that again?";
+  }
+
+  // connect_transition just talks (delivering the Stage 8 hand-off); it captures
+  // no fields, so only run the reducer during the intake itself.
+  const reduced =
+    phase === "profiling"
+      ? applyProfileActions({ ...state, phase, turnsInPhase }, actions)
+      : {
+          nextState: { ...state, phase, turnsInPhase: turnsInPhase + 1 } as StrategistState,
+          effects: [] as ProfileEffect[],
+          capture: actions.some((a) => a.type === "capture"),
+          offerAngles: actions.some((a) => a.type === "offer_angles"),
+        };
+  let finalState = reduced.nextState;
+
+  try {
+    for (const eff of reduced.effects) {
+      if (eff.kind === "persistField" && eff.field) {
+        await upsertProfileField(userId, eff.field, eff.value ?? "", { unresolved: eff.unresolved });
+      } else if (eff.kind === "confirmPillars") {
+        await confirmPillars(userId, eff.pillars ?? []);
+      } else if (eff.kind === "finalizeProfile") {
+        await finalizeProfile(userId);
+        await setStage(userId, "profile_set");
+      }
+    }
+  } catch (err) {
+    console.error("profiling effect failed; will retry next turn", err);
+    // Don't advance out of profiling if persistence failed — reask next turn.
+    if (finalState.phase === "connect_transition" && reduced.effects.some((e) => e.kind === "finalizeProfile")) {
+      finalState = { ...finalState, phase: "profiling", awaitingConnect: false };
+    }
+  }
+
+  await saveTurn(userId, "user", message);
+  await saveTurn(userId, "assistant", reply);
+  await setState(userId, finalState);
+
+  return { reply, capture: reduced.capture, offerAngles: reduced.offerAngles, offerSecondPlatform: false };
+}
+
+/**
  * One turn of the paced onboarding conversation. Only called when the user is in
  * an onboarding phase (opening/diagnosis_dialogue/goals/plan_build). Loads state
  * + context, runs the phase-aware brain, applies the pure reducer, performs the
@@ -279,6 +519,12 @@ async function classifyReaction(userId: string, lastBotMessage: string, message:
  */
 export async function runSessionTurn(userId: string, message: string): Promise<SessionResult> {
   const state = await getState(userId);
+
+  // The Stage 1-7 intake runs before any diagnosis exists — its own path.
+  if (state.phase === "profiling" || state.phase === "connect_transition") {
+    return runProfilingTurn(userId, message, state);
+  }
+
   // The opener was a single message; the user's first reply begins the dialogue.
   const phase: SessionPhase = state.phase === "opening" ? "diagnosis_dialogue" : (state.phase ?? "diagnosis_dialogue");
 
@@ -306,7 +552,8 @@ export async function runSessionTurn(userId: string, message: string): Promise<S
   // Only true on the exact turn every diagnosis beat has already been shown —
   // i.e. the "pause" from the reveal. That's the one case where whether to
   // leave diagnosis_dialogue depends on reading the reply, not just pacing.
-  const awaitingReactionSignal = phase === "diagnosis_dialogue" && remainingBeats(covered).length === 0;
+  const awaitingReactionSignal =
+    (phase === "diagnosis_dialogue" && remainingBeats(covered).length === 0) || phase === "gap_analysis";
   const lastBotMessage = awaitingReactionSignal
     ? ([...history].reverse().find((h) => h.role === "assistant")?.content ?? "")
     : "";
@@ -353,6 +600,14 @@ export async function runSessionTurn(userId: string, message: string): Promise<S
   const reduced = applyActions({ ...state, phase, covered, planCovered, turnsInPhase }, actions, reaction);
   let finalState = reduced.nextState;
   let offerSecondPlatform = false;
+
+  // gap_analysis → plan_build: the user's reaction landed. Build and reveal the
+  // three-month plan (its own paced sequence) instead of a normal reply.
+  if (phase === "gap_analysis" && finalState.phase === "plan_build") {
+    await saveTurn(userId, "user", message);
+    await openPlanSession(userId, state.gapText);
+    return { reply: "", capture: reduced.capture, offerAngles: reduced.offerAngles, offerSecondPlatform: false };
+  }
 
   // Perform effects in order. Each effect only advances the phase AFTER its DB
   // work actually succeeds, and the whole loop is guarded so a mid-turn failure
@@ -463,6 +718,119 @@ export async function openSession(userId: string, diagnosisId: string, dimension
   });
   // Persist only the last message as the assistant turn so short chat history
   // stays coherent without ballooning from the full multi-part reveal.
+  await saveTurn(userId, "assistant", messages[messages.length - 1]!);
+  await sendTelegramSequence(userId, messages);
+}
+
+const GAP_FALLBACK =
+  "I read your whole history against everything you just told me. There's a real gap between what " +
+  "you're aiming for and what's actually out there. Before I lay it all out, does anything about " +
+  "how you've been showing up already feel off to you?";
+
+/**
+ * Stage 10: the gap analysis. Fired after connect+diagnosis when a completed
+ * brand profile exists. Computes the deterministic stated-vs-actual gap, has the
+ * model narrate it as a paced multi-message reveal, and leaves the session in
+ * gap_analysis with the diagnosis pinned — the user's next message is their
+ * reaction, and the machine advances to the three-month plan from there.
+ */
+export async function openGapSession(
+  userId: string,
+  diagnosisId: string,
+  dimensions: Diagnosis,
+  profile: BrandProfile,
+): Promise<void> {
+  const [samples, countRow, gap] = await Promise.all([
+    query<{ content: string }>(
+      `SELECT content FROM memories WHERE user_id = $1 AND status = 'active' ORDER BY created_at DESC LIMIT 8`,
+      [userId],
+    ),
+    queryOne<{ n: string }>(`SELECT count(*)::text n FROM memories WHERE user_id = $1 AND status = 'active'`, [userId]),
+    computeGap(userId, profile).catch((err) => {
+      console.error("gap computation failed; revealing on the diagnosis alone", err);
+      return null;
+    }),
+  ]);
+
+  let messages: string[] = [];
+  try {
+    const res = await llmCall({
+      userId,
+      eventType: "gap_analysis",
+      tier: gapAnalysis.tier,
+      system: gapAnalysis.system,
+      user: gapAnalysis.render({
+        profileSummary: profileSummaryForPrompt(profile),
+        diagnosis: dimensions,
+        gap: gap?.text ?? "(gap computation unavailable — work from the diagnosis and stated profile alone)",
+        sampleMemories: samples.map((s) => s.content),
+        memoryCount: Number(countRow?.n ?? samples.length),
+      }),
+      json: true,
+      maxTokens: 2500,
+    });
+    const parsed = (res.parsed ?? {}) as { messages?: unknown };
+    if (Array.isArray(parsed.messages)) {
+      messages = parsed.messages.filter((m): m is string => typeof m === "string" && m.trim().length > 0);
+    }
+  } catch (err) {
+    console.error("gap analysis generation failed", err);
+  }
+  if (messages.length === 0) messages = [GAP_FALLBACK];
+
+  await setState(userId, {
+    phase: "gap_analysis",
+    diagnosisId,
+    covered: [...DIAGNOSIS_BEATS],
+    gapText: gap?.text, // reused by the three-month plan so we don't recompute
+    turnsInPhase: 0,
+  });
+  await saveTurn(userId, "assistant", messages[messages.length - 1]!);
+  await sendTelegramSequence(userId, messages);
+}
+
+/**
+ * Stage 11: the three-month plan, delivered when the gap analysis lands and the
+ * user is ready. Generates the plan from the diagnosis + stated profile + the gap
+ * kept from the reveal, then delivers a paced month-by-month reveal and sits in
+ * plan_build awaiting confirmation (cadence is the stated capacity, not asked).
+ */
+export async function openPlanSession(userId: string, gapText?: string): Promise<void> {
+  const profile = await getProfile(userId);
+  const plan = profile ? await generateThreeMonthPlan(userId, profile, gapText ?? "").catch((err) => {
+    console.error("three-month plan generation failed", err);
+    return null;
+  }) : null;
+
+  if (!plan) {
+    await sendTelegramSequence(userId, [
+      "I hit a snag building your three-month plan just now. Give me a moment and say 'plan' to try again.",
+    ]);
+    return;
+  }
+
+  const messages: string[] = [];
+  messages.push(`Here's the shift that closes the biggest gap:\n\n${plan.repositioning}`);
+  messages.push(`🎯 What you become known for:\n${plan.throughline}`);
+  for (const m of plan.months) messages.push(`${m.label}\n${m.objective}`);
+  if (plan.unlock.length) {
+    messages.push(
+      "First pieces, pulled straight from what you're already sitting on:\n" +
+        plan.unlock.slice(0, 3).map((u, i) => `${i + 1}. ${u.idea}`).join("\n"),
+    );
+  }
+  messages.push(
+    `Cadence: ${plan.perWeek} posts a week, the honest number you gave me. ` +
+      "If that lands, say the word and I'll lock it in and start working it with you.",
+  );
+
+  await setState(userId, {
+    phase: "plan_build",
+    planId: plan.planId,
+    planCovered: [...PLAN_BEATS], // fully presented — the plan_build turn just confirms
+    cadenceSet: true,
+    turnsInPhase: 0,
+  });
   await saveTurn(userId, "assistant", messages[messages.length - 1]!);
   await sendTelegramSequence(userId, messages);
 }
