@@ -34,6 +34,7 @@ import { recordReplyOutcome } from "../engagement/service.js";
 import { parseRepurposeCommand, repurposeContent, recordRepurposeUse } from "../drafting/repurpose.js";
 import { parsePeersCommand, addPeer, removePeer, listPeers } from "../benchmark/peers.js";
 import { parseSettingsCommand, applySettings, SETTINGS_USAGE } from "./settings.js";
+import { trackOutgoingMessages, recordMessage, deleteAllTrackedMessages } from "./message-log.js";
 import {
   type Channel,
   connectAccount,
@@ -108,6 +109,23 @@ export function createBot(): Bot | undefined {
   }
   bot = new Bot(config.TELEGRAM_BOT_TOKEN);
 
+  // Track every outgoing message's (chat_id, message_id) so /clear can delete
+  // the visible chat, not just derived data. Registered on bot.api.config, so
+  // grammY re-applies it to every per-update ctx.api AND direct bot.api calls
+  // from job/worker code (sendTelegram, sendTelegramSequence) — see message-log.ts.
+  bot.api.config.use(trackOutgoingMessages);
+
+  // Track every genuine incoming message the same way (never for callback_query
+  // or edited-message updates — only real new messages count as "chat history").
+  bot.use(async (ctx, next) => {
+    const msg = ctx.update.message;
+    if (msg && ctx.chat?.type === "private") {
+      const user = await findOrCreateUserByTelegram(msg.from.id);
+      await recordMessage(user.id, msg.chat.id, msg.message_id);
+    }
+    await next();
+  });
+
   bot.command("start", async (ctx) => {
     const payload = ctx.match?.trim();
     if (payload) {
@@ -166,7 +184,8 @@ export function createBot(): Bot | undefined {
       .text("Cancel", "clr:cancel");
     await ctx.reply(
       "This wipes everything: your captured history, memories, positions, diagnosis, goals, plan, " +
-        "and our whole conversation. You'll start over from connecting an account. This can't be undone.\n\n" +
+        "and deletes every message in this chat, ours and yours. You'll start over from connecting " +
+        "an account. This can't be undone.\n\n" +
         "Sure?",
       { reply_markup: kb },
     );
@@ -505,16 +524,25 @@ export function createBot(): Bot | undefined {
 
     if (data.startsWith("clr:")) {
       if (data === "clr:confirm") {
-        await ctx.editMessageText("Wiping everything…");
+        // Ack immediately — deleting a long chat history can take a few
+        // seconds and answerCallbackQuery has its own short timeout.
+        await ctx.answerCallbackQuery({ text: "Wiping everything…" });
+        // Delete the visible chat FIRST, while telegram_messages still has the
+        // ids — resetUserData wipes that table along with everything else.
+        await deleteAllTrackedMessages(ctx.api, user.id).catch((err) =>
+          console.error("clear: message deletion sweep failed", err),
+        );
         await resetUserData(user.id);
+        // A fresh message in the now-empty chat — it gets tracked by the
+        // outgoing transformer like everything from here on.
         await ctx.reply(
           "Done. Clean slate. Connect an account and I'll read it from scratch:\n" +
             "/connect x <your @handle>\n/connect linkedin <your profile url>\n\n" +
             "Or /demo to walk the whole thing on a sample profile.",
         );
-      } else {
-        await ctx.editMessageText("Cancelled. Nothing was deleted.");
+        return;
       }
+      await ctx.editMessageText("Cancelled. Nothing was deleted.");
       return void (await ctx.answerCallbackQuery());
     }
 

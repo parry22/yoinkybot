@@ -127,6 +127,7 @@ export async function resetUserData(userId: string): Promise<void> {
     "memories", // cascades memory_links
     "captures",
     "connected_accounts",
+    "telegram_messages",
   ];
   await withTransaction(async (client) => {
     for (const t of tables) {

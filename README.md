@@ -21,6 +21,10 @@ connect your accounts, get diagnosed, build a plan, and ship content.
 
 <!-- Keep newest-first. Update this whenever a change ships that a reader of the repo should know about. -->
 
+- **2026-07-11 — `/clear` now deletes the visible chat too.** Every Telegram
+  message (yours and the bot's) is tracked as it's sent; `/clear` batch-deletes
+  all of them before wiping the DB, so a reset actually clears the conversation,
+  not just the underlying data.
 - **2026-07-11 — Profile-first onboarding + gap analysis.** Onboarding is now an
   11-stage strategist conversation: it draws out a full stated brand profile
   (positioning, goal, audience, voice/tone, pillars, format, constraints) one

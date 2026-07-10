@@ -158,6 +158,30 @@ When adding a capability: add the schema to `chat-tools.ts`, the executor case
 to `actions.ts`, document it in the `converse.v2` tool list, and keep the slash
 command a thin wrapper over the same executor.
 
+**Message tracking + `/clear`** (`telegram/message-log.ts`, added 2026-07-11).
+Telegram gives bots no "list messages in a chat" API, so making `/clear`
+actually clear the visible chat requires recording every message_id as it
+happens — it cannot be backfilled for history that predates this. Two hooks,
+both registered once in `createBot()` right after `new Bot(...)`:
+- **Outgoing:** `trackOutgoingMessages`, a `bot.api.config.use(...)` transformer.
+  It filters on "does the response carry a `message_id`" rather than a
+  hardcoded method list, so any send-shaped call is covered automatically and
+  non-message calls (`answerCallbackQuery`, `setMyCommands`, …) are naturally
+  skipped. grammY re-applies transformers installed on `bot.api.config` to
+  every per-update `ctx.api` instance AND to direct `bot.api.*` calls made from
+  job/worker code with no `ctx` in scope (`sendTelegram`, `sendTelegramSequence`)
+  — one registration covers the whole app.
+- **Incoming:** a `bot.use(...)` global middleware checking `ctx.update.message`
+  directly (never `ctx.message`, which would also resolve for other update
+  shapes) and `ctx.chat?.type === "private"`.
+- Both write to `telegram_messages` (migration `0015`, one row per message).
+  `/clear`'s `clr:confirm` handler calls `deleteAllTrackedMessages(ctx.api,
+  userId)` — chunks ids into batches of 100 (the `deleteMessages` API cap),
+  falling back to per-message `deleteMessage` calls if a batch fails, never
+  throwing — BEFORE `resetUserData`, since that wipes `telegram_messages` along
+  with everything else. Best-effort by design: a message too old or already
+  gone doesn't block the rest of the wipe.
+
 ---
 
 ## 3b. Onboarding: profile-first, then the gap (Stages 1-11)
@@ -232,7 +256,7 @@ that crosses a stated constraint is a failure, not a draft.
 
 ## 4. Data model
 
-Schema is a linear migration chain in `src/db/migrations/` (`0001`…`0014`),
+Schema is a linear migration chain in `src/db/migrations/` (`0001`…`0015`),
 applied on boot and via `pnpm db:migrate` (`src/db/migrate.ts`). pgvector is
 required for embedding columns.
 

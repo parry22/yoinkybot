@@ -83,6 +83,13 @@ export async function findOrCreateUserByTelegram(telegramId: number): Promise<Us
   ])) as unknown as User;
 }
 
+/** Read-only lookup — never creates a row. Used by the outgoing message tracker
+ *  so a DM to a non-app chat (e.g. an admin alert) doesn't spawn a stray user. */
+export async function findUserIdByTelegramId(telegramId: number): Promise<string | null> {
+  const row = await queryOne<{ id: string }>(`SELECT id FROM users WHERE telegram_id = $1`, [telegramId]);
+  return row?.id ?? null;
+}
+
 export async function findOrCreateUserByEmail(email: string): Promise<User> {
   const existing = (await queryOne(`SELECT * FROM users WHERE email = $1`, [email])) as User | undefined;
   if (existing) return existing;
