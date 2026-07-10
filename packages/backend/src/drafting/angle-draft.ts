@@ -6,6 +6,7 @@ import { hybridSearch } from "../memory/search.js";
 import { currentVoiceProfile } from "../voice/profile.js";
 import { entitlementsFor } from "../billing/entitlements.js";
 import { markUnlockDeveloped } from "../strategist/plan.js";
+import { enforceStyle } from "../prompts/style.js";
 
 const draftSchema = z.object({
   draft: z.string(),
@@ -87,6 +88,7 @@ export async function draftFromAngle(
   });
   const parsed = draftSchema.parse(res.parsed);
   if (!parsed.draft) return { ok: false, draft: "", note: parsed.note || "Couldn't produce a draft from that angle." };
+  const draft = enforceStyle(parsed.draft);
 
   // Persist the draft and link it back to the angle.
   const draftRow = await queryOne<{ id: string }>(
@@ -94,7 +96,7 @@ export async function draftFromAngle(
      VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
     [
       userId,
-      parsed.draft,
+      draft,
       platform,
       parsed.source_memory_ids.filter((s) => /^[0-9a-f-]{36}$/.test(s)),
       angle.id,
@@ -103,7 +105,7 @@ export async function draftFromAngle(
   );
   await query(`UPDATE angles SET chosen = true, draft_id = $2 WHERE id = $1`, [angle.id, draftRow?.id ?? null]);
   // If this draft develops a pending unlock-list idea, close the loop.
-  await markUnlockDeveloped(userId, parsed.draft, draftRow?.id).catch(() => {});
+  await markUnlockDeveloped(userId, draft, draftRow?.id).catch(() => {});
 
-  return { ok: true, draft: parsed.draft, note: parsed.note };
+  return { ok: true, draft, note: parsed.note };
 }

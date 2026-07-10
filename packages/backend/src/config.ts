@@ -17,6 +17,17 @@ const schema = z.object({
   GROQ_API_KEY: z.string().optional(),
   GROQ_STT_MODEL: z.string().default("whisper-large-v3-turbo"),
 
+  // OpenRouter — the primary LLM route (frontier + cheap tiers). Legacy direct
+  // providers below remain as the floor of the fallback chain.
+  OPENROUTER_API_KEY: z.string().optional(),
+  OPENROUTER_BASE_URL: z.string().default("https://openrouter.ai/api/v1"),
+  MODEL_FRONTIER: z.string().default("anthropic/claude-sonnet-5"),
+  MODEL_CHEAP_PRIMARY: z.string().default("z-ai/glm-5.2"),
+  MODEL_CHEAP_FLOOR: z.string().default("deepseek/deepseek-v4-flash"),
+  // Comma-separated OpenRouter provider names to exclude (spec: US/EU hosts only
+  // for the cheap tier). Tighten or clear via env without a code change.
+  OPENROUTER_PROVIDER_IGNORE: z.string().default("Baidu,Alibaba,StreamLake"),
+
   ANTHROPIC_API_KEY: z.string().optional(),
   KIMI_API_KEY: z.string().optional(),
   KIMI_BASE_URL: z.string().default("https://api.moonshot.ai/v1"),
@@ -35,7 +46,9 @@ const schema = z.object({
   TAVILY_API_KEY: z.string().optional(),
 
   // Trends subsystem — provider chosen by TREND_PROVIDER, with ordered fallback.
-  TREND_PROVIDER: z.enum(["apify", "brave", "tavily", "x_api"]).default("apify"),
+  // "x_api" was never implemented — dropped from the enum so a misconfigured
+  // instance fails loudly at boot instead of silently having no trends provider.
+  TREND_PROVIDER: z.enum(["apify", "brave", "tavily"]).default("apify"),
   // Actor ids verified against live Apify runs on 2026-07-04 — see
   // trends/providers/apify.ts and capture/imports/apify-profile.ts for the
   // exact input/output field shapes each one expects.

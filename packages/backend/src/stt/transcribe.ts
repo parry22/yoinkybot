@@ -1,5 +1,9 @@
 import { config } from "../config.js";
 import { recordUsage } from "../usage/meter.js";
+import { fetchWithTimeout } from "../llm/gateway.js";
+
+/** Audio uploads take longer than a text completion; give them more headroom. */
+const STT_TIMEOUT_MS = 90_000;
 
 /**
  * Transcribe a voice note. Sarvam first (native Hindi/Hinglish/English), then
@@ -41,11 +45,11 @@ async function sarvam(audio: Buffer, filename: string): Promise<string> {
   form.append("file", new Blob([new Uint8Array(audio)]), filename);
   form.append("model", "saarika:v2.5");
   form.append("language_code", "unknown"); // auto-detect EN/HI/Hinglish
-  const res = await fetch("https://api.sarvam.ai/speech-to-text", {
-    method: "POST",
-    headers: { "api-subscription-key": config.SARVAM_API_KEY! },
-    body: form,
-  });
+  const res = await fetchWithTimeout(
+    "https://api.sarvam.ai/speech-to-text",
+    { method: "POST", headers: { "api-subscription-key": config.SARVAM_API_KEY! }, body: form },
+    STT_TIMEOUT_MS,
+  );
   if (!res.ok) throw new Error(`sarvam ${res.status}: ${await res.text()}`);
   const data = (await res.json()) as { transcript: string };
   if (!data.transcript?.trim()) throw new Error("sarvam returned empty transcript");
@@ -56,11 +60,11 @@ async function groq(audio: Buffer, filename: string): Promise<string> {
   const form = new FormData();
   form.append("file", new Blob([new Uint8Array(audio)]), filename);
   form.append("model", config.GROQ_STT_MODEL);
-  const res = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
-    method: "POST",
-    headers: { authorization: `Bearer ${config.GROQ_API_KEY}` },
-    body: form,
-  });
+  const res = await fetchWithTimeout(
+    "https://api.groq.com/openai/v1/audio/transcriptions",
+    { method: "POST", headers: { authorization: `Bearer ${config.GROQ_API_KEY}` }, body: form },
+    STT_TIMEOUT_MS,
+  );
   if (!res.ok) throw new Error(`groq ${res.status}: ${await res.text()}`);
   const data = (await res.json()) as { text: string };
   if (!data.text?.trim()) throw new Error("groq returned empty transcript");
@@ -71,11 +75,11 @@ async function whisper(audio: Buffer, filename: string): Promise<string> {
   const form = new FormData();
   form.append("file", new Blob([new Uint8Array(audio)]), filename);
   form.append("model", "whisper-1");
-  const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-    method: "POST",
-    headers: { authorization: `Bearer ${config.OPENAI_API_KEY}` },
-    body: form,
-  });
+  const res = await fetchWithTimeout(
+    "https://api.openai.com/v1/audio/transcriptions",
+    { method: "POST", headers: { authorization: `Bearer ${config.OPENAI_API_KEY}` }, body: form },
+    STT_TIMEOUT_MS,
+  );
   if (!res.ok) throw new Error(`whisper ${res.status}: ${await res.text()}`);
   const data = (await res.json()) as { text: string };
   return data.text.trim();

@@ -6,6 +6,7 @@ import { llmCall } from "../llm/gateway.js";
 import { pullXMentions } from "../capture/imports/twitterapi-io.js";
 import { classifyMention } from "../prompts/classify-mention.v1.js";
 import { replyDraft } from "../prompts/reply-draft.v1.js";
+import { enforceStyle } from "../prompts/style.js";
 import { activePositions } from "../memory/positions.js";
 import { hybridSearch } from "../memory/search.js";
 import { currentVoiceProfile } from "../voice/profile.js";
@@ -21,6 +22,9 @@ import {
 
 /** Replies to mentions older than this read as weird — never surface them. */
 const MAX_MENTION_AGE_DAYS = 7;
+
+/** Reputation alerts override the weekly delivery budget, so cap them separately. */
+const WEEKLY_REPUTATION_CAP = 2;
 
 const classificationSchema = z.object({
   sentiment: z.enum(["positive", "neutral", "negative"]).catch("neutral"),
@@ -75,7 +79,8 @@ export async function ingestMentionsForUser(userId: string, handle: string): Pro
       const res = await llmCall({
         userId,
         eventType: "classify_mention",
-        tier: classifyMention.tier,
+        // High-volume, low-stakes classification — the cheap floor per the model registry.
+        tier: "cheap_floor",
         system: classifyMention.system,
         user: classifyMention.render({ content: m.content, authorHandle: m.authorHandle, userHandle: handle, positions }),
         json: true,
@@ -130,12 +135,19 @@ async function maybeReputationAlert(
   userId: string,
   m: { author: string; reach: number; content: string; url: string | null; mentionId: string },
 ): Promise<void> {
-  const recent = await queryOne<{ n: string }>(
-    `SELECT count(*)::text n FROM surfacings
-     WHERE user_id = $1 AND type = 'reputation_alert' AND delivered_at > now() - interval '24 hours'`,
+  // Reputation alerts are the one message allowed to override the shared weekly
+  // delivery budget — but that override must itself be bounded, or a bad news
+  // cycle turns into up to seven surprise DMs a week. At most one a day AND at
+  // most WEEKLY_REPUTATION_CAP a rolling week.
+  const recent = await queryOne<{ day: string; week: string }>(
+    `SELECT
+       count(*) FILTER (WHERE delivered_at > now() - interval '24 hours')::text AS day,
+       count(*) FILTER (WHERE delivered_at > now() - interval '7 days')::text AS week
+     FROM surfacings
+     WHERE user_id = $1 AND type = 'reputation_alert'`,
     [userId],
   );
-  if (Number(recent?.n ?? 0) > 0) return;
+  if (Number(recent?.day ?? 0) > 0 || Number(recent?.week ?? 0) >= WEEKLY_REPUTATION_CAP) return;
 
   const surfacing = await queryOne<{ id: string }>(
     `INSERT INTO surfacings (user_id, memory_ids, type, payload, channel)
@@ -143,12 +155,15 @@ async function maybeReputationAlert(
     [userId, JSON.stringify({ mention_id: m.mentionId, author: m.author, reach: m.reach })],
   );
   if (!surfacing) return;
-  await sendTelegram(
+  const sent = await sendTelegram(
     userId,
     `Worth seeing now rather than later: @${m.author} (${m.reach.toLocaleString()} followers) posted this about you:\n\n` +
       `"${m.content.slice(0, 300)}"${m.url ? `\n${m.url}` : ""}\n\n` +
       `No action needed from me unless you want it. If it's reply-worthy, a draft will come through the normal path.`,
-  ).catch(() => {});
+  ).catch(() => false);
+  // If it didn't land, drop the row so it doesn't consume the daily/weekly
+  // reputation slot and silence the next genuine alert.
+  if (!sent) await query(`DELETE FROM surfacings WHERE id = $1`, [surfacing.id]);
 }
 
 // ── Delivery (called from the proactive tick, ahead of resurfacing) ──────────
@@ -233,28 +248,37 @@ export async function maybeOfferReplyDraft(userId: string): Promise<boolean> {
     maxTokens: 400,
   });
   const parsed = draftSchema.parse(res.parsed);
+  const draft = enforceStyle(parsed.draft);
 
   const surfacing = await queryOne<{ id: string }>(
     `INSERT INTO surfacings (user_id, memory_ids, type, payload, channel)
      VALUES ($1, '{}', 'reply_draft', $2, 'telegram') RETURNING id`,
-    [userId, JSON.stringify({ mention_id: pick.id, intro: parsed.intro, draft: parsed.draft, reasons, score: pick.reply_worthy_score })],
+    [userId, JSON.stringify({ mention_id: pick.id, intro: parsed.intro, draft, reasons, score: pick.reply_worthy_score })],
   );
   if (!surfacing) return false;
 
   await query(`UPDATE mentions SET reply_status='drafted', draft_text=$2, reply_drafted_at=now() WHERE id = $1`, [
     pick.id,
-    parsed.draft,
+    draft,
   ]);
 
   const message =
-    `${parsed.intro}\n\nHere's a draft if you want to reply:\n\n"${parsed.draft}"\n\n` +
+    `${parsed.intro}\n\nHere's a draft if you want to reply:\n\n"${draft}"\n\n` +
     `Copy it, tweak it, or skip it.${pick.url ? `\n${pick.url}` : ""}`;
   const kb = new InlineKeyboard()
     .text("✅ sent it", `rp:${pick.id}:sent`)
     .text("✏️ sent, edited", `rp:${pick.id}:edited`)
     .row()
     .text("⏭ skip", `rp:${pick.id}:skip`);
-  return sendTelegram(userId, message, undefined, kb);
+  const sent = await sendTelegram(userId, message, undefined, kb);
+  if (!sent) {
+    // Delivery failed — don't leave a phantom surfacing row that counts against
+    // the budget and shows as history for a message that never arrived.
+    await query(`DELETE FROM surfacings WHERE id = $1`, [surfacing.id]);
+    await query(`UPDATE mentions SET reply_status='none', draft_text=NULL, reply_drafted_at=NULL WHERE id = $1`, [pick.id]);
+    return false;
+  }
+  return true;
 }
 
 // ── Feedback ─────────────────────────────────────────────────────────────────

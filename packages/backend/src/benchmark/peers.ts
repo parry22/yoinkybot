@@ -208,7 +208,8 @@ export async function ingestPeer(peer: {
       const res = await llmCall({
         userId: peer.user_id,
         eventType: "peer_themes",
-        tier: classifyPeerThemes.tier,
+        // High-volume, low-stakes tagging — the cheap floor per the model registry.
+        tier: "cheap_floor",
         system: classifyPeerThemes.system,
         user: classifyPeerThemes.render({ posts: untagged.map((u, i) => ({ index: i, content: u.content })) }),
         json: true,

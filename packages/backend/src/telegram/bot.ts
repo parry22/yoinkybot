@@ -14,7 +14,7 @@ import { generateDraft } from "../drafting/draft.js";
 import { converseWithUser, saveTurn } from "./conversation.js";
 import { maybeOfferAngles, createIdeaMoment } from "../jobs/offer-angles.js";
 import { startConnect, otherUnconnectedPlatform } from "../strategist/connect.js";
-import { currentDiagnosis, diagnosisById, formatDiagnosis, unsaidPatternKeyboard } from "../strategist/diagnosis.js";
+import { currentDiagnosis, diagnosisById, formatDiagnosis, unsaidPatternKeyboard, runDiagnosis } from "../strategist/diagnosis.js";
 import { getPlan, formatPlan } from "../strategist/plan.js";
 import { getStage, getState, setState, isOnboardingPhase } from "../strategist/state.js";
 import { runSessionTurn } from "../strategist/session-machine.js";
@@ -152,6 +152,20 @@ export function createBot(): Bot | undefined {
   bot.command("diagnose", async (ctx) => {
     const user = await requireUser(ctx);
     if (!user) return;
+    // Guard re-entry: a user who's already through onboarding shouldn't be thrown
+    // back into the paced session arc (goals/plan again). Refresh their read in
+    // place and just show it, rather than re-opening the strategist session.
+    const stage = await getStage(user.id);
+    if (stage === "active" || stage === "plan_active") {
+      await ctx.reply("Re-reading everything with your latest thinking. One sec.");
+      const refreshed = await runDiagnosis(user.id, { deliver: false }).catch(() => null);
+      if (!refreshed) {
+        await ctx.reply("Couldn't refresh the read just now — try again in a bit. Your existing /diagnosis still stands.");
+        return;
+      }
+      for (const chunk of formatDiagnosis(refreshed)) await ctx.reply(chunk);
+      return;
+    }
     await ctx.reply("Reading through everything now. Give me a minute and I'll open with what stands out.");
     await getBoss().send(QUEUES.diagnose, { userId: user.id, attempt: 0 });
   });
@@ -160,10 +174,14 @@ export function createBot(): Bot | undefined {
   bot.command("demo", async (ctx) => {
     const user = await requireUser(ctx);
     if (!user) return;
-    // Fresh slate so the demo run is clean.
-    for (const t of ["unlock_items", "brand_plans", "goals", "brand_diagnoses"]) {
+    // Fresh slate so the demo run is clean — and idempotent. Previously this
+    // left captures/memories in place, so each /demo stacked another copy of the
+    // seed on top of the last. Clear the derived artifacts AND the prior seed
+    // corpus (deleting the x_import captures cascades their memories + moments).
+    for (const t of ["unlock_items", "brand_plans", "goals", "brand_diagnoses", "surfacings", "drafts", "positions", "clusters", "voice_profiles"]) {
       await query(`DELETE FROM ${t} WHERE user_id = $1`, [user.id]);
     }
+    await query(`DELETE FROM captures WHERE user_id = $1 AND source = 'x_import'`, [user.id]);
     await query(`UPDATE users SET strategist_stage = 'new' WHERE id = $1`, [user.id]);
     await clearState(user.id);
 
@@ -176,6 +194,10 @@ export function createBot(): Bot | undefined {
       "Everyone obsesses over the product. Almost nobody obsesses over whether anyone will hear about it.",
       "The founders who win in crowded markets built an audience before they needed one.",
       "I keep replying to threads about creator burnout but I've never written my own take on it.",
+      "Most 'thought leadership' is just repackaged consensus. Real positioning means saying something a smart peer would disagree with.",
+      "Cold outreach works far better than founders admit. They just hate doing the reps.",
+      "The moat isn't the product. It's the distribution advantage you compound while competitors polish features.",
+      "I've changed my mind on remote work twice. The honest answer is it depends entirely on the stage of the company.",
     ];
     const boss = getBoss();
     for (const p of posts) {
@@ -285,19 +307,27 @@ export function createBot(): Bot | undefined {
     if (!user) return;
     const ent = await entitlementsFor(user.id);
     if (!ent.drafting) return void (await ctx.reply("Drafting is a paid feature — /upgrade to have me write for you."));
-    const topic = ctx.match?.trim();
-    if (!topic) return void (await ctx.reply("Tell me what to write: /draft <topic or angle>"));
+    const arg = ctx.match?.trim();
+    if (!arg) return void (await ctx.reply("Tell me what to write: /draft <topic or angle>  (or /draft linkedin <topic>)"));
+    // Optional leading platform token: "/draft linkedin <topic>" / "/draft x <topic>".
+    // Defaults to X. Everything after the token is the actual brief.
+    const platMatch = arg.match(/^(x|twitter|linkedin|li)\s+([\s\S]+)$/i);
+    const platform: "x" | "linkedin" = platMatch && /^(linkedin|li)$/i.test(platMatch[1]!) ? "linkedin" : "x";
+    const topic = platMatch ? platMatch[2]!.trim() : arg;
     await ctx.replyWithChatAction("typing");
-    const res = await generateDraft(user.id, topic, "x");
+    const res = await generateDraft(user.id, topic, platform);
     if (!res.ok) return void (await ctx.reply(res.note));
     // Persist so the repurpose button can find the text later (and so the
     // performance report's drafts-written count reflects reality).
     const row = await queryOne<{ id: string }>(
       `INSERT INTO drafts (user_id, content, platform, source_memory_ids, note)
-       VALUES ($1,$2,'x',$3,$4) RETURNING id`,
-      [user.id, res.draft, res.sources.map((s) => s.id), res.note ?? ""],
+       VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+      [user.id, res.draft, platform, res.sources.map((s) => s.id), res.note ?? ""],
     );
-    const kb = row ? new InlineKeyboard().text("♻️ LinkedIn version", `rpz:d:${row.id}:li`) : undefined;
+    // Offer the counterpart platform as a one-tap repurpose.
+    const otherPlatform = platform === "x" ? "li" : "x";
+    const otherLabel = platform === "x" ? "♻️ LinkedIn version" : "♻️ X version";
+    const kb = row ? new InlineKeyboard().text(otherLabel, `rpz:d:${row.id}:${otherPlatform}`) : undefined;
     await ctx.reply(`✍️ Draft:\n\n${res.draft}`, kb ? { reply_markup: kb } : undefined);
   });
 
@@ -666,6 +696,25 @@ export function createBot(): Bot | undefined {
       return;
     }
 
+    // Structural nudge: one-tap voice-profile build (offered when the user
+    // crosses the 50-memory threshold without a profile).
+    if (data === "nudge:voice") {
+      await ctx.answerCallbackQuery({ text: "Building it now…" });
+      const ent = await entitlementsFor(user.id);
+      if (!ent.voiceProfile) {
+        await ctx.reply("Voice profile is part of the paid tier. /upgrade and I'll build it the moment you're in.");
+        return;
+      }
+      await ctx.replyWithChatAction("typing");
+      const r = await buildVoiceProfile(user.id);
+      await ctx.reply(
+        r.ok
+          ? "Done. I've got your voice now, and every draft from here sounds like you wrote it on a good day. /voice to see what I learned."
+          : r.reason,
+      );
+      return;
+    }
+
     // Billing: generate a Dodo checkout link for the chosen tier.
     const bill = /^bill:(founding|paid)$/.exec(data);
     if (bill) {
@@ -791,9 +840,14 @@ async function beginConnect(
   platform: "x" | "linkedin",
   handle: string,
 ): Promise<void> {
-  if (!config.APIFY_TOKEN) {
+  // X ingestion runs on twitterapi.io (preferred) or Apify (fallback); LinkedIn
+  // is Apify-only. Gate on what THIS platform actually needs, so an X-only
+  // instance doesn't refuse an X connect for a missing LinkedIn dependency.
+  const canIngest =
+    platform === "x" ? !!(config.TWITTERAPI_IO_KEY || config.APIFY_TOKEN) : !!config.APIFY_TOKEN;
+  if (!canIngest) {
     await ctx.reply(
-      "Account ingestion needs an Apify token, which isn't set up on this instance yet.\n\n" +
+      `${platform === "x" ? "X" : "LinkedIn"} ingestion isn't configured on this instance yet.\n\n` +
         "To try the full flow now: send me a handful of your actual takes (just type them), then /diagnose — " +
         "or /demo to load a sample profile and watch the whole thing run.",
     );

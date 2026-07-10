@@ -8,12 +8,12 @@ const MIN_GAP_MS = 36 * 60 * 60 * 1000;
 
 /**
  * One shared proactive-delivery budget across ALL DM types (resurface,
- * angle_offer, trend_match, reply_draft). Prevents independent jobs from each
- * DMing the user up to the per-week cap and drowning them. Consistency
+ * angle_offer, trend_match, reply_draft, nudge). Prevents independent jobs from
+ * each DMing the user up to the per-week cap and drowning them. Consistency
  * flags are excluded — they're user-initiated (web), not proactive.
  * Progress reports are excluded — they have their own 14-day gate.
  */
-const PROACTIVE_TYPES = ["resurface", "angle_offer", "trend_match", "reply_draft", "performance_alert"];
+export const PROACTIVE_TYPES = ["resurface", "angle_offer", "trend_match", "reply_draft", "performance_alert", "nudge"];
 
 export interface CadenceDecision {
   ok: boolean;
@@ -31,8 +31,15 @@ export async function canDeliverProactive(
   const perWeek = Math.min(settings.resurface_per_week ?? ent.maxResurfacePerWeek, ent.maxResurfacePerWeek);
   if (perWeek <= 0) return { ok: false, reason: "weekly cap is zero" };
 
+  // The cold-start first touch is budget-exempt (it's the minimum viable
+  // presence, not a bonus message) but still anchors spacing, so the next
+  // regular delivery doesn't land right on its heels.
   const recent = await queryOne<{ count: string; last: string | null }>(
-    `SELECT count(*)::text AS count, max(delivered_at)::text AS last
+    `SELECT count(*) FILTER (
+       WHERE COALESCE(payload->>'cold_start', 'false') <> 'true'
+         AND COALESCE(payload->>'kind', '') <> 'cold_start'
+     )::text AS count,
+     max(delivered_at)::text AS last
      FROM surfacings
      WHERE user_id = $1 AND type = ANY($2) AND delivered_at > now() - interval '7 days'`,
     [userId, PROACTIVE_TYPES],

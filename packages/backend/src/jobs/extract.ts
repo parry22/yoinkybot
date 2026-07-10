@@ -24,16 +24,24 @@ const extractionSchema = z.object({
  * splitting), each individually classified; explicit beliefs land in positions.
  */
 export async function handleExtract(job: ExtractJob): Promise<void> {
-  const capture = await queryOne<{ id: string; raw_text: string | null; source: string; captured_at: string }>(
-    `SELECT id, raw_text, source, captured_at::text FROM captures WHERE id = $1`,
+  const capture = await queryOne<{ id: string; raw_text: string | null; source: string; captured_at: string; status: string }>(
+    `SELECT id, raw_text, source, captured_at::text, status FROM captures WHERE id = $1`,
     [job.captureId],
   );
-  if (!capture?.raw_text?.trim()) {
+  if (!capture) return;
+  // Idempotency: a job re-run after this capture already completed must be a
+  // no-op — otherwise a pg-boss retry double-inserts memories, re-fires belief
+  // DMs, and double-charges LLM spend.
+  if (capture.status === "processed") return;
+  if (!capture.raw_text?.trim()) {
     await query(`UPDATE captures SET status = 'failed' WHERE id = $1`, [job.captureId]);
     return;
   }
 
   try {
+    // Clear any memories from a prior partial attempt on THIS capture so a retry
+    // rebuilds cleanly instead of stacking duplicates (cascades memory_links).
+    await query(`DELETE FROM memories WHERE capture_id = $1`, [capture.id]);
     const res = await llmCall({
       userId: job.userId,
       eventType: "extract",
@@ -73,6 +81,11 @@ export async function handleExtract(job: ExtractJob): Promise<void> {
       }
     }
 
+    // Mark terminal BEFORE any user-facing DM: if the DM (or a later step) fails
+    // and the job retries, the status guard above short-circuits it, so the
+    // belief-change message is sent at most once.
+    await query(`UPDATE captures SET status = 'processed' WHERE id = $1`, [capture.id]);
+
     // A belief flipped during LIVE conversation → tell them, transparently.
     // Bulk imports reconcile silently (200 posts of history would be noise).
     if (supersessions.length && (capture.source === "telegram_text" || capture.source === "telegram_voice")) {
@@ -84,8 +97,6 @@ export async function handleExtract(job: ExtractJob): Promise<void> {
         `Updated what I believe you think. ${lines.join(". ")}. The old version stays in your history, say the word if I read that wrong.`,
       ).catch(() => {});
     }
-
-    await query(`UPDATE captures SET status = 'processed' WHERE id = $1`, [capture.id]);
   } catch (err) {
     await query(`UPDATE captures SET status = 'failed' WHERE id = $1`, [capture.id]);
     throw err;

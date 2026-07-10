@@ -1,6 +1,6 @@
 import { config } from "../config.js";
 import { recordUsage } from "../usage/meter.js";
-import { LlmHttpError } from "./gateway.js";
+import { LlmHttpError, fetchWithTimeout } from "./gateway.js";
 
 interface EmbeddingProvider {
   baseUrl: string;
@@ -39,7 +39,7 @@ async function embedChunk(
   texts: string[],
   provider: EmbeddingProvider,
 ): Promise<{ embeddings: number[][]; promptTokens: number }> {
-  const res = await fetch(`${provider.baseUrl}/embeddings`, {
+  const res = await fetchWithTimeout(`${provider.baseUrl}/embeddings`, {
     method: "POST",
     headers: {
       authorization: `Bearer ${provider.apiKey}`,

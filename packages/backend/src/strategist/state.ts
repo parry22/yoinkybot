@@ -59,10 +59,12 @@ export async function clearState(userId: string): Promise<void> {
 /**
  * Full account reset (the /clear command): wipe everything derived from the
  * user's work — captures, memories, positions, the diagnosis, goals, plan,
- * chat history, connected accounts — and put them back at the 'new' stage so
+ * chat history, drafts, repurposed content, mentions/replies, peer benchmarks,
+ * usage history, connected accounts — and put them back at the 'new' stage so
  * they start the connect flow over. The user row itself (Telegram identity)
  * and their billing subscription are kept. All deletes run in one transaction
- * so a partial wipe can never strand the account half-cleared.
+ * so a partial wipe can never strand the account half-cleared. The copy that
+ * introduces /clear promises "everything", so this list must stay exhaustive.
  *
  * Child tables are deleted before their parents; deleting `memories` cascades
  * to `memory_links`, and `surfacings` cascades to any `angles` under it.
@@ -72,6 +74,11 @@ export async function resetUserData(userId: string): Promise<void> {
     "unlock_items",
     "angles",
     "drafts",
+    "repurposed_content",
+    "sent_replies", // FK → mentions; delete before it
+    "mentions",
+    "peer_comparison_snapshots", // FK → peer_profiles; delete before it
+    "peer_profiles", // cascades peer_captures
     "surfacings",
     "moments",
     "brand_plans",
@@ -81,6 +88,7 @@ export async function resetUserData(userId: string): Promise<void> {
     "clusters",
     "voice_profiles",
     "chat_messages",
+    "usage_events",
     "memories", // cascades memory_links
     "captures",
     "connected_accounts",

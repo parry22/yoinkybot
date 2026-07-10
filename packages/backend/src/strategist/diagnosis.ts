@@ -16,6 +16,11 @@ const MAX_READINESS_ATTEMPTS = 20; // ~10 min of 30s re-checks
 // crosses roughly 2.5 minutes, so silence never reads as "broken" on a big profile.
 const SLOW_PING_ATTEMPT = 3;
 const SAMPLE_SIZE = 140;
+// The real signal floor. The connect path already guarantees ~40 posts; this
+// guards the thin manual path (a handful of typed takes) so we never hand back
+// a confident, full-shaped read built on almost nothing — the one thing this
+// product exists to never do. /demo seeds comfortably above it.
+const MIN_DIAGNOSIS_MEMORIES = 8;
 
 export const diagnosisSchema = z.object({
   headline: z.string(),
@@ -61,7 +66,18 @@ export async function handleDiagnose(job: DiagnoseJob): Promise<void> {
     return;
   }
 
-  await runDiagnosis(job.userId, { deliver: true });
+  try {
+    await runDiagnosis(job.userId, { deliver: true });
+  } catch (err) {
+    // A diagnosis that dies during generation must never leave the user frozen
+    // on "Reading through everything now…" with no word. Tell them plainly and
+    // let them retry, rather than silently failing into pg-boss's retry limit.
+    console.error(`diagnosis generation failed for ${job.userId}`, err);
+    await sendTelegram(
+      job.userId,
+      "I hit a snag putting your diagnosis together just now. Nothing you did. Give it another go with /diagnose in a couple of minutes and I'll pick it right back up.",
+    ).catch(() => {});
+  }
 }
 
 /** Generate + store the diagnosis. When `deliver`, opens the paced strategist session. */
@@ -82,11 +98,11 @@ export async function runDiagnosis(
       ORDER BY m.created_at ASC LIMIT 40)`,
     [userId, SAMPLE_SIZE],
   );
-  if (posts.length < 3) {
+  if (posts.length < MIN_DIAGNOSIS_MEMORIES) {
     if (opts.deliver) {
       await sendTelegram(
         userId,
-        "I don't have enough of your thinking yet to give you a real diagnosis — connect an account or send me a few posts' worth of takes first. A shallow read would just waste your time.",
+        "I don't have enough of your thinking yet to give you a real diagnosis — connect an account, or send me a handful more of your actual takes first. A shallow read would just waste your time.",
       );
     }
     return null;

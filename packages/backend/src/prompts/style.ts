@@ -5,6 +5,29 @@
  * everywhere instead of drifting across a dozen prompt files.
  */
 
+/**
+ * Deterministic safety net for the two style rules a model MUST NOT break but
+ * still occasionally does (especially fallback models): em/en dashes and
+ * hashtags. The prompts forbid both, this guarantees it on the final text so a
+ * disobedient model can't ship the clearest AI tells into a user-facing post or
+ * reply. Applied AFTER generation, to every deliverable that isn't the diagnosis
+ * (which has its own lint). Intentionally narrow: it fixes the two absolutes,
+ * not stylistic taste.
+ */
+export function enforceStyle(text: string): string {
+  if (!text) return text;
+  let out = text
+    // Em/en dash as a clause separator → comma. Handles "a—b" and "a — b".
+    .replace(/\s*[—–]\s*/g, ", ")
+    // Hashtags anywhere → removed, surrounding whitespace preserved.
+    .replace(/(^|\s)#[\p{L}\p{N}_]+/gu, "$1")
+    // Tidy artifacts the substitutions can introduce.
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\s+([,.!?;:])/g, "$1")
+    .replace(/,\s*([.!?])/g, "$1");
+  return out.trim();
+}
+
 /** Condensed rules for short, conversational Yoinky-authored text (not full posts). */
 export const CHAT_STYLE_RULES = `HOW YOU WRITE (non-negotiable):
 - Never use em dashes. Use a period and a new sentence, or a comma, or a shorter sentence.

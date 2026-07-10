@@ -8,6 +8,7 @@ import { currentVoiceProfile } from "../voice/profile.js";
 import { getPlan } from "../strategist/plan.js";
 import { activeGoals } from "../strategist/goals.js";
 import { getStage } from "../strategist/state.js";
+import { enforceStyle } from "../prompts/style.js";
 
 const HISTORY_TURNS = 10;
 
@@ -153,9 +154,10 @@ export async function converseWithUser(userId: string, message: string): Promise
     maxTokens: 600,
   });
   const parsed = replySchema.parse(res.parsed);
+  const reply = enforceStyle(parsed.reply);
 
   await saveTurn(userId, "user", message);
-  await saveTurn(userId, "assistant", parsed.reply);
+  await saveTurn(userId, "assistant", reply);
 
-  return { reply: parsed.reply, capture: parsed.capture, offerAngles: parsed.offer_angles };
+  return { reply, capture: parsed.capture, offerAngles: parsed.offer_angles };
 }

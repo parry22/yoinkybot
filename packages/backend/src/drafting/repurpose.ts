@@ -5,6 +5,7 @@ import { embedOne } from "../llm/embeddings.js";
 import { currentVoiceProfile } from "../voice/profile.js";
 import { createCapture } from "../capture/service.js";
 import { repurpose as repurposePrompt, type RepurposeVars } from "../prompts/repurpose.v1.js";
+import { enforceStyle } from "../prompts/style.js";
 
 /**
  * Repurposing = TRANSFORMATION of finished material, never fresh generation.
@@ -258,15 +259,21 @@ export async function repurposeContent(userId: string, req: RepurposeRequest): P
       }
     }
   } catch (err) {
-    console.error("fidelity check failed; delivering unchecked", err);
+    // Fidelity couldn't be verified (e.g. the embedding call failed). Don't ship
+    // it as if it passed — say so, so the user reads it against their source.
+    console.error("fidelity check failed; flagging as unverified", err);
+    parsed.notes = [parsed.notes, "Heads up: I couldn't verify this stayed true to your original just now, so read it against the source before using it."]
+      .filter(Boolean)
+      .join(" ");
   }
 
+  const output = enforceStyle(parsed.output);
   const row = await queryOne<{ id: string }>(
     `INSERT INTO repurposed_content (user_id, source_type, source_ids, mode, target_platform, output_text)
      VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-    [userId, req.sourceType, sourceIds, req.mode, req.target, parsed.output],
+    [userId, req.sourceType, sourceIds, req.mode, req.target, output],
   );
-  return { ok: true, id: row?.id, output: parsed.output, notes: parsed.notes };
+  return { ok: true, id: row?.id, output, notes: parsed.notes };
 }
 
 /** "Posted it" → mark used and log it as real published output (feeds voice + diagnosis). */

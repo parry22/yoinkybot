@@ -3,6 +3,7 @@ import { llmCall } from "../llm/gateway.js";
 import { draftPost } from "../prompts/draft.v1.js";
 import { hybridSearch } from "../memory/search.js";
 import { currentVoiceProfile } from "../voice/profile.js";
+import { enforceStyle } from "../prompts/style.js";
 
 const draftSchema = z.object({
   draft: z.string(),
@@ -57,14 +58,15 @@ export async function generateDraft(
     maxTokens: 1500,
   });
   const parsed = draftSchema.parse(res.parsed);
+  const draft = enforceStyle(parsed.draft);
   const cited = new Set(parsed.source_memory_ids);
   const sources = memories
     .filter((m) => cited.has(m.id))
     .map((m) => ({ id: m.id, content: m.content, kind: m.kind }));
 
   return {
-    ok: parsed.draft.length > 0,
-    draft: parsed.draft,
+    ok: draft.length > 0,
+    draft,
     note: parsed.note,
     // If the model cited nothing explicitly, show everything it was given.
     sources: sources.length > 0 ? sources : memories.map((m) => ({ id: m.id, content: m.content, kind: m.kind })),
