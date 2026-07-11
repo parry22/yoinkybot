@@ -21,6 +21,14 @@ connect your accounts, get diagnosed, build a plan, and ship content.
 
 <!-- Keep newest-first. Update this whenever a change ships that a reader of the repo should know about. -->
 
+- **2026-07-11 — Skipping an onboarding question now always works.** "let's
+  skip this question", "next question please", "pass", "move on" etc. are
+  matched deterministically (`detectSkipIntent`) and always advance on the
+  first try — not left to the model to recognize reliably, since a model that
+  misses an explicit decline just re-asks the same question forever. The
+  skipped field is marked unresolved, never forced. Distinct from a real empty
+  answer ("none"/"n/a" for e.g. off-limits topics), which still captures as
+  intentional-empty, not unresolved.
 - **2026-07-11 — A dead LLM route can't hide anymore.** `/health` now reports
   `llm: true|false` (key presence), boot screams and DMs the admin when
   `OPENROUTER_API_KEY` is missing, and every failed live turn DMs the admin the

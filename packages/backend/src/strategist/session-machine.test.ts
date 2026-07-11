@@ -5,6 +5,7 @@ import {
   parseSessionResponse,
   parseProfileResponse,
   nextProfileField,
+  detectSkipIntent,
   canAdvanceDiagnosis,
   unsaidUnlocked,
   gapBeatsCovered,
@@ -219,6 +220,43 @@ describe("goalDraftComplete", () => {
   it("requires all three fields", () => {
     expect(goalDraftComplete({ optimizing_for: "x", timeframe: "y" })).toBe(false);
     expect(goalDraftComplete({ optimizing_for: "x", timeframe: "y", success: "z" })).toBe(true);
+  });
+});
+
+describe("detectSkipIntent", () => {
+  it("matches the real phrasings that broke onboarding", () => {
+    expect(detectSkipIntent("lets skip this question")).toBe(true);
+    expect(detectSkipIntent("next question please")).toBe(true);
+  });
+  it("matches common explicit-decline phrasings", () => {
+    for (const t of [
+      "skip",
+      "skip that",
+      "let's skip",
+      "can we skip this one",
+      "pass",
+      "pass on this",
+      "move on",
+      "moving on please",
+      "I'd rather not answer",
+      "prefer not to say",
+      "not answering that",
+      "don't want to answer",
+      "no comment",
+    ]) {
+      expect(detectSkipIntent(t)).toBe(true);
+    }
+  });
+  it("does NOT treat a real substantive answer as a skip", () => {
+    expect(detectSkipIntent("AI & Personal Branding space")).toBe(false);
+    expect(detectSkipIntent("product, audience and community")).toBe(false);
+  });
+  it("does NOT misclassify a legitimate empty answer as a skip", () => {
+    // "none"/"n/a" are real answers (e.g. no off-limits topics), not declines —
+    // they must stay distinguishable from an explicit skip.
+    expect(detectSkipIntent("none")).toBe(false);
+    expect(detectSkipIntent("n/a")).toBe(false);
+    expect(detectSkipIntent("nothing really")).toBe(false);
   });
 });
 

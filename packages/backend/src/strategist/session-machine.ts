@@ -309,6 +309,21 @@ export function nextProfileField(cursor: ProfileCursor | undefined): ProfileFiel
 }
 
 /**
+ * An explicit request to skip/pass the current question. Different from the
+ * "push once on vagueness" flow — this is an unambiguous decline, and a real
+ * strategist honors it immediately, not by re-asking. Matched deterministically
+ * (not left to the model) because a model that fails to recognize "skip this"
+ * as a skip just re-asks the same question, which is the exact bug this exists
+ * to prevent: an explicit skip must always advance, on the first try.
+ */
+const SKIP_INTENT_RE =
+  /\b(skip(?:\s+(?:this|that|it|one|question))?|let'?s\s+skip|can\s+we\s+skip|pass(?:\s+(?:this|that|on\s+(?:this|that))?)?|next\s+question|move\s+on|moving\s+on|rather\s+not\s+(?:answer|say)|prefer\s+not\s+to\s+(?:answer|say)|not\s+answering\s+(?:this|that)|don'?t\s+want\s+to\s+answer|no\s+comment)\b/i;
+
+export function detectSkipIntent(text: string): boolean {
+  return SKIP_INTENT_RE.test(text.trim());
+}
+
+/**
  * Pure reducer for the Stage 1-7 intake. Deterministic forward progress: a field
  * captured (answered OR explicitly marked unresolved) is never asked again, so
  * the intake always advances regardless of what the model emits. When every
@@ -492,6 +507,18 @@ async function runProfilingTurn(userId: string, message: string, state: Strategi
     void import("../lib/alerts.js").then(({ alertAdmin }) =>
       alertAdmin("llm:profiling-turn", `Profiling turn LLM call failed — users are getting fallback questions. Error: ${err instanceof Error ? err.message : String(err)}`),
     );
+  }
+
+  // Deterministic skip: an explicit "skip/pass/next question" must ALWAYS
+  // advance, on the first try, whether or not the model recognized it (a model
+  // that misses it just re-asks the same question — that's the bug this fixes).
+  if (phase === "profiling" && field && detectSkipIntent(message)) {
+    const modelCapturedIt = actions.some((a) => a.type === "profile_field" && a.field === field);
+    if (!modelCapturedIt) {
+      actions = [...actions, { type: "profile_field", field, value: "", unresolved: true }];
+      const next = nextProfileField({ ...cursor, captured: [...(cursor.captured ?? []), field] });
+      reply = next ? `no worries, skipping that one. ${FALLBACK_QUESTION[next]}` : "got it, skipping that. that's everything, actually.";
+    }
   }
 
   // connect_transition just talks (delivering the Stage 8 hand-off); it captures
