@@ -4,8 +4,9 @@ import { createCapture } from "../capture/service.js";
 import { pullXProfile, pullLinkedInProfile } from "../capture/imports/apify-profile.js";
 import { applyRecencyWindow } from "../capture/imports/x.js";
 import { sendTelegram } from "../telegram/bot.js";
+import type { Platform } from "../lib/types.js";
 
-export type Platform = "x" | "linkedin";
+export type { Platform };
 
 // Recent history is what the diagnosis is about — a year-deep scrape mostly
 // buys extraction time, not insight. 90 days, floored at 40 posts (the read

@@ -22,6 +22,11 @@
  * transitions — so there is no import cycle.
  */
 import { query, queryOne } from "../db/pool.js";
+import type { BrandProfile } from "./types.js";
+
+// BrandProfile now lives in the strategist types barrel; re-exported here so the
+// long-standing `import { BrandProfile } from "./profile.js"` call sites keep working.
+export type { BrandProfile };
 
 /** The fields the Stage 1-6 intake elicits, in ask order. Names are the exact
  *  brand_profiles columns, so persistence is a 1:1 column write. */
@@ -123,38 +128,6 @@ export const TONE_CLUSTER: Record<string, string> = Object.fromEntries(
 );
 export const ALL_TONE_KEYS: string[] = TONE_TAXONOMY.flatMap((c) => c.items.map((i) => i.key));
 
-export interface BrandProfile {
-  id: string;
-  user_id: string;
-  version: number;
-  niche: string | null;
-  sub_niche_angle: string | null;
-  credibility_source: string | null;
-  unique_pov: string | null;
-  primary_goal: string | null;
-  secondary_goals: string[];
-  audience_who: string | null;
-  audience_sophistication: string | null;
-  audience_pain_point: string | null;
-  inspiration_creators: string[];
-  tone_selections: string[];
-  formality_gradient: string | null;
-  vulnerability_threshold: string | null;
-  content_pillars: string[];
-  content_pillars_confirmed: boolean;
-  camera_comfort: string | null;
-  visual_comfort: string | null;
-  primary_platform: string | null;
-  platform_adaptation: string | null;
-  posting_capacity: number | null;
-  employer_restrictions: string | null;
-  topics_off_limits: string[];
-  anonymity_needs: string | null;
-  unresolved: string[];
-  profile_completed_at: string | null;
-  created_at: string;
-  updated_at: string;
-}
 
 export async function getProfile(userId: string): Promise<BrandProfile | null> {
   return (

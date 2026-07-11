@@ -6,6 +6,7 @@ import { currentVoiceProfile } from "../voice/profile.js";
 import { createCapture } from "../capture/service.js";
 import { repurpose as repurposePrompt, type RepurposeVars } from "../prompts/repurpose.v1.js";
 import { enforceStyle } from "../prompts/style.js";
+import type { Platform } from "../lib/types.js";
 
 /**
  * Repurposing = TRANSFORMATION of finished material, never fresh generation.
@@ -16,7 +17,7 @@ import { enforceStyle } from "../prompts/style.js";
 
 export type RepurposeMode = "cross_platform" | "cross_format" | "synthesis";
 export type SourceType = "published_post" | "draft" | "memory_cluster" | "pasted_content";
-export type Platform = "x" | "linkedin";
+export type { Platform };
 
 /** Output drifting past this cosine distance from its source triggers one regeneration. */
 const FIDELITY_MAX_DISTANCE = 0.4;
