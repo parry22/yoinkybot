@@ -4,12 +4,13 @@
  * brand_profiles, filled in turn-by-turn during the paced intake, and referenced
  * by every downstream feature (drafting, consistency, gap analysis, plan).
  *
- * Deliberately lean (2026-07-11 trim): the intake asks 8 fields, not the original
- * 21 — the deeper positioning/audience/constraints fields (sub_niche_angle,
- * credibility_source, unique_pov, secondary_goals, audience_sophistication,
- * audience_pain_point, formality_gradient, vulnerability_threshold,
- * visual_comfort, platform_adaptation, posting_capacity, and all of the old
- * Stage 7 constraints trio) were cut for a faster, less form-like onboarding.
+ * Deliberately lean (2026-07-11 trim): the intake asks 7 fields, not the original
+ * 21 — the deeper positioning/audience/constraints/platform fields
+ * (sub_niche_angle, credibility_source, unique_pov, secondary_goals,
+ * audience_sophistication, audience_pain_point, formality_gradient,
+ * vulnerability_threshold, visual_comfort, primary_platform,
+ * platform_adaptation, posting_capacity, and all of the old Stage 7
+ * constraints trio) were cut for a faster, less form-like onboarding.
  * Their columns stay in the DB (additive-only schema) and are still read by
  * downstream code (gap.ts, plan.ts, draft.ts) — those code paths are null-aware
  * and degrade gracefully when a field was never asked; nothing crashes on the
@@ -36,9 +37,8 @@ export const PROFILE_FIELDS = [
   "tone_selections",
   // Stage 5: Content pillars (derived, then confirmed)
   "content_pillars",
-  // Stage 6: Format and platform
+  // Stage 6: Format
   "camera_comfort",
-  "primary_platform",
 ] as const;
 export type ProfileField = (typeof PROFILE_FIELDS)[number];
 
@@ -51,7 +51,7 @@ export const FIELD_STAGE: Record<ProfileField, number> = {
   audience_who: 3,
   inspiration_creators: 4, tone_selections: 4,
   content_pillars: 5,
-  camera_comfort: 6, primary_platform: 6,
+  camera_comfort: 6,
 };
 
 /** Stage 2 goal options — a single primary pick, no secondary-goals follow-up. */

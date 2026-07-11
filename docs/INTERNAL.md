@@ -89,7 +89,7 @@ full prior implementation if it ever needs to come back.
 | Area | Path | What it does |
 |---|---|---|
 | Telegram bot | `src/telegram/` | grammY bot, command handlers, conversation state. Commands (deliberately lean — 2026-07-11): `start, help, connect, draft, repurpose, peers, settings, upgrade`. Everything else (check, search/ask, status, diagnosis refresh, voice, forget, plan, positions, clearing your account) is done in plain language via the agentic chat layer (see §3a) — those slash commands were removed. |
-| Strategist flow | `src/strategist/` | The a16z Personal Brand Strategist onboarding. Profile-first arc: profiling (Stages 1-6, 8 fields) → connect → gap analysis → three-month plan → proactive. `session-machine.ts` is the state machine; `state.ts` persists it; `profile.ts` owns the stated profile; `gap.ts` computes the stated-vs-actual gap. See §3b. |
+| Strategist flow | `src/strategist/` | The a16z Personal Brand Strategist onboarding. Profile-first arc: profiling (Stages 1-6, 7 fields) → connect → gap analysis → three-month plan → proactive. `session-machine.ts` is the state machine; `state.ts` persists it; `profile.ts` owns the stated profile; `gap.ts` computes the stated-vs-actual gap. See §3b. |
 | Capture pipeline | `src/capture/` | Immutable capture of user input + imports (X via twitterapi.io→Apify, LinkedIn via Apify). Captures are never mutated. |
 | Memory core | `src/memory/` | Extraction → embed → link → search (RRF hybrid). `positions.ts` (stated positions), `confidence.ts`, `forget.ts` (hard delete). |
 | Voice | `src/voice/` | Voice profile from a user's own corpus; used to ground drafting. |
@@ -240,23 +240,23 @@ walks, the tone taxonomy + goal options, and the DB helpers
 unknown; `unresolved[]` records fields the user was pushed on once (or
 explicitly skipped) and still didn't answer.
 
-**Trimmed to 8 fields (2026-07-11).** The intake originally asked 21 fields
-across 7 stages; it's now: `niche` (1) → `primary_goal` (2) → `audience_who` (3)
-→ `inspiration_creators`, `tone_selections` (4) → `content_pillars` derived +
-confirmed (5) → `camera_comfort`, `primary_platform` (6). The deeper
-positioning/audience/constraints fields (`sub_niche_angle`,
+**Trimmed to 7 fields (2026-07-11, two passes).** The intake originally asked
+21 fields across 7 stages; it's now: `niche` (1) → `primary_goal` (2) →
+`audience_who` (3) → `inspiration_creators`, `tone_selections` (4) →
+`content_pillars` derived + confirmed (5) → `camera_comfort` (6, last question).
+The deeper positioning/audience/constraints/platform fields (`sub_niche_angle`,
 `credibility_source`, `unique_pov`, `secondary_goals`,
 `audience_sophistication`, `audience_pain_point`, `formality_gradient`,
-`vulnerability_threshold`, `visual_comfort`, `platform_adaptation`,
-`posting_capacity`, and the entire old Stage 7 constraints trio
-`employer_restrictions`/`topics_off_limits`/`anonymity_needs`) were cut for a
-faster, less form-like onboarding. Their `brand_profiles` columns stay (additive
-schema, no drops) and downstream code that reads them (`gap.ts`, `plan.ts`,
-`draft.ts`'s off-limits hard-block) is null-aware and degrades gracefully — those
-specific findings just never fire for new users. `FIELD_STAGE`/`fieldSpec`/
-`FALLBACK_QUESTION` are keyed only off the current `PROFILE_FIELDS`, so
-re-adding a field later means updating those three plus `profile.ts`'s
-`ARRAY_FIELDS`, nothing else.
+`vulnerability_threshold`, `visual_comfort`, `primary_platform`,
+`platform_adaptation`, `posting_capacity`, and the entire old Stage 7
+constraints trio `employer_restrictions`/`topics_off_limits`/`anonymity_needs`)
+were cut for a faster, less form-like onboarding. Their `brand_profiles`
+columns stay (additive schema, no drops) and downstream code that reads them
+(`gap.ts`, `plan.ts`, `draft.ts`'s off-limits hard-block) is null-aware and
+degrades gracefully — those specific findings just never fire for new users.
+`FIELD_STAGE`/`fieldSpec`/`FALLBACK_QUESTION` are keyed only off the current
+`PROFILE_FIELDS`, so re-adding a field later means updating those three plus
+`profile.ts`'s `ARRAY_FIELDS`, nothing else.
 
 **Explicit skip always advances (2026-07-11).** "let's skip this", "next
 question", "pass", "move on" etc. are matched deterministically

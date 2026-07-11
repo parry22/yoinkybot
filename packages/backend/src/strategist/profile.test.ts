@@ -23,7 +23,7 @@ describe("PROFILE_FIELDS / FIELD_STAGE", () => {
   it("every field has a stage", () => {
     for (const f of PROFILE_FIELDS) expect(FIELD_STAGE[f]).toBeTypeOf("number");
   });
-  it("is the trimmed 8-field set (2026-07-11)", () => {
+  it("is the trimmed 7-field set (2026-07-11)", () => {
     expect(PROFILE_FIELDS).toEqual([
       "niche",
       "primary_goal",
@@ -32,7 +32,6 @@ describe("PROFILE_FIELDS / FIELD_STAGE", () => {
       "tone_selections",
       "content_pillars",
       "camera_comfort",
-      "primary_platform",
     ]);
   });
 });

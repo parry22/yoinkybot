@@ -21,10 +21,10 @@ connect your accounts, get diagnosed, build a plan, and ship content.
 
 <!-- Keep newest-first. Update this whenever a change ships that a reader of the repo should know about. -->
 
-- **2026-07-11 — Onboarding trimmed from 21 fields to 8.** The intake now only
+- **2026-07-11 — Onboarding trimmed from 21 fields to 7.** The intake now only
   asks niche, primary goal, audience, two inspiration/tone questions, the
-  derived-and-confirmed content pillars, and two format questions (camera,
-  primary platform) — the deeper positioning/audience/constraints fields (and
+  derived-and-confirmed content pillars, and one format question (camera
+  comfort) — the deeper positioning/audience/constraints/platform fields (and
   all of the old constraints stage) are gone. Also fixed a real bug this
   surfaced: array-valued answers (inspiration, tone) could get double-encoded
   into a single garbled string instead of a clean array — `normalizeArray` now

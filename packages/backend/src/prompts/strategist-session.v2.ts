@@ -59,9 +59,7 @@ export function fieldSpec(field: ProfileField, profile: BrandProfile | null): st
       return `CONTENT PILLARS (Stage 5). Do NOT ask from scratch. DERIVE 3-5 recurring themes from what you already know (their niche, goal, audience${seed ? `: ${seed}` : ""}) and present them back for confirmation: 'Based on everything so far, here's where I'd expect your content to live: [named pillars]. Feel right, or is something missing?'. Let them add/remove/adjust. When settled, emit profile_field content_pillars with the final array of short pillar labels.`;
     }
     case "camera_comfort":
-      return "CAMERA COMFORT (Stage 6a). Do they do video, or is this writing-only. Value = one of: no | maybe | yes.";
-    case "primary_platform":
-      return "PRIMARY PLATFORM (Stage 6b, last question). X rewards raw/fast/contrarian; LinkedIn rewards structured/narrative/professional. Which is primary. Value = one of: x | linkedin | both.";
+      return "CAMERA COMFORT (Stage 6, last question). Do they do video, or is this writing-only. Value = one of: no | maybe | yes.";
     default:
       return "";
   }
@@ -80,7 +78,6 @@ export const FALLBACK_QUESTION: Record<ProfileField, string> = {
   tone_selections: "What modes feel like you: analytical, contrarian, build-in-public, how-to, shitposting, manifesto? Pick any that fit.",
   content_pillars: "What are the recurring themes you'd want your content to live in?",
   camera_comfort: "Do you do video, or is this writing-only?",
-  primary_platform: "Which is your primary platform: X, LinkedIn, or both?",
 };
 
 export const strategistProfiling: Prompt<StrategistProfilingVars> = {
