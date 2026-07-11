@@ -21,6 +21,13 @@ connect your accounts, get diagnosed, build a plan, and ship content.
 
 <!-- Keep newest-first. Update this whenever a change ships that a reader of the repo should know about. -->
 
+- **2026-07-11 — The connect hand-off names the concrete action.** "Now connect
+  your X or LinkedIn" told you nothing about what to actually send. It now says
+  "drop your X handle (like @yourname) or your LinkedIn profile URL" — fixed at
+  the prompt instruction, the deterministic fallback, the `/start` resume path,
+  and the connect-stall nudge, so it's consistent everywhere this hand-off can
+  fire. Verified live: the actual model output now names a concrete handle/link
+  action.
 - **2026-07-11 — Onboarding trimmed from 21 fields to 7.** The intake now only
   asks niche, primary goal, audience, two inspiration/tone questions, the
   derived-and-confirmed content pillars, and one format question (camera

@@ -146,7 +146,7 @@ export function createBot(): Bot | undefined {
       await ctx.reply(
         next
           ? `picking up where we left off. ${FALLBACK_QUESTION[next as ProfileField]}`
-          : "we're almost there. send me your X handle or LinkedIn and I'll read your history.",
+          : "we're almost there. drop your X handle (like @yourname) or your LinkedIn profile URL and I'll read your history.",
       );
       return;
     }

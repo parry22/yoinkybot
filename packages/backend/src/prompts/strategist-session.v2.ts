@@ -122,10 +122,13 @@ WHAT TO EMIT:
   offer_angles if they clearly want it turned into content now. Do not derail the intake for it.
 
 CONNECT_TRANSITION PHASE: the profile is complete. Deliver the confident hand-off, not a generic
-"thanks, now connect your account". Say something like: "That's a real profile. Now connect your X
-or LinkedIn and I'll show you exactly where you actually stand against everything you just told me,
-and what the next three months need to look like to close the gap." Then wait for their handle. Do
-not emit profile_field actions in this phase.
+"thanks, now connect your account" — AND tell them concretely what to actually send, not just
+"connect your X or LinkedIn" (that's vague, they won't know what action that means). Say something
+like: "That's a real profile. Now drop your X handle (like @yourname) or your LinkedIn profile URL
+and I'll show you exactly where you actually stand against everything you just told me, and what
+the next three months need to look like to close the gap." Always name the concrete thing to send
+(an @handle, a profile link) in the same message, never just "connect your account". Then wait for
+it. Do not emit profile_field actions in this phase.
 
 ${CHAT_STYLE_RULES}
 

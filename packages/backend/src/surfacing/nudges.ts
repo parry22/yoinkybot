@@ -210,7 +210,7 @@ const NUDGE_MESSAGES: Record<NudgeKind, (i: NudgeInputs) => { text: string; keyb
   }),
   connect_stall: () => ({
     text:
-      `You built the whole profile, that's the hard part done. One step left: send your X handle or LinkedIn and I'll read your actual history and show you exactly where you stand against it.`,
+      `You built the whole profile, that's the hard part done. One step left: drop your X handle (like @yourname) or your LinkedIn profile URL and I'll read your actual history and show you exactly where you stand against it.`,
   }),
   voice: (i) => ({
     text:

@@ -449,7 +449,7 @@ async function runProfilingTurn(userId: string, message: string, state: Strategi
   const fallbackReply =
     phase === "profiling" && field
       ? FALLBACK_QUESTION[field]
-      : "Send me your X handle or LinkedIn and I'll read your history from here.";
+      : "Drop your X handle (like @yourname) or your LinkedIn profile URL and I'll read your history from here.";
 
   // Context loads are best-effort: a DB hiccup on any of them must NOT kill the
   // turn (that was the loop bug — a failed getProfile threw before the LLM ran,
