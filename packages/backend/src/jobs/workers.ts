@@ -25,7 +25,8 @@ import { handleWeeklyPlan } from "./weekly-plan.js";
 import { handlePerformancePulse } from "../strategist/performance.js";
 import { handleCampaignDetect } from "./campaign-detect.js";
 import { handleMonthlyRecalibration } from "../memory/corrections.js";
-import type { IngestProfileJob, DiagnoseJob, CampaignDetectJob } from "./boss.js";
+import { handleScheduledPost } from "./scheduled-post.js";
+import type { IngestProfileJob, DiagnoseJob, CampaignDetectJob, ScheduledPostJob } from "./boss.js";
 
 /**
  * Log a worker failure with enough context to trace it (queue, job id, payload),
@@ -92,6 +93,14 @@ export async function registerWorkers(boss: PgBoss): Promise<void> {
   await boss.work(
     QUEUES.classificationRecalibrate,
     logged(QUEUES.classificationRecalibrate, () => handleMonthlyRecalibration()),
+  );
+  // Scheduled posts publish at a user-chosen time — each job is sent with
+  // startAfter = that time, so this worker just fires when one comes due. The
+  // handler claims the row atomically, so a single worker is enough and can't
+  // double-post across a delivery retry.
+  await boss.work<ScheduledPostJob>(
+    QUEUES.scheduledPost,
+    logged(QUEUES.scheduledPost, (d: ScheduledPostJob) => handleScheduledPost(d)),
   );
 
   // Proactive engine tick: hourly; cadence/quiet-hour gates live in the handler.

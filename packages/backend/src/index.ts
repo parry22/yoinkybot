@@ -5,6 +5,7 @@ import { startBoss } from "./jobs/boss.js";
 import { registerWorkers } from "./jobs/workers.js";
 import { createBot } from "./telegram/bot.js";
 import { webhookRoutes } from "./routes/webhooks.js";
+import { oauthRoutes } from "./routes/oauth.js";
 
 async function main(): Promise<void> {
   await migrate();
@@ -33,6 +34,8 @@ async function main(): Promise<void> {
   // browser should bounce straight to the actual bot, not see a raw 404.
   app.get("/", async (_req, reply) => reply.redirect(botLink));
   await app.register(webhookRoutes);
+  // Write-scope OAuth (posting). No-ops to 503 unless X_/LINKEDIN_ creds are set.
+  await app.register(oauthRoutes);
 
   await app.listen({ port: config.PORT, host: "0.0.0.0" });
   console.log(`yoinky backend on :${config.PORT}`);

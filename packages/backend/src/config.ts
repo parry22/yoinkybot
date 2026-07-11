@@ -84,6 +84,19 @@ const schema = z.object({
   // cheap per topic but not free at scale; never paginate unbounded.
   TWITTERAPI_SEARCH_PAGE_CAP: z.coerce.number().default(3),
 
+  // ── Native scheduled posting (write access) ─────────────────────────────
+  // OAuth 2.0 user-context credentials for PUBLISHING on the user's behalf —
+  // separate from the read-only ingestion above (Apify/twitterapi.io scrape by
+  // handle, no auth). Without these, scheduling still works but a due post
+  // fails closed with "not connected for posting". Redirect URIs are built from
+  // PUBLIC_URL (/oauth/x/callback, /oauth/linkedin/callback).
+  //   X: OAuth 2.0 PKCE, scope tweet.write (needs a paid X API tier to post).
+  //   LinkedIn: scope w_member_social (needs an approved LinkedIn dev app).
+  X_CLIENT_ID: z.string().optional(),
+  X_CLIENT_SECRET: z.string().optional(),
+  LINKEDIN_CLIENT_ID: z.string().optional(),
+  LINKEDIN_CLIENT_SECRET: z.string().optional(),
+
   DODO_API_KEY: z.string().optional(),
   DODO_WEBHOOK_SECRET: z.string().optional(),
   DODO_ENV: z.enum(["test_mode", "live_mode"]).default("test_mode"),

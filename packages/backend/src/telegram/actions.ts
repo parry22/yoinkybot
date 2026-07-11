@@ -17,7 +17,68 @@ import { createCapture } from "../capture/service.js";
 import { createIdeaMoment } from "../jobs/offer-angles.js";
 import { saveTurn } from "./conversation.js";
 import { recordCorrection, encodeCorrection } from "../memory/corrections.js";
+import { schedulePost, listScheduled } from "../scheduling/service.js";
+import { publishConfigured, resolveWriteAuth } from "../social/publish.js";
 import type { ChatTool } from "./chat-tools.js";
+
+/** ISO instant → compact, unambiguous UTC label for confirmations and lists. */
+function whenLabel(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return `${d.toISOString().slice(0, 16).replace("T", " ")} UTC`;
+}
+
+/**
+ * List the user's pending scheduled posts with a per-post cancel button. Shared
+ * by the /scheduled command and any chat path that wants to show the queue.
+ */
+export async function runShowScheduled(user: User, channel: Channel): Promise<string> {
+  const posts = await listScheduled(user.id);
+  if (posts.length === 0) {
+    const msg = "nothing scheduled right now. tell me what to post and when, e.g. \"post this to linkedin tomorrow 9am: …\".";
+    await channel.say(msg);
+    return msg;
+  }
+  const kb = new InlineKeyboard();
+  const lines = posts.map((p, i) => {
+    const label = p.platform === "x" ? "X" : "LinkedIn";
+    const preview = p.content.length > 80 ? `${p.content.slice(0, 80)}…` : p.content;
+    kb.text(`🗑 cancel ${label} · ${whenLabel(p.scheduled_for)}`, `schedq:cancel:${p.id}`).row();
+    return `${i + 1}. ${label} · ${whenLabel(p.scheduled_for)}\n   ${preview}`;
+  });
+  const msg = `📅 scheduled (${posts.length}):\n\n${lines.join("\n\n")}`;
+  await channel.say(msg, kb);
+  return msg;
+}
+
+/**
+ * Queue a post for later. Validates the resolved time, saves it, and confirms
+ * with the absolute time echoed back (so a mis-parsed "tomorrow" is obvious).
+ * Warns — but still schedules — when the account isn't connected for posting,
+ * since the write-OAuth may be completed before the post is due.
+ */
+export async function runSchedulePost(
+  user: User,
+  platform: "x" | "linkedin",
+  content: string,
+  when: string,
+  channel: Channel,
+): Promise<string> {
+  const res = await schedulePost(user.id, { platform, content, scheduledFor: new Date(when) });
+  if (!res.ok) {
+    const msg = `couldn't schedule that — ${res.reason}. give me a clear time like "tomorrow 9am" or "friday 6pm".`;
+    await channel.say(msg);
+    return msg;
+  }
+  const label = platform === "x" ? "X" : "LinkedIn";
+  const canPost = publishConfigured(platform) && (await resolveWriteAuth(user.id, platform));
+  const warn = canPost
+    ? ""
+    : `\n\nheads up: your ${label} isn't connected for posting yet, so connect it before then or this won't actually go out.`;
+  const msg = `📅 scheduled for ${label} at ${whenLabel(new Date(when).toISOString())}.${warn}\n\n/scheduled to see or cancel.`;
+  await channel.say(msg);
+  return msg;
+}
 
 /**
  * Where a turn's output goes. Live chat wraps grammY's ctx; async paths (the
@@ -259,6 +320,9 @@ export async function executeChatTool(user: User, tool: ChatTool, channel: Chann
 
     case "connect_account":
       return connectAccount(user, tool.platform, tool.handle, channel);
+
+    case "schedule_post":
+      return runSchedulePost(user, tool.platform, tool.content, tool.when, channel);
 
     case "forget": {
       const matches = await hybridSearch(user.id, tool.query, 3);

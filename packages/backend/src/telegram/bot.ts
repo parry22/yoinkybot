@@ -42,7 +42,10 @@ import {
   deliverRepurposed,
   deliverTurnOutput,
   chatToolExecutor,
+  runShowScheduled,
 } from "./actions.js";
+import { cancelScheduled } from "../scheduling/service.js";
+import { publishConfigured } from "../social/publish.js";
 import { runSerializedTurn } from "./turns.js";
 
 let bot: Bot | undefined;
@@ -214,6 +217,37 @@ export function createBot(): Bot | undefined {
     await withTyping(ctxChannel(ctx), () => runDraft(user, topic, platform, ctxChannel(ctx)));
   });
 
+  // See what's queued to publish, and cancel any of it. Scheduling itself is
+  // done in plain language ("post this to linkedin tomorrow 9am"), per the
+  // lean-commands convention — this command is the "show me the queue" surface.
+  bot.command("scheduled", async (ctx) => {
+    const user = await requireUser(ctx);
+    if (!user) return;
+    await withTyping(ctxChannel(ctx), () => runShowScheduled(user, ctxChannel(ctx)));
+  });
+
+  // Grant posting (write) access so scheduled posts can actually publish. The
+  // read connect flow (/connect) only scrapes public history; this is the
+  // separate write-scope OAuth. Links point at our own /oauth/:p/start, which
+  // mints fresh PKCE state at click time. The ?u=<id> is an internal UUID (not
+  // guessable/enumerable); a signed token would be strictly better — see oauth.ts.
+  bot.command("connectposting", async (ctx) => {
+    const user = await requireUser(ctx);
+    if (!user) return;
+    const available = (["x", "linkedin"] as const).filter(publishConfigured);
+    if (available.length === 0) {
+      return void (await ctx.reply(
+        "posting isn't set up on my end yet — i can schedule posts, but publishing needs the platform apps configured first.",
+      ));
+    }
+    const lines = available.map(
+      (p) => `${p === "x" ? "X" : "LinkedIn"}: ${config.PUBLIC_URL}/oauth/${p}/start?u=${user.id}`,
+    );
+    await ctx.reply(
+      "connect an account so i can actually post for you — open the link, approve, done:\n\n" + lines.join("\n"),
+    );
+  });
+
   // Quiet hours, timezone, proactive frequency — how I behave around your life.
   bot.command("settings", async (ctx) => {
     const user = await requireUser(ctx);
@@ -361,6 +395,12 @@ export function createBot(): Bot | undefined {
         await ctx.editMessageText(ok ? "gone. permanently." : "already gone.");
       }
       return void (await ctx.answerCallbackQuery());
+    }
+
+    if (data.startsWith("schedq:cancel:")) {
+      const id = data.slice("schedq:cancel:".length);
+      const ok = await cancelScheduled(user.id, id);
+      return void (await ctx.answerCallbackQuery({ text: ok ? "canceled" : "already gone" }));
     }
 
     if (data.startsWith("clr:")) {
@@ -701,6 +741,8 @@ export function createBot(): Bot | undefined {
       { command: "connect", description: "Connect your X/LinkedIn so I can read your work" },
       { command: "draft", description: "Write a post from your thinking, in your voice" },
       { command: "repurpose", description: "Reshape finished content, or synthesize scattered takes" },
+      { command: "scheduled", description: "See and cancel posts you've scheduled" },
+      { command: "connectposting", description: "Let me publish to your X/LinkedIn for scheduled posts" },
       { command: "peers", description: "Watch a few peers — territory comparison, not a scoreboard" },
       { command: "settings", description: "Quiet hours, timezone, proactive frequency" },
       { command: "upgrade", description: "Unlock paid features" },

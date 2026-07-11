@@ -88,7 +88,7 @@ full prior implementation if it ever needs to come back.
 
 | Area | Path | What it does |
 |---|---|---|
-| Telegram bot | `src/telegram/` | grammY bot, command handlers, conversation state. Commands (deliberately lean — 2026-07-11): `start, help, connect, draft, repurpose, peers, settings, upgrade`. Everything else (check, search/ask, status, diagnosis refresh, voice, forget, plan, positions, clearing your account) is done in plain language via the agentic chat layer (see §3a) — those slash commands were removed. |
+| Telegram bot | `src/telegram/` | grammY bot, command handlers, conversation state. Commands (deliberately lean): `start, help, connect, draft, repurpose, scheduled, connectposting, peers, settings, upgrade`. `scheduled` (view/cancel the post queue) and `connectposting` (grant write access) were added 2026-07-12 with scheduling — see §3e. Everything else (check, search/ask, status, diagnosis refresh, voice, forget, plan, positions, *creating* a scheduled post, clearing your account) is done in plain language via the agentic chat layer (see §3a). |
 | Strategist flow | `src/strategist/` | The a16z Personal Brand Strategist onboarding. Profile-first arc: profiling (Stages 1-6, 7 fields) → connect → gap analysis → three-month plan → proactive. `session-machine.ts` is the state machine; `state.ts` persists it; `profile.ts` owns the stated profile; `gap.ts` computes the stated-vs-actual gap. See §3b. |
 | Capture pipeline | `src/capture/` | Immutable capture of user input + imports (X via twitterapi.io→Apify, LinkedIn via Apify). Captures are never mutated. |
 | Memory core | `src/memory/` | Extraction → embed → link → search (RRF hybrid). `positions.ts` (stated positions), `confidence.ts`, `forget.ts` (hard delete), `classification.ts` (rhetorical mode/sincerity/motive taxonomy + gating helper), `corrections.ts` (user-correction mechanism + monthly recalibration). See §3d. |
@@ -99,7 +99,8 @@ full prior implementation if it ever needs to come back.
 | Engagement | `src/engagement/` | Reply-worthiness scored in code (`scoring.ts`); the model only drafts — now via a bounded agent (`reply-agent.ts`, §3c) grounded by `heuristics.ts` (deterministic visibility facts). One draft per slot; DMs out of scope. |
 | Benchmark / peers | `src/benchmark/` | Peer benchmarking as territory, not scoreboard; relative-only. |
 | Surfacing | `src/surfacing/` | Deterministic resurfacing selection (`scoring.ts`), cadence, nudges. LLM only composes the message. |
-| Jobs | `src/jobs/` | pg-boss workers: extract, embed-link, cluster, resurface, offer-angles, trend-fetch, trend-match, weekly-plan, transcribe, campaign-detect, classification-recalibrate. `boss.ts`/`workers.ts` wire them. |
+| Jobs | `src/jobs/` | pg-boss workers: extract, embed-link, cluster, resurface, offer-angles, trend-fetch, trend-match, weekly-plan, transcribe, campaign-detect, classification-recalibrate, scheduled-post. `boss.ts`/`workers.ts` wire them. |
+| Scheduling | `src/scheduling/` + `src/social/` | Native scheduled posting. `scheduling/service.ts` queues/lists/cancels; `jobs/scheduled-post.ts` publishes at fire time; `social/publish.ts` calls the X/LinkedIn write APIs; `routes/oauth.ts` is the write-scope OAuth connect. See §3e. |
 | Billing | `src/billing/` | DodoPayments (merchant of record). Webhook `webhook.ts` (Standard Webhooks sig), `entitlements.ts`, `PAYWALL_ENABLED` gate. |
 | STT | `src/stt/` | Speech-to-text, tried in order: Sarvam → Groq → OpenAI Whisper. |
 | Usage | `src/usage/` | `meter.ts` writes `usage_events` for every LLM/embed call (cost visibility, daily cap). |
@@ -481,9 +482,55 @@ ever needs to touch one row.
 
 ---
 
+## 3e. Native scheduled posting (2026-07-12)
+
+Queue a post now, publish it to X/LinkedIn at a chosen time — built entirely in
+this stack (no third-party scheduler; Postiz was AGPL-3.0 and its NestJS/Prisma/
+Temporal code wouldn't port anyway, so this is clean-room against the official
+platform API docs).
+
+- **The scheduler is the job queue.** `scheduling/service.ts#schedulePost`
+  inserts a `scheduled_posts` row and sends a `QUEUES.scheduledPost` job with
+  `startAfter = the target Date` (pg-boss takes an absolute Date, so there's no
+  polling). `listScheduled` / `cancelScheduled` back the `/scheduled` command.
+  **Cancel is a pure status flip** (`pending → canceled`): the due job
+  re-reads status at fire time, so a canceled post is a no-op and we never
+  reach into pg-boss to kill the delayed job.
+- **`jobs/scheduled-post.ts` claims atomically.** The handler's first write is
+  `UPDATE … SET status='publishing' WHERE id=$1 AND status='pending'
+  RETURNING …`; only the transition out of `pending` wins, so a cancel that
+  raced in — or a duplicate pg-boss delivery — can't double-post. Then it
+  publishes and DMs the outcome via `dmChannel(userId)` (permalink on success,
+  the real reason on failure).
+- **Publishing (`social/publish.ts`) is the one WRITE path.** Everything else
+  reads public history by handle (Apify/twitterapi.io, no auth). This posts as
+  the user via a stored user-context OAuth token (`connected_accounts.post_*`
+  columns, migration 0018), calling `POST /2/tweets` (X) and `POST /v2/ugcPosts`
+  (LinkedIn, needs the member URN as author). It **fails closed**: no app creds
+  (`publishConfigured`) or no stored token (`resolveWriteAuth`) → the post is
+  marked `failed` with a plain-language reason, never a silent drop. Verified
+  live end-to-end (schedule → enqueue → atomic-claim → fail-closed → cancel);
+  only the actual provider API calls are unverified, pending real credentials.
+- **Write-scope OAuth (`routes/oauth.ts`) is credential-gated and NOT yet
+  live-tested.** `/oauth/:platform/start` (PKCE for X) → provider consent →
+  `/oauth/:platform/callback` exchanges the code and stores the token. PKCE
+  verifier + which-user live in an in-memory map keyed by `state` (fine on this
+  single-instance deploy; move to Postgres if it ever scales out). `X_CLIENT_ID/
+  SECRET` (paid X tier for `tweet.write`) and `LINKEDIN_CLIENT_ID/SECRET`
+  (approved `w_member_social` app) are required; without them the routes 503 and
+  `/connectposting` tells the user posting isn't set up.
+- **Creating vs. viewing.** Creating a scheduled post is natural-language (the
+  `schedule_post` chat tool — `converse.v3` resolves "tomorrow 9am" to an ISO
+  instant using the CURRENT TIME now injected into the chat context, and the
+  confirmation echoes the resolved absolute time so a bad parse is obvious).
+  Viewing/cancelling is the `/scheduled` command (explicit list + per-post
+  cancel buttons, `schedq:cancel:<id>` callback).
+
+---
+
 ## 4. Data model
 
-Schema is a linear migration chain in `src/db/migrations/` (`0001`…`0017`),
+Schema is a linear migration chain in `src/db/migrations/` (`0001`…`0018`),
 applied on boot and via `pnpm db:migrate` (`src/db/migrate.ts`). pgvector is
 required for embedding columns.
 
@@ -515,6 +562,9 @@ Keys that matter most:
 - `OPENAI_API_KEY` / `QWEN_API_KEY` — embeddings (OpenAI preferred, Qwen fallback).
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `ADMIN_TELEGRAM_ID`.
 - `TREND_PROVIDER` + `APIFY_TOKEN` / `TWITTERAPI_IO_KEY` / `BRAVE_API_KEY` / `TAVILY_API_KEY`.
+- `X_CLIENT_ID/SECRET`, `LINKEDIN_CLIENT_ID/SECRET` — write-scope OAuth for
+  scheduled *posting* (§3e), distinct from the read-ingestion keys above. Unset
+  → scheduling works but publishing fails closed. X posting needs a paid X tier.
 - `DODO_*`, `PAYWALL_ENABLED`.
 
 Never commit real secrets. Secrets in git history stay there forever even after

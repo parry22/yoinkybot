@@ -20,6 +20,7 @@ export const QUEUES = {
   performancePulse: "performance.pulse",
   campaignDetect: "memory.campaign-detect",
   classificationRecalibrate: "memory.classification-recalibrate",
+  scheduledPost: "posts.scheduled",
 } as const;
 
 export interface TranscribeJob {
@@ -55,6 +56,10 @@ export interface CampaignDetectJob {
   userId: string;
   /** Bounds the wait for this capture's memory embeddings to finish. */
   attempt?: number;
+}
+export interface ScheduledPostJob {
+  scheduledPostId: string;
+  userId: string;
 }
 
 let boss: PgBoss | undefined;

@@ -21,6 +21,15 @@ connect your accounts, get diagnosed, build a plan, and ship content.
 
 <!-- Keep newest-first. Update this whenever a change ships that a reader of the repo should know about. -->
 
+- **2026-07-12 — Native scheduled posting.** You can now queue a post and have
+  Yoinky publish it to X or LinkedIn at a set time, all in chat: "post this to
+  linkedin tomorrow 9am: …" schedules it, and **/scheduled** lists everything
+  queued with one-tap cancel. Built natively on the existing job queue (a due
+  post is just a delayed job) — no third-party scheduler. Publishing uses the
+  official X/LinkedIn APIs via a write-scope OAuth connect (**/connectposting**);
+  until an account is connected for posting, scheduling still works and a due
+  post reports that it couldn't publish rather than failing silently. Posting to
+  X requires a paid X API tier; both need their platform app credentials set.
 - **2026-07-11 — Posts are now classified by rhetorical mode, sincerity, and
   motive — not just content.** The direct fix for shitposts/jokes being
   misread as sincere beliefs: extraction now also scores sincerity register

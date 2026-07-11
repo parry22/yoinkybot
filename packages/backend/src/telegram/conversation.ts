@@ -200,6 +200,7 @@ export async function converseWithUser(
           relationship,
           toolNotes,
           toolCallsRemaining: Math.max(0, maxToolCalls - toolNotes.length),
+          now: new Date().toISOString(),
         }) +
         (outOfCalls
           ? "\n\nNo more tool calls this turn. Give your final reply now (tool must be null)."
