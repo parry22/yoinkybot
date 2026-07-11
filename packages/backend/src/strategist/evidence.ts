@@ -55,13 +55,22 @@ export interface ComputedEvidence {
   ratio: { insideOut: number; outsideIn: number; classified: number } | null;
 }
 
+// A shitpost/bit reported as sincere content would pollute both the theme
+// clusters (owned-position candidates) and the outside-in ratio, so both
+// queries below join captures and exclude anything that isn't confidently
+// sincere. NULL-tolerant (memories.capture_id is nullable in practice, and
+// captures classified before this feature existed have no register at all) —
+// see memory/classification.ts#isSincereEnough for the exact predicate this mirrors.
+const SINCERE_FILTER = `(c.sincerity_register IS NULL OR (c.sincerity_register = 'sincere' AND c.sincerity_confidence >= 0.5))`;
+
 export async function computeEvidence(userId: string): Promise<ComputedEvidence> {
   const [ideaClaims, orientationRows, positions, allPosts] = await Promise.all([
     query<{ content: string; created_at: string; embedding: string }>(
-      `SELECT content, created_at::text, embedding::text
-       FROM memories
-       WHERE user_id = $1 AND status = 'active' AND kind IN ('idea','claim') AND embedding IS NOT NULL
-       ORDER BY created_at ASC LIMIT 400`,
+      `SELECT m.content, m.created_at::text, m.embedding::text
+       FROM memories m LEFT JOIN captures c ON c.id = m.capture_id
+       WHERE m.user_id = $1 AND m.status = 'active' AND m.kind IN ('idea','claim') AND m.embedding IS NOT NULL
+         AND ${SINCERE_FILTER}
+       ORDER BY m.created_at ASC LIMIT 400`,
       [userId],
     ),
     query<{ orientation: string; n: string }>(
@@ -69,6 +78,7 @@ export async function computeEvidence(userId: string): Promise<ComputedEvidence>
        FROM memories m JOIN captures c ON c.id = m.capture_id
        WHERE m.user_id = $1 AND m.status = 'active' AND m.orientation IS NOT NULL
          AND c.source IN ('x_import','linkedin_import')
+         AND ${SINCERE_FILTER}
        GROUP BY m.orientation`,
       [userId],
     ),

@@ -21,6 +21,48 @@ connect your accounts, get diagnosed, build a plan, and ship content.
 
 <!-- Keep newest-first. Update this whenever a change ships that a reader of the repo should know about. -->
 
+- **2026-07-11 — Posts are now classified by rhetorical mode, sincerity, and
+  motive — not just content.** The direct fix for shitposts/jokes being
+  misread as sincere beliefs: extraction now also scores sincerity register
+  (sincere/ironic/self_deprecating/absurdist/ambiguous) and motive, and
+  positions are only ever extracted from content that clears a confidence
+  gate. Build-in-public series ("day N of...") are detected — by structural
+  marker or thematic continuity across a user's recent posts — and linked
+  into a `campaigns` timeline with retroactive tagging. Voice, diagnosis,
+  and performance analytics all now respect the sincerity signal (a shitpost
+  outperforming a sincere post is flagged as exactly that, not just more
+  engagement). Users can correct a misread ("that was a joke") via chat or a
+  one-tap button on any resurfaced post; repeated corrections trigger a
+  one-time acknowledgment, and get folded into a monthly per-user
+  recalibration. Verified live end-to-end against the real model + DB.
+- **2026-07-11 — Four features went agentic (bounded loops, not open ReAct).**
+  A shared runner (`llm/tool-loop.ts`) gives the model a small toolset and a
+  hard call cap (2–4 per feature, config); repeat calls with the same args are
+  rejected, every step is logged and persisted, and all calls still route
+  through `llm/gateway.ts`. The doctrine is unchanged: code decides *whether*
+  something fires (buzz/niche/position gates, reply-worthiness scoring,
+  consistency ambiguity delta); the model only researches and composes.
+  What changed per feature:
+  - **Chat brain (converse.v3):** up to `MAX_TOOL_CALLS_PER_TURN` (3) tools in
+    one turn — "check this against what I've said, then clean it up" is now one
+    turn. Each tool's delivery is persisted as its own assistant-turn fragment.
+  - **Macro-moment agent:** trend candidates are now *volume-verified* against
+    twitterapi.io advanced_search (deterministic `buzzScore` in
+    `trends/scoring.ts`: distinct authors > raw count, engagement, velocity)
+    before the position gate; a composition agent then researches (cached top
+    tweets, memory, voice, goals) and writes the take — or declines. Distinct
+    `trend_take` delivery (migration 0016), at most one a day, shared proactive
+    budget. Degrades to the old angle-offer flow when `TWITTERAPI_IO_KEY` is
+    unset.
+  - **Consistency check:** when the top-2 position matches are within
+    `CONSISTENCY_AMBIGUITY_DELTA`, an agent resolves *which* statement the
+    draft actually conflicts with (position context, wider search, memory)
+    and reports catch / intentional-evolution / no-conflict; low-confidence
+    catches are suppressed. The clean-match common case stays single-shot.
+  - **Reply drafting (reply-draft.v2):** scoring still decides *whether*; the
+    drafter now pulls its own grounding — memory, voice, pillars, full thread,
+    and computed visibility facts (`engagement/heuristics.ts`, deterministic
+    and unit-tested) — before writing the one reply.
 - **2026-07-11 — The connect hand-off names the concrete action.** "Now connect
   your X or LinkedIn" told you nothing about what to actually send. It now says
   "drop your X handle (like @yourname) or your LinkedIn profile URL" — fixed at

@@ -8,6 +8,7 @@ import {
 } from "../lib/auth.js";
 import { createCapture } from "../capture/service.js";
 import { forgetMemory } from "../memory/forget.js";
+import { recordCorrection, decodeCorrection } from "../memory/corrections.js";
 import { draftFromAngle } from "../drafting/angle-draft.js";
 import { converseWithUser, saveTurn } from "./conversation.js";
 import { maybeOfferAngles, createIdeaMoment } from "../jobs/offer-angles.js";
@@ -40,6 +41,7 @@ import {
   runDraft,
   deliverRepurposed,
   deliverTurnOutput,
+  chatToolExecutor,
 } from "./actions.js";
 import { runSerializedTurn } from "./turns.js";
 
@@ -450,6 +452,55 @@ export function createBot(): Bot | undefined {
       return;
     }
 
+    // Correction picker: one of several candidate posts tapped (multi-match
+    // path from the correct_classification chat tool). corr:<captureId>:<code>.
+    const corr = /^corr:([0-9a-f-]{36}):([mso]\d{1,2})$/.exec(data);
+    if (corr) {
+      const [, captureId, code] = corr as unknown as [string, string, string];
+      const decoded = decodeCorrection(code);
+      if (!decoded) {
+        await ctx.answerCallbackQuery({ text: "that one's expired." });
+        return;
+      }
+      const result = await recordCorrection(user.id, captureId, decoded.field, decoded.value);
+      await ctx.answerCallbackQuery({ text: "corrected." });
+      try {
+        await ctx.editMessageReplyMarkup({ reply_markup: new InlineKeyboard().text("✏️ corrected", "noop") });
+      } catch {
+        // message too old to edit — the correction is already recorded
+      }
+      if (result.acknowledgment) await ctx.reply(result.acknowledgment);
+      return;
+    }
+
+    // Quick "that was a joke" tap straight from a resurfaced memory — the
+    // exact post is unambiguous (it's the one just shown), no search needed.
+    const corrj = /^corrj:([0-9a-f-]{36})$/.exec(data);
+    if (corrj) {
+      const [, surfacingId] = corrj as unknown as [string, string];
+      const surfacing = await queryOne<{ memory_ids: string[] }>(
+        `SELECT memory_ids FROM surfacings WHERE id = $1 AND user_id = $2`,
+        [surfacingId, user.id],
+      );
+      const memId = surfacing?.memory_ids?.[0];
+      const memRow = memId
+        ? await queryOne<{ capture_id: string | null }>(`SELECT capture_id FROM memories WHERE id = $1`, [memId])
+        : null;
+      if (!memRow?.capture_id) {
+        await ctx.answerCallbackQuery({ text: "that one's expired." });
+        return;
+      }
+      const result = await recordCorrection(user.id, memRow.capture_id, "sincerity_register", "ironic");
+      await ctx.answerCallbackQuery({ text: "noted, that was a joke." });
+      try {
+        await ctx.editMessageReplyMarkup({ reply_markup: new InlineKeyboard().text("🃏 marked as a joke", "noop") });
+      } catch {
+        // message too old to edit — the correction is already recorded
+      }
+      if (result.acknowledgment) await ctx.reply(result.acknowledgment);
+      return;
+    }
+
     // A diagnosis "unsaid pattern" tapped → turn it into angles immediately.
     // This is the direct connect → understand taste → narrative ideas hop,
     // without waiting for the full goal/plan flow.
@@ -780,7 +831,9 @@ async function maybeSendToneMenu(userId: string, ctx: Context): Promise<void> {
 async function handleConversation(user: User, text: string, channel: Channel): Promise<void> {
   let result;
   try {
-    result = await converseWithUser(user.id, text);
+    // Steady-state chat runs the bounded multi-tool loop: tools execute
+    // mid-turn via the executor and the result carries only the final reply.
+    result = await converseWithUser(user.id, text, { executeTool: chatToolExecutor(user, channel) });
   } catch (err) {
     console.error("conversation failed, filing message as a fallback", err);
     void import("../lib/alerts.js").then(({ alertAdmin }) =>
@@ -912,6 +965,10 @@ export function reactionKeyboard(surfacingId: string): InlineKeyboard {
 export function resurfaceKeyboard(surfacingId: string, momentId: string | null): InlineKeyboard {
   const kb = reactionKeyboard(surfacingId);
   if (momentId) kb.row().text("✍️ turn into angles", `mkang:${momentId}`);
+  // Every resurfaced memory already quotes real content back, so the exact
+  // post is unambiguous — a light "you read that wrong" affordance costs
+  // nothing to offer even when it's not needed.
+  kb.row().text("🃏 that was a joke", `corrj:${surfacingId}`);
   return kb;
 }
 

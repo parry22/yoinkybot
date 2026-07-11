@@ -6,6 +6,7 @@ import { embed } from "../llm/embeddings.js";
 import { pullXProfile, pullLinkedInProfile } from "../capture/imports/apify-profile.js";
 import { applyRecencyWindow } from "../capture/imports/x.js";
 import { classifyPeerThemes } from "../prompts/classify-peer-themes.v1.js";
+import { ALL_TONE_KEYS } from "../strategist/profile.js";
 import { median, engagementTotal } from "../strategist/performance.js";
 import { cosineDistance } from "../drafting/repurpose.js";
 
@@ -154,7 +155,21 @@ export async function listPeers(userId: string): Promise<string> {
 // ── Weekly ingest (cron) — pull, dedupe, batch-classify themes ───────────────
 
 const themesSchema = z.object({
-  themes: z.array(z.object({ index: z.number(), theme: z.string().min(1) })).default([]),
+  themes: z
+    .array(
+      z.object({
+        index: z.number(),
+        theme: z.string().min(1),
+        // Tolerate a missing/garbled read rather than failing the whole batch —
+        // matches jobs/extract.ts's .catch() precedent for classification fields.
+        rhetorical_mode: z.string().catch("").optional(),
+        sincerity_register: z
+          .enum(["sincere", "ironic", "self_deprecating", "absurdist", "ambiguous"])
+          .catch("ambiguous")
+          .optional(),
+      }),
+    )
+    .default([]),
 });
 
 export async function handlePeerIngest(): Promise<void> {
@@ -198,9 +213,13 @@ export async function ingestPeer(peer: {
     );
   }
 
-  // One batched cheap call for every un-themed post this peer has.
+  // One batched cheap call for every post this peer has that's missing EITHER
+  // the theme or the newer mode/sincerity read (catches posts ingested before
+  // this classification was added, not just brand-new ones).
   const untagged = await query<{ id: string; content: string }>(
-    `SELECT id, content FROM peer_captures WHERE peer_profile_id = $1 AND classified_theme IS NULL ORDER BY published_at DESC LIMIT 60`,
+    `SELECT id, content FROM peer_captures WHERE peer_profile_id = $1
+       AND (classified_theme IS NULL OR rhetorical_mode IS NULL)
+     ORDER BY published_at DESC LIMIT 60`,
     [peer.id],
   );
   if (untagged.length) {
@@ -218,9 +237,12 @@ export async function ingestPeer(peer: {
       const parsed = themesSchema.parse(res.parsed);
       for (const t of parsed.themes) {
         const target = untagged[t.index];
-        if (target) {
-          await query(`UPDATE peer_captures SET classified_theme = $2 WHERE id = $1`, [target.id, t.theme.toLowerCase().slice(0, 80)]);
-        }
+        if (!target) continue;
+        const rhetoricalMode = t.rhetorical_mode && (ALL_TONE_KEYS as string[]).includes(t.rhetorical_mode) ? t.rhetorical_mode : null;
+        await query(
+          `UPDATE peer_captures SET classified_theme = $2, rhetorical_mode = $3, sincerity_register = $4 WHERE id = $1`,
+          [target.id, t.theme.toLowerCase().slice(0, 80), rhetoricalMode, t.sincerity_register ?? null],
+        );
       }
     } catch (err) {
       console.error(`peer theme classification failed for @${peer.peer_handle}`, err);

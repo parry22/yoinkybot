@@ -87,13 +87,22 @@ export async function runDiagnosis(
   opts: { deliver?: boolean } = {},
 ): Promise<Diagnosis | null> {
   // A representative spread of their history: most recent + oldest, capped.
-  const posts = await query<{ content: string; kind: string; created_at: string; source: string }>(
-    `(SELECT m.content, m.kind, m.created_at::text, COALESCE(c.source,'capture') AS source
+  // sincerity_register/rhetorical_mode ride along so the prompt can tag jokes/
+  // bits inline — never cited as genuine positions, but not silently dropped
+  // either (memory/classification.ts).
+  const posts = await query<{
+    content: string;
+    kind: string;
+    created_at: string;
+    source: string;
+    sincerity_register: string | null;
+  }>(
+    `(SELECT m.content, m.kind, m.created_at::text, COALESCE(c.source,'capture') AS source, c.sincerity_register
       FROM memories m LEFT JOIN captures c ON c.id = m.capture_id
       WHERE m.user_id = $1 AND m.status = 'active'
       ORDER BY m.created_at DESC LIMIT $2)
      UNION
-     (SELECT m.content, m.kind, m.created_at::text, COALESCE(c.source,'capture') AS source
+     (SELECT m.content, m.kind, m.created_at::text, COALESCE(c.source,'capture') AS source, c.sincerity_register
       FROM memories m LEFT JOIN captures c ON c.id = m.capture_id
       WHERE m.user_id = $1 AND m.status = 'active'
       ORDER BY m.created_at ASC LIMIT 40)`,

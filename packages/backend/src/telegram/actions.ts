@@ -16,6 +16,7 @@ import { getBoss, QUEUES } from "../jobs/boss.js";
 import { createCapture } from "../capture/service.js";
 import { createIdeaMoment } from "../jobs/offer-angles.js";
 import { saveTurn } from "./conversation.js";
+import { recordCorrection, encodeCorrection } from "../memory/corrections.js";
 import type { ChatTool } from "./chat-tools.js";
 
 /**
@@ -124,7 +125,9 @@ export async function runCheck(user: User, draft: string, channel: Channel): Pro
   }
   const result = await checkConsistency(user.id, draft);
   const body = result.clear
-    ? "✅ clear, no tension with your positions or throughline."
+    ? result.notes?.length
+      ? `✅ clear to post. one read worth knowing: ${result.notes.join(" ")}`
+      : "✅ clear, no tension with your positions or throughline."
     : result.flags
         .map((f) => `⚠️ ${f.positionId === "throughline" ? "off your throughline" : "contradicts"}: "${f.statement}"\n→ ${f.explanation}`)
         .join("\n\n");
@@ -271,6 +274,37 @@ export async function executeChatTool(user: User, tool: ChatTool, channel: Chann
       return "(offered forget choices — waiting on their pick)";
     }
 
+    case "correct_classification": {
+      const matches = await hybridSearch(user.id, tool.query, 5);
+      // Correction is capture-level (memory/classification.ts) — a search can
+      // return several memory units split from the same post, so collapse to
+      // one candidate per capture before presenting choices.
+      const byCapture = new Map<string, (typeof matches)[number]>();
+      for (const m of matches) if (m.capture_id && !byCapture.has(m.capture_id)) byCapture.set(m.capture_id, m);
+      const candidates = [...byCapture.entries()];
+      const code = encodeCorrection(tool.field, tool.correctedValue);
+
+      if (candidates.length === 0) {
+        const msg = "can't find that post in memory.";
+        await channel.say(msg);
+        return msg;
+      }
+      // A single clear match, or a value that can't be compactly encoded into a
+      // button (only possible for rhetorical_mode) — apply directly to the best match.
+      if (candidates.length === 1 || !code) {
+        const [captureId] = candidates[0]!;
+        const result = await recordCorrection(user.id, captureId, tool.field, tool.correctedValue);
+        const msg = result.acknowledgment ? `got it, corrected.\n\n${result.acknowledgment}` : "got it, corrected.";
+        await channel.say(msg);
+        return msg;
+      }
+      const kb = new InlineKeyboard();
+      for (const [captureId, m] of candidates) kb.text(`✏️ ${m.content.slice(0, 40)}…`, `corr:${captureId}:${code}`).row();
+      kb.text("Cancel", "cf:cancel");
+      await channel.say("which one? that'll flip its reading.", kb);
+      return "(offered correction choices — waiting on their pick)";
+    }
+
     case "clear_everything": {
       // Never wipes directly — same clr:confirm/clr:cancel callback data the
       // old /clear command used, handled in telegram/bot.ts's callback_query
@@ -292,6 +326,26 @@ export interface TurnOutput {
   capture: boolean;
   offerAngles: boolean;
   tool?: ChatTool;
+}
+
+/**
+ * The mid-turn tool executor for the conversational loop (converse.v3): sends
+ * the brain's short beat ("on it, checking that first"), runs the tool through
+ * the same code path its slash command uses, and persists both as assistant
+ * turns — a 3-tool turn shows up as its fragments in history, not one opaque
+ * blob. Returns the trace the loop feeds back to the model.
+ */
+export function chatToolExecutor(user: User, channel: Channel) {
+  return async (tool: ChatTool, replyBeat: string): Promise<string> => {
+    if (replyBeat) {
+      await channel.say(replyBeat);
+      await saveTurn(user.id, "assistant", replyBeat).catch(() => {});
+    }
+    const trace = await executeChatTool(user, tool, channel);
+    // Keep history honest: the brain said "on it", this is what "it" was.
+    await saveTurn(user.id, "assistant", trace.slice(0, 1500)).catch(() => {});
+    return trace;
+  };
 }
 
 /**

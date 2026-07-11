@@ -94,6 +94,30 @@ describe("analyzePosts", () => {
     const posts = [...baseline(), post({}), post({}), post({ engagement: null }), post({})];
     expect(analyzePosts(posts, PERIOD_START, NOW).actualPerWeek).toBe(2);
   });
+
+  it("tone split requires 2+ per bucket, same gating as the throughline split", () => {
+    const thin = [...baseline(), post({ sincerityRegister: "sincere" }), post({ sincerityRegister: "ironic" })];
+    expect(analyzePosts(thin, PERIOD_START, NOW).sincerityMix).toBeNull();
+
+    const enough = [
+      ...baseline(),
+      post({ sincerityRegister: "sincere", engagement: 20 }),
+      post({ sincerityRegister: "sincere", engagement: 24 }),
+      post({ sincerityRegister: "ironic", engagement: 60 }),
+      post({ sincerityRegister: "absurdist", engagement: 80 }),
+    ];
+    const a = analyzePosts(enough, PERIOD_START, NOW);
+    expect(a.sincerityMix).toEqual({ sincere: { posts: 2, median: 22 }, other: { posts: 2, median: 70 } });
+  });
+
+  it("outliers carry rhetorical mode and sincerity register through", () => {
+    const posts = [
+      ...baseline(),
+      post({ engagement: 40, content: "shitpost that popped", sincerityRegister: "absurdist", rhetoricalMode: "reach.shitpost" }),
+    ];
+    const a = analyzePosts(posts, PERIOD_START, NOW);
+    expect(a.outliers[0]).toMatchObject({ sincerityRegister: "absurdist", rhetoricalMode: "reach.shitpost" });
+  });
 });
 
 describe("renderPerformance", () => {
@@ -130,5 +154,18 @@ describe("renderPerformance", () => {
   it("names a too-thin split rather than inventing one", () => {
     const text = renderPerformance(data());
     expect(text).toContain("too few posts this period to split meaningfully");
+  });
+
+  it("surfaces the tone split and flags a non-sincere outlier", () => {
+    const posts = [
+      ...baseline(),
+      post({ sincerityRegister: "sincere", engagement: 20 }),
+      post({ sincerityRegister: "sincere", engagement: 24 }),
+      post({ sincerityRegister: "absurdist", engagement: 60, content: "big shitpost" }),
+      post({ sincerityRegister: "ironic", engagement: 50 }),
+    ];
+    const text = renderPerformance(data({ analysis: analyzePosts(posts, PERIOD_START, NOW) }));
+    expect(text).toContain("TONE SPLIT: sincere posts 2, median 22");
+    expect(text).toContain("absurdist, not your usual mode");
   });
 });

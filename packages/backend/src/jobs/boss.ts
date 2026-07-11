@@ -18,6 +18,8 @@ export const QUEUES = {
   peerIngest: "benchmark.peers",
   weeklyPlan: "strategist.weekly-plan",
   performancePulse: "performance.pulse",
+  campaignDetect: "memory.campaign-detect",
+  classificationRecalibrate: "memory.classification-recalibrate",
 } as const;
 
 export interface TranscribeJob {
@@ -47,6 +49,12 @@ export interface DiagnoseJob {
   attempt?: number;
   /** Whether the mid-ingestion "still reading" check-in has already fired. */
   pingedSlow?: boolean;
+}
+export interface CampaignDetectJob {
+  captureId: string;
+  userId: string;
+  /** Bounds the wait for this capture's memory embeddings to finish. */
+  attempt?: number;
 }
 
 let boss: PgBoss | undefined;

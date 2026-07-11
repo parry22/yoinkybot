@@ -23,7 +23,9 @@ import { handleMentionsFetch } from "../engagement/service.js";
 import { handlePeerIngest } from "../benchmark/peers.js";
 import { handleWeeklyPlan } from "./weekly-plan.js";
 import { handlePerformancePulse } from "../strategist/performance.js";
-import type { IngestProfileJob, DiagnoseJob } from "./boss.js";
+import { handleCampaignDetect } from "./campaign-detect.js";
+import { handleMonthlyRecalibration } from "../memory/corrections.js";
+import type { IngestProfileJob, DiagnoseJob, CampaignDetectJob } from "./boss.js";
 
 /**
  * Log a worker failure with enough context to trace it (queue, job id, payload),
@@ -80,6 +82,17 @@ export async function registerWorkers(boss: PgBoss): Promise<void> {
   await boss.work(QUEUES.peerIngest, logged(QUEUES.peerIngest, () => handlePeerIngest()));
   await boss.work(QUEUES.weeklyPlan, logged(QUEUES.weeklyPlan, () => handleWeeklyPlan()));
   await boss.work(QUEUES.performancePulse, logged(QUEUES.performancePulse, () => handlePerformancePulse()));
+  // Concurrency 1, deliberately: campaign detection isn't latency-sensitive
+  // (pure background enrichment), and serializing it per-process closes the
+  // create-race two sibling captures could otherwise cause — see campaign-detect.ts.
+  await boss.work<CampaignDetectJob>(
+    QUEUES.campaignDetect,
+    logged(QUEUES.campaignDetect, (d: CampaignDetectJob) => handleCampaignDetect(d)),
+  );
+  await boss.work(
+    QUEUES.classificationRecalibrate,
+    logged(QUEUES.classificationRecalibrate, () => handleMonthlyRecalibration()),
+  );
 
   // Proactive engine tick: hourly; cadence/quiet-hour gates live in the handler.
   // This single tick now also offers to turn the resurfaced idea into angles
@@ -90,9 +103,11 @@ export async function registerWorkers(boss: PgBoss): Promise<void> {
   // Memory map rebuild + voice rebuild: quiet early-morning dailies.
   await boss.schedule(QUEUES.clusterRebuild, "30 3 * * *");
   await boss.schedule(QUEUES.voiceRebuild, "15 4 * * *");
-  // Trends: fetch a few times daily; match once daily mid-morning IST for the ICP.
+  // Trends: fetch a few times daily; match runs morning/midday/evening IST for
+  // the ICP — the handler itself enforces "send at most once a day", so later
+  // runs only get a shot when the earlier ones didn't fire.
   await boss.schedule(QUEUES.trendFetch, "0 */8 * * *");
-  await boss.schedule(QUEUES.trendMatch, "30 4 * * *"); // 10:00 IST
+  await boss.schedule(QUEUES.trendMatch, "30 2,7,13 * * *"); // 08:00 / 12:30 / 19:00 IST
   // Public mentions ingest (classification + scoring only — the hourly
   // proactive tick decides delivery, replies get priority in that slot).
   await boss.schedule(QUEUES.mentionsFetch, "15 */6 * * *");
@@ -105,6 +120,9 @@ export async function registerWorkers(boss: PgBoss): Promise<void> {
   await boss.schedule(QUEUES.weeklyPlan, "30 5 * * 1"); // Mondays 11:00 IST
   // Next-day performance pulse: daily, before the morning window.
   await boss.schedule(QUEUES.performancePulse, "45 4 * * *"); // 10:15 IST
+  // Classification calibration: monthly, 1st of the month — correction-only
+  // (see memory/corrections.ts), no external research integration.
+  await boss.schedule(QUEUES.classificationRecalibrate, "0 6 1 * *");
 
   // Retired schedules — pg-boss persists these in its own table independent of
   // the code, so removing a boss.schedule() call above does nothing on an

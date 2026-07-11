@@ -35,6 +35,15 @@ export const chatToolSchema = z.discriminatedUnion("name", [
     handle: z.string().min(1),
   }),
   z.object({ name: z.literal("forget"), query: z.string().min(1) }),
+  // User is correcting how a past post was read ("that was a joke", "that
+  // wasn't sincere") — the model resolves WHICH field and the corrected value
+  // from what they said; the executor resolves WHICH post via search.
+  z.object({
+    name: z.literal("correct_classification"),
+    query: z.string().min(1),
+    field: z.enum(["rhetorical_mode", "sincerity_register", "motive"]),
+    correctedValue: z.string().min(1),
+  }),
   // Destructive: never fires the wipe itself. Offers the same clr:confirm /
   // clr:cancel button pair the old /clear command did, so nothing is deleted
   // without an explicit tap.

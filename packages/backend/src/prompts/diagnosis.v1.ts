@@ -2,7 +2,7 @@ import type { Prompt } from "./types.js";
 import { CHAT_STYLE_RULES, CASUAL_VOICE } from "./style.js";
 
 export interface DiagnosisVars {
-  posts: Array<{ content: string; kind: string; created_at: string; source: string }>;
+  posts: Array<{ content: string; kind: string; created_at: string; source: string; sincerity_register?: string | null }>;
   positions: string[];
   voiceTraits?: unknown;
   memoryCount: number;
@@ -36,6 +36,13 @@ INPUT
 You have the user's full ingested history below: every post, reply, and article from connected
 platforms, stored as classified memories with dates. Treat this as your ONLY source of truth. Do
 not diagnose anything you cannot point to a specific memory for.
+
+SOME POSTS ARE TAGGED [JOKE/register] — a post read as a joke/bit/ironic/absurdist, not a sincere
+statement. NEVER cite a tagged post as evidence of a genuine owned position, latent belief, or
+contradiction (Dimensions 1 and 4) — a shitpost stated confidently is still not a real belief. You
+MAY still reference tagged posts for voice/personality color (Dimension 2 — their sense of humor is
+part of their real voice) or note a recurring bit as its own distinct observation, clearly labeled as
+entertainment, never conflated with something they sincerely hold.
 
 CONFIRM SIGNAL FIRST
 Check the memory count. If it is below roughly 30-40 items, do not pretend to a full read. Produce a
@@ -147,6 +154,11 @@ Respond with ONLY valid JSON:
     }\n\n═══ COMPUTED EVIDENCE (deterministic — build on these numbers, never invent your own) ═══\n${evidence}\n\nExtracted positions:\n${
       positions.length ? positions.map((p) => `- ${p}`).join("\n") : "(none extracted)"
     }\n\n${voiceTraits ? `Voice profile:\n${JSON.stringify(voiceTraits)}\n\n` : ""}POST / MEMORY HISTORY (chronological):\n${posts
-      .map((p) => `[${p.created_at.slice(0, 10)} · ${p.source}] ${p.content}`)
+      .map(
+        (p) =>
+          `[${p.created_at.slice(0, 10)} · ${p.source}${
+            p.sincerity_register && p.sincerity_register !== "sincere" ? ` · JOKE/${p.sincerity_register}` : ""
+          }] ${p.content}`,
+      )
       .join("\n")}`,
 };

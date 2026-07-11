@@ -37,11 +37,16 @@ export async function buildVoiceProfile(
     };
   }
 
-  // Published imports carry the public voice; raw captures carry the thinking voice.
+  // Published imports carry the public voice; raw captures carry the thinking
+  // voice. Only the published branch is sincerity-filtered — a shitpost risks
+  // skewing the modeled PUBLIC voice, but a private chat capture should still
+  // train voice regardless of register (it was never posted; nothing to weight
+  // against). NULL-tolerant, mirrors memory/classification.ts#isSincereEnough.
   const samples = await query<{ content: string; source: string }>(
     `(SELECT m.content, 'published (' || c.source || ')' AS source
       FROM memories m JOIN captures c ON c.id = m.capture_id
       WHERE m.user_id = $1 AND m.status = 'active' AND (c.metadata->>'published')::boolean IS TRUE
+        AND (c.sincerity_register IS NULL OR (c.sincerity_register = 'sincere' AND c.sincerity_confidence >= 0.5))
       ORDER BY length(m.content) DESC LIMIT 40)
      UNION ALL
      (SELECT m.content, 'raw capture' AS source

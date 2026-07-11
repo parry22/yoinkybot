@@ -91,19 +91,19 @@ full prior implementation if it ever needs to come back.
 | Telegram bot | `src/telegram/` | grammY bot, command handlers, conversation state. Commands (deliberately lean — 2026-07-11): `start, help, connect, draft, repurpose, peers, settings, upgrade`. Everything else (check, search/ask, status, diagnosis refresh, voice, forget, plan, positions, clearing your account) is done in plain language via the agentic chat layer (see §3a) — those slash commands were removed. |
 | Strategist flow | `src/strategist/` | The a16z Personal Brand Strategist onboarding. Profile-first arc: profiling (Stages 1-6, 7 fields) → connect → gap analysis → three-month plan → proactive. `session-machine.ts` is the state machine; `state.ts` persists it; `profile.ts` owns the stated profile; `gap.ts` computes the stated-vs-actual gap. See §3b. |
 | Capture pipeline | `src/capture/` | Immutable capture of user input + imports (X via twitterapi.io→Apify, LinkedIn via Apify). Captures are never mutated. |
-| Memory core | `src/memory/` | Extraction → embed → link → search (RRF hybrid). `positions.ts` (stated positions), `confidence.ts`, `forget.ts` (hard delete). |
+| Memory core | `src/memory/` | Extraction → embed → link → search (RRF hybrid). `positions.ts` (stated positions), `confidence.ts`, `forget.ts` (hard delete), `classification.ts` (rhetorical mode/sincerity/motive taxonomy + gating helper), `corrections.ts` (user-correction mechanism + monthly recalibration). See §3d. |
 | Voice | `src/voice/` | Voice profile from a user's own corpus; used to ground drafting. |
-| Consistency | `src/consistency/` | Pre-publish check: does a draft contradict a stated position? Embed → match positions → LLM meaning-level compare. |
+| Consistency | `src/consistency/` | Pre-publish check: does a draft contradict a stated position? Embed → match positions → LLM meaning-level compare. Ambiguous matches (top-2 within `CONSISTENCY_AMBIGUITY_DELTA`) escalate to a bounded agent (see §3c). |
 | Drafting | `src/drafting/` | `angle-draft.ts` (3 ways to tell a story), `draft.ts`, `repurpose.ts` (transform, not regenerate). |
-| Trends | `src/trends/` | Provider registry with ordered fallback (`TREND_PROVIDER`: apify → brave → tavily). Actor ids in config are verified against live runs — see provider files for field shapes. |
-| Engagement | `src/engagement/` | Reply-worthiness scored in code (`scoring.ts`); the model only drafts. One draft per slot; DMs out of scope. |
+| Trends | `src/trends/` | Provider registry with ordered fallback (`TREND_PROVIDER`: apify → brave → tavily). Actor ids in config are verified against live runs — see provider files for field shapes. `scoring.ts` (deterministic buzzScore) + `providers/twitterapi.ts` (advanced_search volume verification) gate the macro-moment agent (§3c). |
+| Engagement | `src/engagement/` | Reply-worthiness scored in code (`scoring.ts`); the model only drafts — now via a bounded agent (`reply-agent.ts`, §3c) grounded by `heuristics.ts` (deterministic visibility facts). One draft per slot; DMs out of scope. |
 | Benchmark / peers | `src/benchmark/` | Peer benchmarking as territory, not scoreboard; relative-only. |
 | Surfacing | `src/surfacing/` | Deterministic resurfacing selection (`scoring.ts`), cadence, nudges. LLM only composes the message. |
-| Jobs | `src/jobs/` | pg-boss workers: extract, embed-link, cluster, resurface, offer-angles, trend-fetch, trend-match, weekly-plan, transcribe. `boss.ts`/`workers.ts` wire them. |
+| Jobs | `src/jobs/` | pg-boss workers: extract, embed-link, cluster, resurface, offer-angles, trend-fetch, trend-match, weekly-plan, transcribe, campaign-detect, classification-recalibrate. `boss.ts`/`workers.ts` wire them. |
 | Billing | `src/billing/` | DodoPayments (merchant of record). Webhook `webhook.ts` (Standard Webhooks sig), `entitlements.ts`, `PAYWALL_ENABLED` gate. |
 | STT | `src/stt/` | Speech-to-text, tried in order: Sarvam → Groq → OpenAI Whisper. |
 | Usage | `src/usage/` | `meter.ts` writes `usage_events` for every LLM/embed call (cost visibility, daily cap). |
-| Prompts | `src/prompts/*.v{n}.ts` | Versioned prompt files (never inline strings; `converse` is at v2). `types.ts`, `style.ts`. |
+| Prompts | `src/prompts/*.v{n}.ts` | Versioned prompt files (never inline strings; `converse` is at v3, `reply-draft` and `consistency-check` at v2). `types.ts`, `style.ts`. |
 | Lib | `src/lib/` | `apify.ts`, `alerts.ts` (admin DM on job failure, throttled), `auth.ts`, `kmeans.ts`, `time.ts` (quiet hours), `voice-stats.ts`. |
 
 ---
@@ -133,19 +133,30 @@ is kept alive for the whole turn (`withTyping`, 4.5s heartbeat).
    goes to the brain instead.
 2. Onboarding phases → the paced strategist session (`session-machine.ts`),
    unchanged.
-3. Everything else → `conversation.ts#converseWithUser` with the `converse.v2`
-   prompt, which returns `{reply, tool?, capture, offer_angles}`.
+3. Everything else → `conversation.ts#converseWithUser` with the `converse.v3`
+   prompt — a bounded multi-tool loop (2026-07-11, replaced the v2 single call).
 
-**Tools.** The brain may call at most ONE tool per turn, declared in
-`telegram/chat-tools.ts` (zod, schemas only — no imports, so no module cycles)
-and executed by `telegram/actions.ts#executeChatTool`: `draft_post`,
-`repurpose`, `search_memory`, `check_draft`, `show_plan`, `show_positions`,
-`show_status`, `refresh_diagnosis`, `connect_account`, `forget`,
-`clear_everything`. Most tools run the *same code path* their slash command
-used to (some, like `show_plan`/`show_positions`/`clear_everything`, never had
-one — plan, positions, and clear are chat-only). Entitlement gates still apply.
-What a tool delivered is persisted as an assistant turn so the next turn's
-history reflects what actually happened. The executor is channel-based
+**Tools + the turn loop.** Tools are declared in `telegram/chat-tools.ts` (zod,
+schemas only — no imports, so no module cycles) and executed by
+`telegram/actions.ts#executeChatTool`: `draft_post`, `repurpose`,
+`search_memory`, `check_draft`, `show_plan`, `show_positions`, `show_status`,
+`refresh_diagnosis`, `connect_account`, `forget`, `clear_everything`. Most
+tools run the *same code path* their slash command used to (some, like
+`show_plan`/`show_positions`/`clear_everything`, never had one — plan,
+positions, and clear are chat-only). Entitlement gates still apply.
+
+The brain may chain up to `MAX_TOOL_CALLS_PER_TURN` (config, 3) tool calls in
+one turn: `converseWithUser` calls the model, and when the steady-state
+executor (`actions.ts#chatToolExecutor`) is passed, each requested tool runs
+immediately (its output delivered in-chat), a compact `tool → result` note is
+appended to the turn's context (never the raw payloads), and the model is
+called again until it answers without a tool. Guardrails: hard call cap; the
+same tool with the same args twice in one turn is rejected and forces a final
+reply; each tool delivery (and any mid-turn reply beat) is persisted as its own
+assistant-turn fragment, so a 3-tool turn shows up as 3 fragments in history,
+not one opaque blob. The paced onboarding session (`session-machine.ts`) still
+uses the legacy single-tool path (no executor passed → the first tool is
+returned to `deliverTurnOutput` as before). The executor is channel-based
 (`Channel = {say, typing?}`): live chat wraps `ctx`, async paths wrap
 `sendTelegram` (`dmChannel`).
 
@@ -165,7 +176,7 @@ Caption-bearing media routes the caption through the normal turn with an honest
 (stickers, polls, …) get a plain "text and voice only" reply instead of silence.
 
 When adding a capability: add the schema to `chat-tools.ts`, the executor case
-to `actions.ts`, document it in the `converse.v2` tool list, and keep the slash
+to `actions.ts`, document it in the `converse.v3` tool list, and keep the slash
 command a thin wrapper over the same executor.
 
 **Voice: casual for Yoinky, polished for the user's feed** (2026-07-11). There are
@@ -181,7 +192,8 @@ two registers and they must not bleed into each other, because they share
   `session-machine.ts` replies, and inside `sendTelegramSequence`.
 - **Content written for the user's public feed** (post drafts, reply drafts,
   repurposed posts, angle hooks) stays properly capitalized. Its prompts
-  (`draft.v1`, `reply-draft.v1`, `repurpose.v1`, `generate-angles.v1`) use
+  (`draft.v1`, `reply-draft.v2`, `repurpose.v1`, `generate-angles.v1`, the
+  `embedded_draft` field of `trend-take.v1`) use
   `CHAT_STYLE_RULES`/`POST_WRITING_RULES` but **must never** get `CASUAL_VOICE`,
   and `casualize()`/`enforceStyle` is never run over their output as a
   lowercasing pass. `sendTelegram` (single-message) is deliberately NOT
@@ -323,9 +335,150 @@ that crosses a stated constraint is a failure, not a draft.
 
 ---
 
+## 3c. Bounded agent loops (2026-07-11)
+
+Four features run a **bounded agent loop** instead of one fixed-context LLM
+call: the model gets a small toolset and can make a few research calls before
+it must commit. The doctrine is unchanged — deterministic code still decides
+*whether* anything fires (selection, scoring, gating); the loop only buys the
+model grounding before it composes.
+
+**Shared runner** — `llm/tool-loop.ts#runToolLoop`. Envelope convention: each
+model response is JSON with an optional `"tool"` key; `tool: null` means the
+rest of the object is the final output. Guardrails baked into the runner:
+- Hard `maxToolCalls` cap per feature (config, 2–4). Hitting it forces a final
+  answer. No open-ended ReAct loops, ever.
+- Same tool + same args twice in one loop → rejected, forces a final answer
+  (the anti-loop ledger pattern from the profiling intake).
+- Every step is console-logged and returned as `steps`, which callers persist
+  (surfacing payloads carry `agent_steps`) — inspectable, never a black box.
+- Every call goes through `llm/gateway.ts` → `usage_events`. No new call path.
+- Tool *schemas* live in a `*/tools.ts` file with no imports (the
+  `chat-tools.ts` rule); executors live at the callsite.
+
+The chat turn loop (§3a) is the same pattern but bespoke in `conversation.ts`,
+because its tools have chat side effects (deliveries, turn persistence).
+
+**The three runner-based loops:**
+
+| Loop | Deterministic gate (code, before any loop runs) | Tools | Cap |
+|---|---|---|---|
+| Macro-moment (`jobs/trend-match.ts` → `trend-take.v1`) | daily send gate → monthly cap → niche gate (pgvector vs positions, `NICHE_THRESHOLD`, *before* any paid twitterapi.io call) → buzz gate (`trends/providers/twitterapi.ts` two-pass advanced_search → `trends/scoring.ts#buzzScore` > `BUZZ_THRESHOLD`; distinct authors weigh more than raw tweet count) → position gate (macro-match.v1, unchanged) | `get_top_tweets` (cached verified pool, no new spend), `search_memory`, `get_voice_profile`, `get_goals_and_pillars`, `get_positions` | 4 |
+| Consistency (`consistency/check.ts` → `consistency-check.v2`) | runs ONLY when top-2 position matches are within `CONSISTENCY_AMBIGUITY_DELTA`; the clean-match common case stays single-shot v1 | `search_more_positions`, `get_position_context`, `search_memory` | 3 |
+| Reply drafting (`engagement/reply-agent.ts` → `reply-draft.v2`) | reply-worthiness scoring + learned threshold (`engagement/scoring.ts`) — untouched, decides *whether* to draft at all | `search_memory`, `get_voice_profile`, `get_content_pillars`, `get_thread_context`, `get_engagement_heuristics` | 3 |
+
+Notes worth knowing:
+- **Macro-moment delivery** is distinct: surfacing type `trend_take` (migration
+  0016, in `PROACTIVE_TYPES` so it shares the unified budget + quiet hours), a
+  `⚡`-framed DM with no 🔥/💤/🗑 resurfacing card. The agent may return
+  `fires: false` — a skipped moment costs nothing, a forced one costs trust; a
+  declined trend doesn't burn the day (only a *sent* take does), but the trend
+  itself is dedup'd via its moment row. `trendMatch` is scheduled 3×/day; the
+  handler enforces at-most-one send. Without `TWITTERAPI_IO_KEY` the buzz gate
+  can't run and the pipeline degrades to the old niche+position → angle-offer
+  flow.
+- **Consistency verdicts** are `catch_it` / `intentional_evolution` /
+  `no_conflict`; catches under `CONSISTENCY_CONFIDENCE_THRESHOLD` are reported
+  clear, and an intentional evolution comes back as a non-warning `note` on the
+  result (surfaced by `runCheck` as "clear to post, one read worth knowing").
+- **`get_engagement_heuristics`** returns computed facts, not model opinions
+  (`engagement/heuristics.ts`, pure + unit-tested): thread reply count,
+  minutes since post, reply-share-of-engagement, early-window flag — live
+  counts via `pullTweetsByIds`, fetched at most once per loop, degrading to 0s.
+- **twitterapi.io client additions** (`capture/imports/twitterapi-io.ts`):
+  `searchTweets` (advanced_search; cursor pagination capped by
+  `TWITTERAPI_SEARCH_PAGE_CAP`; operators are `min_faves:`/`min_retweets:`/
+  `min_replies:` and `since_time:`/`until_time:` unix seconds — NOT the
+  `since:YYYY-MM-DD` form) and `pullTweetsByIds` (`/twitter/tweets`). The
+  by-ids endpoint's response nesting has NOT been verified live yet (both
+  observed shapes are handled) — verify before leaning on it in prod.
+- **Voice split holds inside loops:** the trend-take `reply` is Yoinky talking
+  (casualized); its `embedded_draft` and the reply agent's `draft` are feed
+  content — `enforceStyle` only, never `casualize()`.
+
+---
+
+## 3d. Post classification: rhetorical mode, sincerity, motive, campaigns (2026-07-11)
+
+Content extraction tells you what a post is about; this tells you what kind
+of post it is and why it exists — a distinct pass, folded into the same
+`extract-memories` LLM call (v2) rather than a second round-trip, since
+`llm/gateway.ts` has no real tier routing to trade off. Classified at
+**capture** granularity (not per-memory): positions, `PerfPost`, and
+campaigns are all naturally capture-level concepts, and a correction only
+ever needs to touch one row.
+
+- **Three dimensions on `captures`** (migration `0017`, all NULL-tolerant —
+  old captures behave exactly as before): `rhetorical_mode` (reuses the
+  onboarding tone taxonomy, `ALL_TONE_KEYS`) + `format_flags`;
+  `sincerity_register` (`sincere | ironic | self_deprecating | absurdist |
+  ambiguous`) + `sincerity_confidence`; `motive` (`authority_building |
+  relationship_building | audience_growth | lead_generation |
+  personal_processing | community_participation | campaign_installment`) +
+  `motive_confidence`. `memory/classification.ts` owns the taxonomy consts
+  and `isSincereEnough(register, confidence)` — the single gate every
+  downstream consumer calls, conservative by default
+  (`SINCERITY_CONFIDENCE_THRESHOLD = 0.5`).
+- **The core fix — position gating.** `jobs/extract.ts` skips the entire
+  positions-extraction loop for a capture when `!isSincereEnough(...)`, so a
+  shitpost can never enter the belief store and later trigger a false
+  consistency-check contradiction. Verified live: an absurdist post
+  containing an explicit first-person "belief" claim correctly produced zero
+  new positions.
+- **Campaign detection** (build-in-public series) is its own job/queue,
+  `jobs/campaign-detect.ts`, fired once per capture (not per-memory — an
+  embed-link-style per-memory trigger could race and double-create a
+  campaign for one post). Two paths: a structural marker
+  (`detectStructuralMarker` — "day N", numbered updates, repeated tags,
+  pure/deterministic) fast-attaches to a matching existing campaign; else a
+  thematic check compares this capture's embedding against existing
+  campaigns and, failing that, the user's own last ~20 captures in a 21-day
+  window for a 3+ mutually-close cluster, creating a new `campaigns` row and
+  retroactively backfilling `campaign_id`/`campaign_installment_number` onto
+  the earlier matches. Threshold `CAMPAIGN_DISTANCE = 0.55`, matching
+  `embed-link.ts`'s own calibrated `NEIGHBOR_DISTANCE` (this deploy's
+  Qwen/DashScope embeddings run "cool" — on-topic paraphrases sit ~0.5-0.6
+  cosine, not ~0.2-0.3). This queue's worker concurrency is pinned to **1**
+  (`jobs/workers.ts`) specifically to close the create-race without an
+  advisory lock — acceptable since this is a single-instance deploy and
+  nothing user-facing waits on it.
+- **Downstream filters**, all additive/NULL-tolerant: `strategist/evidence.ts`
+  excludes non-sincere/low-confidence captures from idea/claims and the
+  inside-out ratio; `voice/profile.ts` filters only the *published*-sample
+  query (private chat captures still train voice regardless of register);
+  `strategist/performance.ts` adds a sincere-vs-other tone split
+  (`sincerityMix`) next to the existing aligned/off-throughline split, with
+  non-sincere outliers annotated inline; `diagnosis.v1.ts` tags non-sincere
+  posts inline (`[date · source · JOKE/register]`) and forbids citing them as
+  genuine positions while still allowing them as voice/personality color.
+- **Correction mechanism**, single choke point
+  `memory/corrections.ts#recordCorrection`: updates the capture, logs to
+  `classification_corrections`, and checks for a repeated-correction pattern
+  (`correction_acknowledgments` guards a one-time "noticed I've been reading
+  your joke posts too straight" DM). Two surfaces call it: the
+  `correct_classification` chat tool (hybridSearch-then-button-picker,
+  mirrors the existing `forget` tool) and a `🃏 that was a joke` button
+  added unconditionally to every resurfacing card. Verified live: a second
+  same-field correction within 30 days correctly fires the one-time
+  acknowledgment.
+- **Monthly recalibration is correction-only** (deliberately scoped — no live
+  research integration): `jobs/workers.ts` schedules
+  `classification-recalibrate` on the 1st of the month; for each user with
+  recent corrections, `corrections.ts#buildCalibrationNote` derives a short
+  per-user note from their correction history, stored in
+  `classification_calibration` and threaded into the next `extract-memories`
+  call as a fact.
+- **Peer ingestion** (`benchmark/peers.ts` + `classify-peer-themes.v1`, v2)
+  emits `rhetorical_mode`/`sincerity_register` onto `peer_captures` in the
+  same batched call as theme classification — no motive, no confidence, no
+  campaigns (peers get no belief graph or voice profile, by existing
+  doctrine).
+
+---
+
 ## 4. Data model
 
-Schema is a linear migration chain in `src/db/migrations/` (`0001`…`0015`),
+Schema is a linear migration chain in `src/db/migrations/` (`0001`…`0017`),
 applied on boot and via `pnpm db:migrate` (`src/db/migrate.ts`). pgvector is
 required for embedding columns.
 

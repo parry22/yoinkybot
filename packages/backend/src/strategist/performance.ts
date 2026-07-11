@@ -40,6 +40,10 @@ export interface PerfPost {
   unlockIdea: string | null;
   /** Backing capture — lets an outlier be repurposed straight from the report. */
   captureId?: string | null;
+  /** Read directly off captures — no subquery needed, unlike orientation, since
+   *  these already live at capture granularity (memory/classification.ts). */
+  rhetoricalMode?: string | null;
+  sincerityRegister?: string | null;
 }
 
 export interface Outlier {
@@ -51,6 +55,8 @@ export interface Outlier {
   aligned: boolean | null;
   unlockIdea: string | null;
   captureId: string | null;
+  rhetoricalMode: string | null;
+  sincerityRegister: string | null;
 }
 
 export interface PostAnalysis {
@@ -58,6 +64,10 @@ export interface PostAnalysis {
   baseline: { posts: number; median: number | null };
   period: { posts: number; withEngagement: number; median: number | null };
   split: { aligned: { posts: number; median: number }; off: { posts: number; median: number } } | null;
+  /** Sincere vs everything else (ironic/self_deprecating/absurdist/ambiguous),
+   *  same gating as the throughline split — "your outlier was a shitpost, not
+   *  your usual analytical mode" is a real, useful distinction. */
+  sincerityMix: { sincere: { posts: number; median: number }; other: { posts: number; median: number } } | null;
   outliers: Outlier[];
   actualPerWeek: number;
 }
@@ -91,6 +101,19 @@ export function analyzePosts(posts: PerfPost[], periodStartMs: number, nowMs: nu
         }
       : null;
 
+  // Sincere vs not — only over period posts that actually carry a sincerity
+  // read (older captures/legacy data have none, correctly excluded rather
+  // than guessed at).
+  const sincerePosts = periodWithEng.filter((p) => p.sincerityRegister === "sincere");
+  const otherRegisterPosts = periodWithEng.filter((p) => p.sincerityRegister != null && p.sincerityRegister !== "sincere");
+  const sincerityMix =
+    sincerePosts.length >= MIN_SPLIT_BUCKET && otherRegisterPosts.length >= MIN_SPLIT_BUCKET
+      ? {
+          sincere: { posts: sincerePosts.length, median: median(sincerePosts.map((p) => p.engagement!))! },
+          other: { posts: otherRegisterPosts.length, median: median(otherRegisterPosts.map((p) => p.engagement!))! },
+        }
+      : null;
+
   // Outliers need a trustworthy baseline; a 1.5x of noise is not a finding.
   const outliers: Outlier[] =
     baselinePosts.length >= MIN_BASELINE_POSTS && baselineMedian !== null && baselineMedian > 0
@@ -107,6 +130,8 @@ export function analyzePosts(posts: PerfPost[], periodStartMs: number, nowMs: nu
             aligned: p.alignedDistance === null ? null : p.alignedDistance < ALIGNED_DISTANCE,
             unlockIdea: p.unlockIdea,
             captureId: p.captureId ?? null,
+            rhetoricalMode: p.rhetoricalMode ?? null,
+            sincerityRegister: p.sincerityRegister ?? null,
           }))
       : [];
 
@@ -115,6 +140,7 @@ export function analyzePosts(posts: PerfPost[], periodStartMs: number, nowMs: nu
     baseline: { posts: baselinePosts.length, median: baselineMedian },
     period: { posts: inPeriod.length, withEngagement: periodWithEng.length, median: periodMedian },
     split,
+    sincerityMix,
     outliers,
     actualPerWeek: Math.round((inPeriod.length / (periodDays / 7)) * 10) / 10,
   };
@@ -157,6 +183,13 @@ export function renderPerformance(d: PerformanceData): string {
       : `THROUGHLINE SPLIT: too few posts this period to split meaningfully (${a.period.withEngagement} with metrics). Say so rather than inventing a comparison.`,
   );
 
+  if (a.sincerityMix) {
+    lines.push(
+      `TONE SPLIT: sincere posts ${a.sincerityMix.sincere.posts}, median ${a.sincerityMix.sincere.median} vs ` +
+        `non-sincere (joke/bit/ironic) posts ${a.sincerityMix.other.posts}, median ${a.sincerityMix.other.median}.`,
+    );
+  }
+
   lines.push(
     a.outliers.length
       ? `OUTLIERS (≥1.5x baseline):\n` +
@@ -166,6 +199,7 @@ export function renderPerformance(d: PerformanceData): string {
                 `- "${o.content}" — engagement ${o.engagement} (${o.ratio}x baseline)` +
                 `${o.orientation ? ` · ${o.orientation}` : ""}` +
                 `${o.aligned === null ? "" : o.aligned ? " · on-throughline" : " · off-throughline"}` +
+                `${o.sincerityRegister && o.sincerityRegister !== "sincere" ? ` · ${o.sincerityRegister.replace("_", "-")}, not your usual mode` : ""}` +
                 `${o.unlockIdea ? ` · developed unlock idea: "${o.unlockIdea}"` : ""}`,
             )
             .join("\n")
@@ -275,9 +309,12 @@ export async function computePerformance(
     dist: number | null;
     orientation: string | null;
     capture_id: string;
+    rhetorical_mode: string | null;
+    sincerity_register: string | null;
   }>(
     `SELECT c.id AS capture_id, c.source, c.captured_at::text, c.raw_text,
             c.metadata->>'url' AS url, c.metadata->'engagement' AS eng,
+            c.rhetorical_mode, c.sincerity_register,
             (SELECT min(m.embedding <=> $2::vector) FROM memories m
              WHERE m.capture_id = c.id AND m.embedding IS NOT NULL) AS dist,
             (SELECT m.orientation FROM memories m
@@ -311,6 +348,8 @@ export async function computePerformance(
       url: r.url,
       unlockIdea: unlockByCapture.get(r.capture_id) ?? null,
       captureId: r.capture_id,
+      rhetoricalMode: r.rhetorical_mode,
+      sincerityRegister: r.sincerity_register,
     };
   });
 
