@@ -54,11 +54,14 @@ connect your accounts, get diagnosed, build a plan, and ship content.
     `trend_take` delivery (migration 0016), at most one a day, shared proactive
     budget. Degrades to the old angle-offer flow when `TWITTERAPI_IO_KEY` is
     unset.
-  - **Consistency check:** when the top-2 position matches are within
-    `CONSISTENCY_AMBIGUITY_DELTA`, an agent resolves *which* statement the
-    draft actually conflicts with (position context, wider search, memory)
-    and reports catch / intentional-evolution / no-conflict; low-confidence
-    catches are suppressed. The clean-match common case stays single-shot.
+  - **Consistency check:** two code-decided escalation signals send a draft to
+    the agent — top-2 position matches within `CONSISTENCY_AMBIGUITY_DELTA`, or
+    a single-shot first pass that comes back under
+    `CONSISTENCY_CONFIDENCE_THRESHOLD` (a shaky read is re-checked, not acted
+    on). The agent resolves *which* statement the draft actually conflicts with
+    (position context, wider search, memory) and reports catch /
+    intentional-evolution / no-conflict; low-confidence catches are suppressed.
+    The confident, clean-match common case stays single-shot.
   - **Reply drafting (reply-draft.v2):** scoring still decides *whether*; the
     drafter now pulls its own grounding — memory, voice, pillars, full thread,
     and computed visibility facts (`engagement/heuristics.ts`, deterministic

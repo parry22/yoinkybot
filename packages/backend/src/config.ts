@@ -59,6 +59,31 @@ const schema = z.object({
   TWITTERAPI_IO_KEY: z.string().optional(),
   TWITTERAPI_IO_BASE_URL: z.string().default("https://api.twitterapi.io"),
 
+  // ── Bounded agent loops (see llm/tool-loop.ts). Hard caps, never open-ended. ──
+  // Chat brain: max tool calls in one conversational turn (converse.v3).
+  MAX_TOOL_CALLS_PER_TURN: z.coerce.number().default(3),
+  // Consistency check: embed-distance gap between the top-2 position matches
+  // below which "which position is this even about" is genuinely ambiguous and
+  // the agentic path runs instead of the single-shot compare.
+  CONSISTENCY_AMBIGUITY_DELTA: z.coerce.number().default(0.08),
+  // Below this confidence, the consistency agent's verdict is reported as
+  // "no conflict" — a shaky catch erodes trust in every real one after it.
+  CONSISTENCY_CONFIDENCE_THRESHOLD: z.coerce.number().default(0.6),
+  CONSISTENCY_MAX_TOOL_CALLS: z.coerce.number().default(3),
+  // Engagement reply drafting agent.
+  REPLY_AGENT_MAX_TOOL_CALLS: z.coerce.number().default(3),
+  // Macro-moment (trend take) agent + its deterministic gates.
+  TREND_TAKE_MAX_TOOL_CALLS: z.coerce.number().default(4),
+  // buzzScore (trends/scoring.ts, components normalized 0..1) must clear this.
+  BUZZ_THRESHOLD: z.coerce.number().default(0.5),
+  // Max cosine distance between a trend and the user's nearest position for the
+  // niche gate (was hardcoded 0.7 in trend-match; text-embedding-v4 puts
+  // on-topic paraphrases around 0.55-0.65).
+  NICHE_THRESHOLD: z.coerce.number().default(0.7),
+  // twitterapi.io advanced_search pagination cap per query — $0.00015/tweet is
+  // cheap per topic but not free at scale; never paginate unbounded.
+  TWITTERAPI_SEARCH_PAGE_CAP: z.coerce.number().default(3),
+
   DODO_API_KEY: z.string().optional(),
   DODO_WEBHOOK_SECRET: z.string().optional(),
   DODO_ENV: z.enum(["test_mode", "live_mode"]).default("test_mode"),

@@ -29,13 +29,19 @@ For each REAL contradiction, return the position id and a one-sentence explanati
 specific tension. Also note reinforcements (draft strongly restates a position) — these are
 informational, not flags.
 
+Also return an overall "confidence" from 0 to 1: how sure you are of this verdict as a whole.
+Be honest — if more than one position looked plausibly relevant, if the draft is vague, or if
+you couldn't tell whether a tension is a real reversal or just added nuance, score it low. A
+low score is not a failure; it routes the draft to a deeper second pass instead of a snap call.
+
 ${CHAT_STYLE_RULES}
 
 ${CASUAL_VOICE}
 
 Respond with ONLY valid JSON:
 {"contradictions":[{"position_id":"...","explanation":"..."}],
- "reinforcements":[{"position_id":"..."}]}`,
+ "reinforcements":[{"position_id":"..."}],
+ "confidence":0.0}`,
   render: ({ draft, positions, throughline }) =>
     `DRAFT:\n${draft}\n\n${throughline ? `THROUGHLINE (what they want to be known for): ${throughline}\n\n` : ""}STATED POSITIONS:\n${positions
       .map((p) => `[${p.id}] (first: ${p.first_stated_at.slice(0, 10)}, last affirmed: ${p.last_affirmed_at.slice(0, 10)}) ${p.statement}`)

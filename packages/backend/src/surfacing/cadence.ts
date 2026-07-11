@@ -13,7 +13,7 @@ const MIN_GAP_MS = 36 * 60 * 60 * 1000;
  * flags are excluded — they're user-initiated (web), not proactive.
  * Progress reports are excluded — they have their own 14-day gate.
  */
-export const PROACTIVE_TYPES = ["resurface", "angle_offer", "trend_match", "reply_draft", "performance_alert", "nudge"];
+export const PROACTIVE_TYPES = ["resurface", "angle_offer", "trend_match", "trend_take", "reply_draft", "performance_alert", "nudge"];
 
 export interface CadenceDecision {
   ok: boolean;

@@ -3,7 +3,7 @@ import { getBoss, QUEUES, type TranscribeJob } from "./boss.js";
 import { transcribeAudio } from "../stt/transcribe.js";
 import type { User } from "../lib/auth.js";
 import { converseWithUser } from "../telegram/conversation.js";
-import { deliverTurnOutput } from "../telegram/actions.js";
+import { deliverTurnOutput, chatToolExecutor } from "../telegram/actions.js";
 import { dmChannel, withTyping } from "../telegram/bot.js";
 
 /**
@@ -52,7 +52,7 @@ export async function handleTranscribe(job: TranscribeJob): Promise<void> {
       if (!user) return;
       const channel = dmChannel(job.userId);
       await withTyping(channel, async () => {
-        const result = await converseWithUser(job.userId, text);
+        const result = await converseWithUser(job.userId, text, { executeTool: chatToolExecutor(user, channel) });
         // The voice note is already a capture; suppress the brain's capture flag
         // so the thought isn't filed twice.
         await deliverTurnOutput(user, text, result, channel, { alreadyCaptured: true });

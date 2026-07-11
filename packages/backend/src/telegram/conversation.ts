@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { query, queryOne } from "../db/pool.js";
+import { config } from "../config.js";
 import { llmCall } from "../llm/gateway.js";
-import { converse } from "../prompts/converse.v2.js";
+import { converse } from "../prompts/converse.v3.js";
 import { parseChatTool, type ChatTool } from "./chat-tools.js";
 import { activePositions } from "../memory/positions.js";
 import { hybridSearch } from "../memory/search.js";
@@ -26,8 +27,24 @@ export interface ConversationResult {
   reply: string;
   capture: boolean;
   offerAngles: boolean;
-  /** A tool the brain decided to call this turn; executed by telegram/actions.ts. */
+  /** A tool the brain decided to call this turn; executed by telegram/actions.ts.
+   *  Only set on the legacy single-tool path (no executor passed) — with an
+   *  executor, tools run inside the turn loop and this stays undefined. */
   tool?: ChatTool;
+}
+
+export interface ConverseOpts {
+  /**
+   * Runs one mid-turn tool call (delivering its output to the user) and returns
+   * the compact trace fed back to the model. Passing this turns the turn into a
+   * bounded multi-tool loop (up to MAX_TOOL_CALLS_PER_TURN); without it, the
+   * first tool call ends the turn and is returned for the caller to execute
+   * (the legacy single-tool behavior). Both live callers — typed text
+   * (bot.ts) and voice transcript (transcribe.ts) — pass an executor, so the
+   * single-tool branch is a preserved fallback, not a currently-exercised path;
+   * paced onboarding runs through runSessionTurn (session-machine), not here.
+   */
+  executeTool?: (tool: ChatTool, replyBeat: string) => Promise<string>;
 }
 
 async function loadHistory(userId: string): Promise<Array<{ role: "user" | "assistant"; content: string }>> {
@@ -102,9 +119,19 @@ export async function saveTurn(userId: string, role: "user" | "assistant", conte
 /**
  * The full conversational turn: gather everything Yoinky knows about the user,
  * let the strategist prompt reason over it, persist the exchange, and return the
- * reply plus what to do with the message (file it / offer angles).
+ * final reply plus what to do with the message (file it / offer angles).
+ *
+ * With opts.executeTool set, this is a bounded agent loop (converse.v3): the
+ * model may chain up to MAX_TOOL_CALLS_PER_TURN tool calls, each executed
+ * immediately and fed back as a compact note — full raw payloads stay out of
+ * the loop's own context. Guardrails: hard call cap, and the same tool with the
+ * same args twice in one turn is rejected and forces a final reply.
  */
-export async function converseWithUser(userId: string, message: string): Promise<ConversationResult> {
+export async function converseWithUser(
+  userId: string,
+  message: string,
+  opts: ConverseOpts = {},
+): Promise<ConversationResult> {
   const [history, positions, relevant, profile, moments, pending, counts, relationship] = await Promise.all([
     loadHistory(userId),
     activePositions(userId),
@@ -135,42 +162,95 @@ export async function converseWithUser(userId: string, message: string): Promise
   ]);
   const pendingUnlocks = (plan?.unlock ?? []).filter((u) => u.status === "pending").map((u) => u.idea);
 
-  const res = await llmCall({
-    userId,
-    eventType: "converse",
-    tier: converse.tier,
-    system: converse.system,
-    user: converse.render({
-      message,
-      history,
-      positions: positions.map((p) => p.statement),
-      relevantMemories: relevant.map((m) => ({ content: m.content, kind: m.kind, created_at: m.created_at })),
-      recentMoments: moments.map((m) => ({ title: m.title ?? "(untitled)", theme: m.theme, verdict: m.verdict })),
-      pendingAngles: pending.map((p) => ({
-        title: p.payload?.title ?? "a saved moment",
-        hooks: (p.payload?.angles ?? []).map((a) => a.hook).slice(0, 3),
-      })),
-      voiceTraits: profile?.traits,
-      memoryCount: Number(counts[0]?.n ?? 0),
-      profile: brandProfile ? profileSummaryForPrompt(brandProfile) : undefined,
-      throughline: plan?.throughline,
-      goal: goals[0]?.detail,
-      pendingUnlocks,
-      stage,
-      relationship,
-    }),
-    json: true,
-    maxTokens: 600,
-  });
-  const parsed = replySchema.parse(res.parsed);
-  const tool = parseChatTool(parsed.tool);
-  const reply = casualize(parsed.reply);
-  // A turn must carry something: with no tool and no reply, degrade to a nudge
-  // rather than silence.
-  const finalReply = reply || (tool ? "" : "Say more?");
+  const maxToolCalls = opts.executeTool ? config.MAX_TOOL_CALLS_PER_TURN : 1;
+  const toolNotes: string[] = [];
+  const seenCalls = new Set<string>();
+  let forceFinal = false;
+  let userTurnSaved = false;
+  // The user's message is assessed on the first pass; later passes only digest
+  // tool results, so the capture/offer_angles flags from pass one stand.
+  let capture = false;
+  let offerAngles = false;
 
-  await saveTurn(userId, "user", message);
-  if (finalReply) await saveTurn(userId, "assistant", finalReply);
+  for (let call = 0; ; call++) {
+    const outOfCalls = forceFinal || toolNotes.length >= maxToolCalls;
+    const res = await llmCall({
+      userId,
+      eventType: "converse",
+      tier: converse.tier,
+      system: converse.system,
+      user:
+        converse.render({
+          message,
+          history,
+          positions: positions.map((p) => p.statement),
+          relevantMemories: relevant.map((m) => ({ content: m.content, kind: m.kind, created_at: m.created_at })),
+          recentMoments: moments.map((m) => ({ title: m.title ?? "(untitled)", theme: m.theme, verdict: m.verdict })),
+          pendingAngles: pending.map((p) => ({
+            title: p.payload?.title ?? "a saved moment",
+            hooks: (p.payload?.angles ?? []).map((a) => a.hook).slice(0, 3),
+          })),
+          voiceTraits: profile?.traits,
+          memoryCount: Number(counts[0]?.n ?? 0),
+          profile: brandProfile ? profileSummaryForPrompt(brandProfile) : undefined,
+          throughline: plan?.throughline,
+          goal: goals[0]?.detail,
+          pendingUnlocks,
+          stage,
+          relationship,
+          toolNotes,
+          toolCallsRemaining: Math.max(0, maxToolCalls - toolNotes.length),
+        }) +
+        (outOfCalls
+          ? "\n\nNo more tool calls this turn. Give your final reply now (tool must be null)."
+          : ""),
+      json: true,
+      maxTokens: 600,
+    });
+    const parsed = replySchema.parse(res.parsed);
+    if (call === 0) {
+      capture = parsed.capture;
+      offerAngles = parsed.offer_angles;
+      // First model call succeeded — the turn is real, persist their message
+      // before any tool output lands so history stays chronological.
+      await saveTurn(userId, "user", message);
+      userTurnSaved = true;
+    }
+    const tool = parseChatTool(parsed.tool);
+    const reply = casualize(parsed.reply);
 
-  return { reply: finalReply, capture: parsed.capture, offerAngles: parsed.offer_angles, tool };
+    // Legacy single-tool path: hand the tool back for the caller to execute.
+    if (tool && !opts.executeTool) {
+      if (reply) await saveTurn(userId, "assistant", reply);
+      return { reply, capture, offerAngles, tool };
+    }
+
+    if (tool && opts.executeTool && !outOfCalls) {
+      const key = JSON.stringify(tool);
+      if (seenCalls.has(key)) {
+        // Same tool + same args twice in one turn → reject, force a final reply.
+        toolNotes.push(`(you already called ${tool.name} with those exact args this turn — answer with what you have)`);
+        forceFinal = true;
+        continue;
+      }
+      seenCalls.add(key);
+      let trace: string;
+      try {
+        trace = await opts.executeTool(tool, reply);
+      } catch (err) {
+        console.error(`chat tool ${tool.name} failed mid-turn`, err);
+        trace = "tool failed on our end — tell them plainly and carry on without it";
+      }
+      toolNotes.push(`${tool.name}(${JSON.stringify({ ...tool, name: undefined })}) → ${trace.slice(0, 700)}`);
+      continue;
+    }
+
+    // Final pass (no tool, or the model asked past the cap — the ask is dropped).
+    // A turn must carry something: with no tool run and no reply, degrade to a
+    // nudge rather than silence.
+    const finalReply = reply || (toolNotes.length > 0 ? "" : "Say more?");
+    if (!userTurnSaved) await saveTurn(userId, "user", message);
+    if (finalReply) await saveTurn(userId, "assistant", finalReply);
+    return { reply: finalReply, capture, offerAngles };
+  }
 }

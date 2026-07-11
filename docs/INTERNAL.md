@@ -364,7 +364,7 @@ because its tools have chat side effects (deliveries, turn persistence).
 | Loop | Deterministic gate (code, before any loop runs) | Tools | Cap |
 |---|---|---|---|
 | Macro-moment (`jobs/trend-match.ts` → `trend-take.v1`) | daily send gate → monthly cap → niche gate (pgvector vs positions, `NICHE_THRESHOLD`, *before* any paid twitterapi.io call) → buzz gate (`trends/providers/twitterapi.ts` two-pass advanced_search → `trends/scoring.ts#buzzScore` > `BUZZ_THRESHOLD`; distinct authors weigh more than raw tweet count) → position gate (macro-match.v1, unchanged) | `get_top_tweets` (cached verified pool, no new spend), `search_memory`, `get_voice_profile`, `get_goals_and_pillars`, `get_positions` | 4 |
-| Consistency (`consistency/check.ts` → `consistency-check.v2`) | runs ONLY when top-2 position matches are within `CONSISTENCY_AMBIGUITY_DELTA`; the clean-match common case stays single-shot v1 | `search_more_positions`, `get_position_context`, `search_memory` | 3 |
+| Consistency (`consistency/check.ts` → `consistency-check.v2`) | two escalation signals, both code-decided: top-2 position matches within `CONSISTENCY_AMBIGUITY_DELTA` (from embeddings, before any model call), OR the single-shot v1 pass returns `confidence < CONSISTENCY_CONFIDENCE_THRESHOLD` (a shaky first read is escalated, not acted on). The confident, clean-match common case stays single-shot v1 | `search_more_positions`, `get_position_context`, `search_memory` | 3 |
 | Reply drafting (`engagement/reply-agent.ts` → `reply-draft.v2`) | reply-worthiness scoring + learned threshold (`engagement/scoring.ts`) — untouched, decides *whether* to draft at all | `search_memory`, `get_voice_profile`, `get_content_pillars`, `get_thread_context`, `get_engagement_heuristics` | 3 |
 
 Notes worth knowing:
@@ -381,6 +381,11 @@ Notes worth knowing:
   `no_conflict`; catches under `CONSISTENCY_CONFIDENCE_THRESHOLD` are reported
   clear, and an intentional evolution comes back as a non-warning `note` on the
   result (surfaced by `runCheck` as "clear to post, one read worth knowing").
+  `CONSISTENCY_CONFIDENCE_THRESHOLD` does double duty: it's both the single-shot
+  v1 escalation trigger (low first-pass confidence → run the agent) and the
+  agent's own catch-suppression filter (a low-confidence `catch_it` is reported
+  clear). Both agent entries fall back to the single-shot result on error — the
+  agent is an upgrade, never a hard dependency.
 - **`get_engagement_heuristics`** returns computed facts, not model opinions
   (`engagement/heuristics.ts`, pure + unit-tested): thread reply count,
   minutes since post, reply-share-of-engagement, early-window flag — live

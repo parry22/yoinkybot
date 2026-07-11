@@ -7,8 +7,9 @@ import { z } from "zod";
  *
  * Every tool here maps 1:1 onto an existing slash-command code path; the tool
  * layer exists so plain language reaches the same functionality without the
- * user having to know the command. One tool per turn, executed after the
- * conversational reply is sent.
+ * user having to know the command. The chat brain may call several of these in
+ * one turn, one at a time, up to MAX_TOOL_CALLS_PER_TURN (see converse.v3 +
+ * conversation.ts); each call's delivery is persisted as its own turn fragment.
  */
 export const chatToolSchema = z.discriminatedUnion("name", [
   z.object({

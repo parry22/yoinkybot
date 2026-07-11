@@ -5,11 +5,9 @@ import { config } from "../config.js";
 import { llmCall } from "../llm/gateway.js";
 import { pullXMentions } from "../capture/imports/twitterapi-io.js";
 import { classifyMention } from "../prompts/classify-mention.v1.js";
-import { replyDraft } from "../prompts/reply-draft.v1.js";
 import { enforceStyle } from "../prompts/style.js";
 import { activePositions } from "../memory/positions.js";
-import { hybridSearch } from "../memory/search.js";
-import { currentVoiceProfile } from "../voice/profile.js";
+import { draftReplyWithAgent } from "./reply-agent.js";
 import { createCapture } from "../capture/service.js";
 import { sendTelegram } from "../telegram/bot.js";
 import {
@@ -31,8 +29,6 @@ const classificationSchema = z.object({
   is_question: z.boolean().catch(false),
   is_substantive_challenge: z.boolean().catch(false),
 });
-
-const draftSchema = z.object({ intro: z.string().min(1), draft: z.string().min(1) });
 
 // ── Ingestion (cron, every few hours — no delivery here) ─────────────────────
 
@@ -218,42 +214,53 @@ export async function maybeOfferReplyDraft(userId: string): Promise<boolean> {
   ];
   if (reasons.length === 0) reasons.push("high-reach mention");
 
-  const [positions, relevant, profile, hist] = await Promise.all([
-    activePositions(userId),
-    hybridSearch(userId, pick.content, 4).catch(() => []),
-    currentVoiceProfile(userId),
-    queryOne<{ prior: string; replies: string }>(
-      `SELECT
-         (SELECT count(*) FROM mentions WHERE user_id = $1 AND author_handle = $2 AND id <> $3)::text AS prior,
-         (SELECT count(*) FROM sent_replies sr JOIN mentions mm ON mm.id = sr.mention_id
-          WHERE sr.user_id = $1 AND mm.author_handle = $2)::text AS replies`,
-      [userId, pick.author_handle, pick.id],
-    ),
-  ]);
+  const hist = await queryOne<{ prior: string; replies: string }>(
+    `SELECT
+       (SELECT count(*) FROM mentions WHERE user_id = $1 AND author_handle = $2 AND id <> $3)::text AS prior,
+       (SELECT count(*) FROM sent_replies sr JOIN mentions mm ON mm.id = sr.mention_id
+        WHERE sr.user_id = $1 AND mm.author_handle = $2)::text AS replies`,
+    [userId, pick.author_handle, pick.id],
+  );
 
-  const res = await llmCall({
+  const postedAt = await queryOne<{ external_id: string; posted_at: string }>(
+    `SELECT external_id, posted_at::text FROM mentions WHERE id = $1`,
+    [pick.id],
+  );
+
+  // Agentic drafting (reply-draft.v2): the model pulls its own grounding
+  // (memory, voice, pillars, thread, visibility facts) inside a bounded loop.
+  // Selection stayed above, in code.
+  const agent = await draftReplyWithAgent(
     userId,
-    eventType: "reply_draft",
-    tier: replyDraft.tier,
-    system: replyDraft.system,
-    user: replyDraft.render({
-      mention: { authorHandle: pick.author_handle, content: pick.content, url: pick.url },
-      reasons,
-      relationship: { priorMentions: Number(hist?.prior ?? 0), repliesSent: Number(hist?.replies ?? 0) },
-      positions: positions.map((p) => p.statement),
-      relevantMemories: relevant.map((m) => m.content),
-      voiceTraits: profile?.traits,
-    }),
-    json: true,
-    maxTokens: 400,
-  });
-  const parsed = draftSchema.parse(res.parsed);
-  const draft = enforceStyle(parsed.draft);
+    {
+      id: pick.id,
+      externalId: postedAt?.external_id ?? "",
+      authorHandle: pick.author_handle,
+      content: pick.content,
+      url: pick.url,
+      postedAt: postedAt?.posted_at ? new Date(postedAt.posted_at) : new Date(),
+    },
+    reasons,
+    { priorMentions: Number(hist?.prior ?? 0), repliesSent: Number(hist?.replies ?? 0) },
+  );
+  const draft = enforceStyle(agent.draft);
 
   const surfacing = await queryOne<{ id: string }>(
     `INSERT INTO surfacings (user_id, memory_ids, type, payload, channel)
      VALUES ($1, '{}', 'reply_draft', $2, 'telegram') RETURNING id`,
-    [userId, JSON.stringify({ mention_id: pick.id, intro: parsed.intro, draft, reasons, score: pick.reply_worthy_score })],
+    [
+      userId,
+      JSON.stringify({
+        mention_id: pick.id,
+        intro: agent.intro,
+        draft,
+        reasons,
+        score: pick.reply_worthy_score,
+        cited_memory_ids: agent.citedMemoryIds,
+        distribution_rationale: agent.distributionRationale,
+        agent_steps: agent.steps.map((s) => ({ tool: s.tool, args: s.args })),
+      }),
+    ],
   );
   if (!surfacing) return false;
 
@@ -263,7 +270,7 @@ export async function maybeOfferReplyDraft(userId: string): Promise<boolean> {
   ]);
 
   const message =
-    `${parsed.intro}\n\nHere's a draft if you want to reply:\n\n"${draft}"\n\n` +
+    `${agent.intro}\n\nHere's a draft if you want to reply:\n\n"${draft}"\n\n` +
     `Copy it, tweak it, or skip it.${pick.url ? `\n${pick.url}` : ""}`;
   const kb = new InlineKeyboard()
     .text("✅ sent it", `rp:${pick.id}:sent`)

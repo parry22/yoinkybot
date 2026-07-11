@@ -161,6 +161,110 @@ export async function pullXProfileViaTwitterApiIo(
   return { posts, meta: { bio, followers, handle } };
 }
 
+/** A tweet as consumed by the agent layers (thread context, volume checks). */
+export interface XTweet {
+  id: string;
+  text: string;
+  url: string | null;
+  authorHandle: string;
+  authorFollowers: number;
+  likeCount: number;
+  retweetCount: number;
+  replyCount: number;
+  conversationId: string | null;
+  createdAt: Date;
+}
+
+function toXTweet(t: RawTweet): XTweet | null {
+  const author = (t as { author?: { userName?: string; followers?: number } }).author;
+  if (!t.id || !t.text?.trim()) return null;
+  const date = t.createdAt ? new Date(t.createdAt) : new Date();
+  return {
+    id: t.id,
+    text: t.text.trim(),
+    url: t.url ?? null,
+    authorHandle: author?.userName ?? "",
+    authorFollowers: author?.followers ?? 0,
+    likeCount: t.likeCount ?? 0,
+    retweetCount: t.retweetCount ?? 0,
+    replyCount: t.replyCount ?? 0,
+    conversationId: t.conversationId ?? null,
+    createdAt: Number.isNaN(date.getTime()) ? new Date() : date,
+  };
+}
+
+/**
+ * Fetch tweets by id via GET /twitter/tweets (`tweet_ids` param). Used for
+ * live engagement counts + the conversation id of a mention before drafting.
+ * VERIFY against a live call before first production run — this endpoint's
+ * response nesting has not been confirmed live the way last_tweets/mentions
+ * were; both observed shapes (top-level `tweets`, nested `data.tweets`) are
+ * handled.
+ */
+export async function pullTweetsByIds(ids: string[]): Promise<XTweet[]> {
+  if (!config.TWITTERAPI_IO_KEY) throw new Error("TWITTERAPI_IO_KEY not configured");
+  if (ids.length === 0) return [];
+  const url = new URL("/twitter/tweets", config.TWITTERAPI_IO_BASE_URL);
+  url.searchParams.set("tweet_ids", ids.join(","));
+  const body = (await fetchPage(url)) as LastTweetsResponse & { tweets?: RawTweet[] };
+  if (body.status && body.status !== "success") throw new Error(`twitterapi.io tweets: ${body.msg ?? "unknown error"}`);
+  const tweets = body.tweets ?? body.data?.tweets ?? [];
+  return tweets.map(toXTweet).filter((t): t is XTweet => t !== null);
+}
+
+export interface SearchOpts {
+  /** "Top" ranks by engagement, "Latest" by recency. */
+  queryType: "Top" | "Latest";
+  /** Unix seconds — twitterapi.io takes since_time/until_time, NOT the
+   *  `since:YYYY-MM-DD_...` form (explicitly unsupported there). */
+  sinceTime?: number;
+  untilTime?: number;
+  /** Hard pagination cap; $0.00015/tweet returned is cheap per topic but not
+   *  free at scale — never paginate unbounded. */
+  maxPages: number;
+}
+
+/**
+ * GET /twitter/tweet/advanced_search with cursor pagination and a hard page
+ * cap. Query operators follow this API's naming: `min_faves:` /
+ * `min_retweets:` / `min_replies:` (NOT min_likes/min_reposts from other
+ * providers), `-filter:replies`, `conversation_id:`, `lang:`.
+ */
+export async function searchTweets(query: string, opts: SearchOpts): Promise<XTweet[]> {
+  if (!config.TWITTERAPI_IO_KEY) throw new Error("TWITTERAPI_IO_KEY not configured");
+  const all: XTweet[] = [];
+  let cursor = "";
+  let lastRequestAt = 0;
+  const q = [
+    query,
+    opts.sinceTime ? `since_time:${opts.sinceTime}` : "",
+    opts.untilTime ? `until_time:${opts.untilTime}` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  for (let page = 0; page < Math.max(1, opts.maxPages); page++) {
+    const wait = lastRequestAt + MIN_REQUEST_INTERVAL_MS - Date.now();
+    if (wait > 0 && page > 0) await sleep(wait);
+
+    const url = new URL("/twitter/tweet/advanced_search", config.TWITTERAPI_IO_BASE_URL);
+    url.searchParams.set("query", q);
+    url.searchParams.set("queryType", opts.queryType);
+    if (cursor) url.searchParams.set("cursor", cursor);
+    lastRequestAt = Date.now();
+
+    const body = (await fetchPage(url)) as LastTweetsResponse & { tweets?: RawTweet[] };
+    if (body.status && body.status !== "success") {
+      throw new Error(`twitterapi.io advanced_search: ${body.msg ?? "unknown error"}`);
+    }
+    const tweets = (body.tweets ?? body.data?.tweets ?? []).map(toXTweet).filter((t): t is XTweet => t !== null);
+    all.push(...tweets);
+    if (!body.has_next_page || !body.next_cursor || tweets.length === 0) break;
+    cursor = body.next_cursor;
+  }
+  return all;
+}
+
 export interface XMention {
   externalId: string;
   url: string | null;
