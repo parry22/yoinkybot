@@ -1,8 +1,19 @@
 /**
- * The stated brand profile (onboarding Stages 1-7): what the user tells us
+ * The stated brand profile (onboarding Stages 1-6): what the user tells us
  * before we read their public history. Persisted one row per user in
  * brand_profiles, filled in turn-by-turn during the paced intake, and referenced
  * by every downstream feature (drafting, consistency, gap analysis, plan).
+ *
+ * Deliberately lean (2026-07-11 trim): the intake asks 8 fields, not the original
+ * 21 — the deeper positioning/audience/constraints fields (sub_niche_angle,
+ * credibility_source, unique_pov, secondary_goals, audience_sophistication,
+ * audience_pain_point, formality_gradient, vulnerability_threshold,
+ * visual_comfort, platform_adaptation, posting_capacity, and all of the old
+ * Stage 7 constraints trio) were cut for a faster, less form-like onboarding.
+ * Their columns stay in the DB (additive-only schema) and are still read by
+ * downstream code (gap.ts, plan.ts, draft.ts) — those code paths are null-aware
+ * and degrade gracefully when a field was never asked; nothing crashes on the
+ * removal, those specific findings just never fire for new users.
  *
  * This module owns the field taxonomy (the ordered PROFILE_FIELDS the intake
  * walks, the tone menu, the goal options) and the DB access. It deliberately
@@ -11,62 +22,39 @@
  */
 import { query, queryOne } from "../db/pool.js";
 
-/** The fields the Stage 1-7 intake elicits, in ask order. Names are the exact
+/** The fields the Stage 1-6 intake elicits, in ask order. Names are the exact
  *  brand_profiles columns, so persistence is a 1:1 column write. */
 export const PROFILE_FIELDS = [
   // Stage 1: Positioning
   "niche",
-  "sub_niche_angle",
-  "credibility_source",
-  "unique_pov",
   // Stage 2: Goal
   "primary_goal",
-  "secondary_goals",
   // Stage 3: Audience
   "audience_who",
-  "audience_sophistication",
-  "audience_pain_point",
   // Stage 4: Voice and tone
   "inspiration_creators",
   "tone_selections",
-  "formality_gradient",
-  "vulnerability_threshold",
   // Stage 5: Content pillars (derived, then confirmed)
   "content_pillars",
   // Stage 6: Format and platform
   "camera_comfort",
-  "visual_comfort",
   "primary_platform",
-  "platform_adaptation",
-  "posting_capacity",
-  // Stage 7: Constraints
-  "employer_restrictions",
-  "topics_off_limits",
-  "anonymity_needs",
 ] as const;
 export type ProfileField = (typeof PROFILE_FIELDS)[number];
 
-const ARRAY_FIELDS = new Set<ProfileField>([
-  "secondary_goals",
-  "inspiration_creators",
-  "tone_selections",
-  "content_pillars",
-  "topics_off_limits",
-]);
-const INT_FIELDS = new Set<ProfileField>(["posting_capacity"]);
+const ARRAY_FIELDS = new Set<ProfileField>(["inspiration_creators", "tone_selections", "content_pillars"]);
 
 /** Which stage a field belongs to — used to group the intake and by nudges. */
 export const FIELD_STAGE: Record<ProfileField, number> = {
-  niche: 1, sub_niche_angle: 1, credibility_source: 1, unique_pov: 1,
-  primary_goal: 2, secondary_goals: 2,
-  audience_who: 3, audience_sophistication: 3, audience_pain_point: 3,
-  inspiration_creators: 4, tone_selections: 4, formality_gradient: 4, vulnerability_threshold: 4,
+  niche: 1,
+  primary_goal: 2,
+  audience_who: 3,
+  inspiration_creators: 4, tone_selections: 4,
   content_pillars: 5,
-  camera_comfort: 6, visual_comfort: 6, primary_platform: 6, platform_adaptation: 6, posting_capacity: 6,
-  employer_restrictions: 7, topics_off_limits: 7, anonymity_needs: 7,
+  camera_comfort: 6, primary_platform: 6,
 };
 
-/** Stage 2 goal options (single primary; the rest become secondary_goals). */
+/** Stage 2 goal options — a single primary pick, no secondary-goals follow-up. */
 export const GOAL_OPTIONS = [
   { key: "job", label: "Land a job or recruiter attention" },
   { key: "leads", label: "Generate leads or clients" },
@@ -182,13 +170,32 @@ export async function ensureProfile(userId: string): Promise<void> {
   );
 }
 
-function normalize(field: ProfileField, value: string | string[]): string | string[] | number | null {
-  if (ARRAY_FIELDS.has(field)) return Array.isArray(value) ? value : [value];
-  const scalar = Array.isArray(value) ? value[0] : value;
-  if (INT_FIELDS.has(field)) {
-    const n = parseInt(String(scalar).replace(/[^\d]/g, ""), 10);
-    return Number.isFinite(n) ? n : null;
+/**
+ * Array fields sometimes arrive as a real JSON array, but the model
+ * occasionally emits the whole array double-encoded as one string instead
+ * (e.g. value: "[\"naval\",\"dan koe\"]" instead of value: ["naval","dan koe"]) —
+ * without this, that string got wrapped as a single-item array containing the
+ * literal JSON text. Try a real JSON array first, then a comma-split fallback,
+ * before ever treating the string as one opaque item.
+ */
+export function normalizeArray(value: string | string[]): string[] {
+  if (Array.isArray(value)) return value;
+  const trimmed = value.trim();
+  if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) return parsed.map((x) => String(x));
+    } catch {
+      // not actually JSON — fall through to comma-split
+    }
   }
+  if (!trimmed) return [];
+  return trimmed.split(",").map((s) => s.trim()).filter(Boolean);
+}
+
+function normalize(field: ProfileField, value: string | string[]): string | string[] | null {
+  if (ARRAY_FIELDS.has(field)) return normalizeArray(value);
+  const scalar = Array.isArray(value) ? value[0] : value;
   return scalar ?? null;
 }
 
@@ -227,7 +234,7 @@ export async function confirmPillars(userId: string, pillars: string[]): Promise
   );
 }
 
-/** Close out the intake (Stage 7 done). Idempotent. */
+/** Close out the intake (Stage 6 done). Idempotent. */
 export async function finalizeProfile(userId: string): Promise<void> {
   await ensureProfile(userId);
   await query(
@@ -236,7 +243,7 @@ export async function finalizeProfile(userId: string): Promise<void> {
   );
 }
 
-/** True once the Stage 1-7 intake has been finalized. */
+/** True once the Stage 1-6 intake has been finalized. */
 export function isProfileComplete(p: BrandProfile | null): boolean {
   return !!p?.profile_completed_at;
 }

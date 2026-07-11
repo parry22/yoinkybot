@@ -267,7 +267,7 @@ describe("parseProfileResponse", () => {
       actions: [
         { type: "profile_field", field: "niche", value: "devtools" },
         { type: "profile_field", field: "bogus_field", value: "x" },
-        { type: "push_field", field: "unique_pov" },
+        { type: "push_field", field: "primary_goal" },
         "junk",
       ],
     });
@@ -280,7 +280,7 @@ describe("parseProfileResponse", () => {
 describe("nextProfileField", () => {
   it("walks the field order, skipping captured", () => {
     expect(nextProfileField(undefined)).toBe(PROFILE_FIELDS[0]);
-    expect(nextProfileField({ captured: ["niche"] })).toBe("sub_niche_angle");
+    expect(nextProfileField({ captured: ["niche"] })).toBe("primary_goal");
   });
   it("returns undefined when everything is captured", () => {
     expect(nextProfileField({ captured: [...PROFILE_FIELDS] })).toBeUndefined();
@@ -298,13 +298,13 @@ describe("applyProfileActions", () => {
   });
 
   it("records a push and an unresolved field", () => {
-    const pushed = applyProfileActions(prof(), [{ type: "push_field", field: "unique_pov" }]);
-    expect(pushed.nextState.profile?.pushed).toEqual(["unique_pov"]);
-    const unresolved = applyProfileActions(prof({ profile: { captured: [], pushed: ["unique_pov"] } }), [
-      { type: "profile_field", field: "unique_pov", value: "", unresolved: true },
+    const pushed = applyProfileActions(prof(), [{ type: "push_field", field: "primary_goal" }]);
+    expect(pushed.nextState.profile?.pushed).toEqual(["primary_goal"]);
+    const unresolved = applyProfileActions(prof({ profile: { captured: [], pushed: ["primary_goal"] } }), [
+      { type: "profile_field", field: "primary_goal", value: "", unresolved: true },
     ]);
-    expect(unresolved.nextState.profile?.unresolved).toEqual(["unique_pov"]);
-    expect(unresolved.nextState.profile?.captured).toEqual(["unique_pov"]);
+    expect(unresolved.nextState.profile?.unresolved).toEqual(["primary_goal"]);
+    expect(unresolved.nextState.profile?.captured).toEqual(["primary_goal"]);
   });
 
   it("routes content_pillars through a confirmPillars effect", () => {

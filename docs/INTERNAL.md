@@ -89,7 +89,7 @@ full prior implementation if it ever needs to come back.
 | Area | Path | What it does |
 |---|---|---|
 | Telegram bot | `src/telegram/` | grammY bot, command handlers, conversation state. Commands (deliberately lean — 2026-07-11): `start, help, connect, draft, repurpose, peers, settings, upgrade`. Everything else (check, search/ask, status, diagnosis refresh, voice, forget, plan, positions, clearing your account) is done in plain language via the agentic chat layer (see §3a) — those slash commands were removed. |
-| Strategist flow | `src/strategist/` | The a16z Personal Brand Strategist onboarding. Profile-first arc: profiling (Stages 1-7) → connect → gap analysis → three-month plan → proactive. `session-machine.ts` is the state machine; `state.ts` persists it; `profile.ts` owns the stated profile; `gap.ts` computes the stated-vs-actual gap. See §3b. |
+| Strategist flow | `src/strategist/` | The a16z Personal Brand Strategist onboarding. Profile-first arc: profiling (Stages 1-6, 8 fields) → connect → gap analysis → three-month plan → proactive. `session-machine.ts` is the state machine; `state.ts` persists it; `profile.ts` owns the stated profile; `gap.ts` computes the stated-vs-actual gap. See §3b. |
 | Capture pipeline | `src/capture/` | Immutable capture of user input + imports (X via twitterapi.io→Apify, LinkedIn via Apify). Captures are never mutated. |
 | Memory core | `src/memory/` | Extraction → embed → link → search (RRF hybrid). `positions.ts` (stated positions), `confidence.ts`, `forget.ts` (hard delete). |
 | Voice | `src/voice/` | Voice profile from a user's own corpus; used to ground drafting. |
@@ -225,7 +225,7 @@ profile *before* reading history, so the diagnosis lands as a measured
 stated-vs-actual gap rather than a cold read. The whole arc runs on the same
 deterministic-reducer + paced-LLM engine as before.
 
-**The arc.** `profiling` (Stages 1-7 intake) → `connect_transition` (Stage 8) →
+**The arc.** `profiling` (Stages 1-6 intake) → `connect_transition` (Stage 7) →
 connect + ingest + diagnosis → `gap_analysis` (Stage 10) → `plan_build` (Stage 11,
 the three-month plan) → `active`. Phases live in `state.ts#SessionPhase`;
 `isProfilingPhase`/`isOnboardingPhase` gate routing. Durable milestones on
@@ -234,11 +234,46 @@ the three-month plan) → `active`. Phases live in `state.ts#SessionPhase`;
 
 **The stated profile.** `strategist/profile.ts` owns it: the `brand_profiles`
 table (one row/user, migration `0013`), the ordered `PROFILE_FIELDS` the intake
-walks (21 fields across 7 stages), the tone taxonomy + goal options, and the DB
-helpers (`upsertProfileField`, `confirmPillars`, `finalizeProfile`,
+walks, the tone taxonomy + goal options, and the DB helpers
+(`upsertProfileField`, `confirmPillars`, `finalizeProfile`,
 `profileSummaryForPrompt` — NULL-aware, never fabricates). Nullable scalars =
-unknown; `unresolved[]` records fields the user was pushed on once and still
-couldn't answer.
+unknown; `unresolved[]` records fields the user was pushed on once (or
+explicitly skipped) and still didn't answer.
+
+**Trimmed to 8 fields (2026-07-11).** The intake originally asked 21 fields
+across 7 stages; it's now: `niche` (1) → `primary_goal` (2) → `audience_who` (3)
+→ `inspiration_creators`, `tone_selections` (4) → `content_pillars` derived +
+confirmed (5) → `camera_comfort`, `primary_platform` (6). The deeper
+positioning/audience/constraints fields (`sub_niche_angle`,
+`credibility_source`, `unique_pov`, `secondary_goals`,
+`audience_sophistication`, `audience_pain_point`, `formality_gradient`,
+`vulnerability_threshold`, `visual_comfort`, `platform_adaptation`,
+`posting_capacity`, and the entire old Stage 7 constraints trio
+`employer_restrictions`/`topics_off_limits`/`anonymity_needs`) were cut for a
+faster, less form-like onboarding. Their `brand_profiles` columns stay (additive
+schema, no drops) and downstream code that reads them (`gap.ts`, `plan.ts`,
+`draft.ts`'s off-limits hard-block) is null-aware and degrades gracefully — those
+specific findings just never fire for new users. `FIELD_STAGE`/`fieldSpec`/
+`FALLBACK_QUESTION` are keyed only off the current `PROFILE_FIELDS`, so
+re-adding a field later means updating those three plus `profile.ts`'s
+`ARRAY_FIELDS`, nothing else.
+
+**Explicit skip always advances (2026-07-11).** "let's skip this", "next
+question", "pass", "move on" etc. are matched deterministically
+(`session-machine.ts#detectSkipIntent`), not left to the model — a model that
+fails to recognize an explicit decline just re-asks the same question forever.
+On a match, the current field is captured as `unresolved` and the intake
+advances on the first try, regardless of whether the model's own JSON emission
+got it right. Distinct from `push_field` (which is for vague-but-attempted
+answers): an explicit skip is honored immediately, no push.
+
+**Array fields can double-encode (fixed 2026-07-11).** The model sometimes
+emits an array-valued field (`inspiration_creators`, `tone_selections`,
+`content_pillars`) as one JSON-stringified string instead of a real JSON array.
+`profile.ts#normalizeArray` defends against this: tries `JSON.parse` on a
+bracketed string first, then comma-splits, before ever treating the string as
+one opaque item. Verified live — this was silently corrupting stored arrays
+into a single garbled string element.
 
 **The intake loop.** `session-machine.ts#runProfilingTurn` + `applyProfileActions`
 (pure, unit-tested). A `ProfileCursor` on `strategist_state` is the anti-loop

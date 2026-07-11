@@ -901,7 +901,7 @@ export async function openPlanSession(userId: string, gapText?: string): Promise
     );
   }
   messages.push(
-    `cadence: ${plan.perWeek} posts a week, the honest number you gave me. ` +
+    `cadence: ${plan.perWeek} posts a week to start, we'll adjust once we see how it's actually landing. ` +
       "if that lands, say the word and i'll lock it in and start working it with you.",
   );
 

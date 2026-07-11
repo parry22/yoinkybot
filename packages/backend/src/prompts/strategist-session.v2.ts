@@ -8,11 +8,11 @@ import {
 } from "../strategist/profile.js";
 
 /**
- * The Stage 1-7 profile-intake brain (phases: profiling → connect_transition).
+ * The Stage 1-6 profile-intake brain (phases: profiling → connect_transition).
  * Runs BEFORE any diagnosis — it draws out a stated brand profile one question at
  * a time, offering concrete options for the hard-to-self-describe fields, and
  * emits `profile_field` actions the reducer persists. When the intake is done it
- * delivers the confident hand-off to connect (Stage 8). Grounded, one question
+ * delivers the confident hand-off to connect (Stage 7). Grounded, one question
  * per message; the machine, not this prompt, tracks which field comes next.
  */
 export interface StrategistProfilingVars {
@@ -45,53 +45,23 @@ const toneMenu = TONE_TAXONOMY.map(
 export function fieldSpec(field: ProfileField, profile: BrandProfile | null): string {
   switch (field) {
     case "niche":
-      return "NICHE (Stage 1a). The broad space they operate in. Keep it brief, it's a starting point. Free-text value.";
-    case "sub_niche_angle":
-      return "SUB-NICHE / ANGLE (Stage 1b). The specific wedge within the niche. Most people are vague here — push them narrower. If they say something like 'marketing', do NOT accept it: ask what specifically, for whom, in what context, until it has real edges (e.g. 'B2B SaaS marketing for pre-seed founders', not 'marketing'). Free-text value.";
-    case "credibility_source":
-      return "CREDIBILITY SOURCE (Stage 1c). What gives them the standing to speak on this: role, years, a specific outcome. Ask directly and simply. Free-text value.";
-    case "unique_pov":
-      return "UNIQUE POV (Stage 1d). The highest-leverage field and the hardest to answer cold. Do NOT ask 'what's your unique point of view' directly. Ask it obliquely: 'What's something people in your space generally believe that you think is actually wrong?' or 'Where do you disagree with the conventional wisdom here?'. If the first answer is generic, push once: 'Say more, what have you seen that most people haven't?'. Free-text value.";
+      return "NICHE (Stage 1). The broad space they operate in. Keep it brief, it's a starting point. Free-text value.";
     case "primary_goal":
-      return `GOAL (Stage 2). Ask this as a clear set of options, most people haven't named which they're optimizing for. Options (emit the KEY as value):\n${goalList}\nIf several apply, let them say so, but push for ONE primary: 'if you had to pick the one that matters most right now?'. Emit profile_field primary_goal with the single key; if they name others, ALSO emit profile_field secondary_goals with an array of the other keys.`;
-    case "secondary_goals":
-      return `SECONDARY GOALS (Stage 2, optional). Any other goals beyond the primary. Value = array of goal keys from:\n${goalList}\nIf none, emit profile_field secondary_goals with an empty array.`;
+      return `GOAL (Stage 2). Ask this as a clear set of options, most people haven't named which they're optimizing for. Options (emit the KEY as value):\n${goalList}\nIf several apply, push for ONE primary: 'if you had to pick the one that matters most right now?'. Emit profile_field primary_goal with the single key.`;
     case "audience_who":
-      return "AUDIENCE — WHO (Stage 3a). Grounded in the goal they just stated, ask who specifically needs to read this. Not 'everyone', the actual people (peers, potential clients, recruiters, investors, a specific combination). Free-text value.";
-    case "audience_sophistication":
-      return "AUDIENCE — LEVEL (Stage 3b). Are they writing for beginners who need things explained, or peers who want insider nuance with no hand-holding. Value = one of: beginner | intermediate | expert | mixed.";
-    case "audience_pain_point":
-      return "AUDIENCE — PAIN POINT (Stage 3c). What this audience most struggles with or most wants answered. Push for specificity, not 'they want to grow'. This seeds the content pillars later. Free-text value.";
+      return "AUDIENCE — WHO (Stage 3). Grounded in the goal they just stated, ask who specifically needs to read this. Not 'everyone', the actual people (peers, potential clients, recruiters, investors, a specific combination). Free-text value.";
     case "inspiration_creators":
       return "INSPIRATION (Stage 4a, ask BEFORE tone). 'Give me two or three people whose voice or trajectory in this space you actually admire, big names or people you just rate.' Value = array of names. This informs how you present the tone menu next.";
     case "tone_selections":
       return `TONE (Stage 4b, multi-select). Present this as a real menu, not a lecture: 'Content generally falls into a few modes. Pick whichever feel like you, you can pick more than one.' If their inspirations above lean toward one cluster, lead with that cluster. The user may tap buttons or answer in words — either way map their answer to these KEYS and emit profile_field tone_selections with the key array:\n${toneMenu}\nIf they pick options that pull in genuinely opposite directions (e.g. heavy shitposting AND corporate-safe analytical), name the tension plainly rather than silently accepting both.`;
-    case "formality_gradient":
-      return "FORMALITY (Stage 4c). Frame as a spectrum: 'closer to corporate-LinkedIn-safe, or closer to raw and unfiltered like your rawest posts?'. Value = one of: very_casual | casual | balanced | professional | corporate.";
-    case "vulnerability_threshold":
-      return "VULNERABILITY (Stage 4d). 'How much are you willing to show, failures, doubts, the messy parts? Pure authority with zero vulnerability is completely valid, I just need to know.' Value = one of: none | selective | open | very_open.";
     case "content_pillars": {
-      const seed = [profile?.niche, profile?.sub_niche_angle, profile?.audience_pain_point, profile?.unique_pov]
-        .filter(Boolean)
-        .join(" | ");
-      return `CONTENT PILLARS (Stage 5). Do NOT ask from scratch. DERIVE 3-5 recurring themes from what you already know (positioning, goal, audience pain point${seed ? `: ${seed}` : ""}) and present them back for confirmation: 'Based on everything so far, here's where I'd expect your content to live: [named pillars]. Feel right, or is something missing?'. Let them add/remove/adjust. When settled, emit profile_field content_pillars with the final array of short pillar labels.`;
+      const seed = [profile?.niche, profile?.audience_who].filter(Boolean).join(" | ");
+      return `CONTENT PILLARS (Stage 5). Do NOT ask from scratch. DERIVE 3-5 recurring themes from what you already know (their niche, goal, audience${seed ? `: ${seed}` : ""}) and present them back for confirmation: 'Based on everything so far, here's where I'd expect your content to live: [named pillars]. Feel right, or is something missing?'. Let them add/remove/adjust. When settled, emit profile_field content_pillars with the final array of short pillar labels.`;
     }
     case "camera_comfort":
       return "CAMERA COMFORT (Stage 6a). Do they do video, or is this writing-only. Value = one of: no | maybe | yes.";
-    case "visual_comfort":
-      return "VISUAL COMFORT (Stage 6b). Writing-only, or comfortable with carousels/visual formats. Value = one of: text_only | simple | rich.";
     case "primary_platform":
-      return "PRIMARY PLATFORM (Stage 6c). X rewards raw/fast/contrarian; LinkedIn rewards structured/narrative/professional. Which is primary. Value = one of: x | linkedin | both.";
-    case "platform_adaptation":
-      return "PLATFORM ADAPTATION (Stage 6c cont.). Do they want content adapted per platform, or kept exclusive to one. Value = one of: adapt | exclusive.";
-    case "posting_capacity":
-      return "POSTING CAPACITY (Stage 6d). Ask for the HONEST realistic number, not the aspirational one: 'how much can you actually give this per week, not what you wish you could'. Value = the integer posts-per-week as a string.";
-    case "employer_restrictions":
-      return "EMPLOYER RESTRICTIONS (Stage 7a). Anything they legally or professionally cannot say (NDA, compliance, common in finance/health/law/gov). Take it seriously. Free-text value, or empty string if none.";
-    case "topics_off_limits":
-      return "TOPICS OFF LIMITS (Stage 7b). Anything they refuse to touch regardless of relevance (politics, specific controversies, whatever it is). Value = array of short topic labels, or empty array if none.";
-    case "anonymity_needs":
-      return "ANONYMITY (Stage 7c). Do they want a brand without full personal exposure. Value = one of: real_name | pseudonymous | anonymous.";
+      return "PRIMARY PLATFORM (Stage 6b, last question). X rewards raw/fast/contrarian; LinkedIn rewards structured/narrative/professional. Which is primary. Value = one of: x | linkedin | both.";
     default:
       return "";
   }
@@ -104,27 +74,13 @@ export function fieldSpec(field: ProfileField, profile: BrandProfile | null): st
  */
 export const FALLBACK_QUESTION: Record<ProfileField, string> = {
   niche: "What's the broad space you work in?",
-  sub_niche_angle: "Narrow that for me: what specifically, and for whom?",
-  credibility_source: "What gives you the standing to talk about this? Your actual experience here.",
-  unique_pov: "What's something people in your space believe that you think is actually wrong?",
   primary_goal: "What are you really optimizing for right now: a job, leads, authority, selling a product, funding, pure audience, or networking?",
-  secondary_goals: "Anything else you're aiming for alongside that?",
   audience_who: "Who specifically needs to be reading this? Not everyone, the actual people.",
-  audience_sophistication: "Are you writing for beginners who need things explained, or peers who want insider nuance?",
-  audience_pain_point: "What does that audience most struggle with, or most want answered?",
   inspiration_creators: "Two or three people whose voice or trajectory in this space you actually admire?",
   tone_selections: "What modes feel like you: analytical, contrarian, build-in-public, how-to, shitposting, manifesto? Pick any that fit.",
-  formality_gradient: "Where do you sit: corporate-LinkedIn-safe, or raw and unfiltered?",
-  vulnerability_threshold: "How much are you willing to show: failures, doubts, the messy parts, or pure authority?",
   content_pillars: "What are the recurring themes you'd want your content to live in?",
   camera_comfort: "Do you do video, or is this writing-only?",
-  visual_comfort: "Writing-only, or comfortable with carousels and visuals?",
   primary_platform: "Which is your primary platform: X, LinkedIn, or both?",
-  platform_adaptation: "Want content adapted per platform, or kept to one?",
-  posting_capacity: "Honestly, how many posts a week can you commit to?",
-  employer_restrictions: "Anything you legally or professionally can't say? NDA, compliance, that kind of thing.",
-  topics_off_limits: "Any topics you refuse to touch, no matter how relevant?",
-  anonymity_needs: "Do you want your real name on this, or something more private?",
 };
 
 export const strategistProfiling: Prompt<StrategistProfilingVars> = {
@@ -142,7 +98,7 @@ GLOBAL DISCIPLINE (applies every turn):
   (see NEXT FIELD) — cover that and nothing else.
 - Acknowledge their last answer specifically before moving on. Never log-and-fire the next question.
   React to what they actually said, connect it to something earlier if it fits.
-- For fields that are hard to answer cold (unique POV, tone), offer concrete options or ask for an
+- For fields that are hard to answer cold (goal, tone), offer concrete options or ask for an
   example/comparison rather than an open abstract prompt. People point at things far more easily
   than they describe themselves from scratch.
 - If an answer is vague or generic, push ONCE, gently, for specificity — the way a real strategist
