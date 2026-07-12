@@ -717,7 +717,12 @@ deletion — set them in the deploy dashboard only.
 
 ## 6. Ops
 
-- **Deploy:** see [DEPLOY.md](../DEPLOY.md) (Railway). Single instance only.
+- **Deploy:** see [DEPLOY.md](../DEPLOY.md). **Railway (Hobby plan) + Neon**
+  (external, pgvector) as of 2026-07-12 — moved off Render's free plan because
+  its idle spin-down was silently killing `pg-boss`'s in-process cron (see §3c's
+  trend-fetch note). The database never moved; only compute did. Single
+  instance only, either way — pg-boss's cron and the Telegram webhook both
+  assume exactly one running replica.
 - **Pre-deploy gate:** `pnpm verify` (typecheck + full unit suite). Don't ship red.
 - **Migrations** run automatically on boot; also `pnpm db:migrate`.
 - **Prod vs dev bot:** with `PUBLIC_URL=https://…` the bot uses webhooks; without
@@ -726,14 +731,20 @@ deletion — set them in the deploy dashboard only.
   Failed live conversation turns (profiling/session/converse) also DM the admin
   with the underlying error, hourly-throttled per kind — a dead LLM route pages
   instead of hiding behind fallback lines.
-- **LLM health:** `GET /health` returns `{ok, llm}` where `llm` is
-  `OPENROUTER_API_KEY` presence. `llm:false` = the bot can only send canned
-  fallbacks (the "asks the same question forever" symptom); boot also logs a
-  loud error and DMs the admin. See DEPLOY.md troubleshooting.
+- **Health check:** `GET /health` reports `{ok, llm, analytics, trends:
+  {provider, buzz_gate, last_fetch}}` — `llm` is `OPENROUTER_API_KEY` presence
+  (`false` = the bot can only send canned fallbacks, the "asks the same
+  question forever" symptom; boot also logs a loud error and DMs the admin),
+  `analytics` is `POSTHOG_API_KEY` presence, and the `trends` block reports
+  whether the trend pipeline's keys are present and when it last actually
+  fetched — the fastest way to confirm background jobs are alive post-deploy,
+  not just the HTTP server. See DEPLOY.md troubleshooting.
 - **Cost & abuse:** `usage_events` is the source of truth for per-user spend; the
   daily call cap (`LLM_DAILY_CALL_CAP`) bounds interactive spam.
-- **Keep-alive:** `.github/workflows/keepalive.yml` pings the service to survive
-  free-tier cold starts.
+- **Keep-alive:** `.github/workflows/keepalive.yml` pings `/health` every 10
+  minutes. This existed specifically to fight Render free-tier spin-down; on
+  Railway Hobby (always-on) it's no longer load-bearing — harmless to leave,
+  safe to delete if you want one less moving part.
 
 ---
 

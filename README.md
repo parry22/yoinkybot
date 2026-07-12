@@ -21,6 +21,17 @@ connect your accounts, get diagnosed, build a plan, and ship content.
 
 <!-- Keep newest-first. Update this whenever a change ships that a reader of the repo should know about. -->
 
+- **2026-07-12 — Migrated production from Render to Railway (Hobby plan).**
+  Render's free tier spins the process down when idle, which silently broke
+  `pg-boss`'s in-process cron (see the trend-discovery fix below) — moving to
+  an always-on plan fixes that class of bug outright instead of working around
+  it. The database (**Neon**, external, pgvector) never moved — same instance,
+  zero data migrated, zero data risk; only compute changed. `bot.meetyoinky.com`
+  now points at Railway; Render is suspended (not deleted) as an instant DNS-
+  flip rollback. Also recharged `twitterapi.io` (was hard-failing on `402
+  Credits is not enough`, degrading trend-take quality) and verified it's
+  fetching real tweet data again. See [DEPLOY.md](DEPLOY.md) for the real
+  topology and rollback steps.
 - **2026-07-12 — Product analytics via PostHog (server-side).** Since Yoinky is
   Telegram-native with no web frontend, there's no browser snippet — events are
   captured server-side with `posthog-node`, keyed by the internal user id, at
