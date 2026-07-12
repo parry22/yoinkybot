@@ -95,7 +95,7 @@ full prior implementation if it ever needs to come back.
 | Voice | `src/voice/` | Voice profile from a user's own corpus; used to ground drafting. |
 | Consistency | `src/consistency/` | Pre-publish check: does a draft contradict a stated position? Embed → match positions → LLM meaning-level compare. Ambiguous matches (top-2 within `CONSISTENCY_AMBIGUITY_DELTA`) escalate to a bounded agent (see §3c). |
 | Drafting | `src/drafting/` | `angle-draft.ts` (3 ways to tell a story), `draft.ts`, `repurpose.ts` (transform, not regenerate). |
-| Trends | `src/trends/` | Provider registry with ordered fallback (`TREND_PROVIDER`: apify → brave → tavily). Actor ids in config are verified against live runs — see provider files for field shapes. `scoring.ts` (deterministic buzzScore) + `providers/twitterapi.ts` (advanced_search volume verification) gate the macro-moment agent (§3c). |
+| Trends | `src/trends/` | Provider registry with ordered fallback (`TREND_PROVIDER`: apify → brave → tavily). Actor ids in config are verified against live runs — see provider files for field shapes. Discovery seeds are LLM-distilled (`prompts/trend-themes.v1.ts`, from `jobs/trend-fetch.ts#interestThemes`) into short professional search terms — raw cluster labels proved to be personal-life noise that made the pipeline miss an entire AI news cycle (2026-07-12). `scoring.ts` (deterministic buzzScore) + `providers/twitterapi.ts` (advanced_search volume verification) gate the macro-moment agent (§3c). |
 | Engagement | `src/engagement/` | Reply-worthiness scored in code (`scoring.ts`); the model only drafts — now via a bounded agent (`reply-agent.ts`, §3c) grounded by `heuristics.ts` (deterministic visibility facts). One draft per slot; DMs out of scope. |
 | Benchmark / peers | `src/benchmark/` | Peer benchmarking as territory, not scoreboard; relative-only. |
 | Surfacing | `src/surfacing/` | Deterministic resurfacing selection (`scoring.ts`), cadence, nudges. LLM only composes the message. |
@@ -378,6 +378,15 @@ Notes worth knowing:
   handler enforces at-most-one send. Without `TWITTERAPI_IO_KEY` the buzz gate
   can't run and the pipeline degrades to the old niche+position → angle-offer
   flow.
+- **Trend non-deliveries are recorded, and don't burn the month** (2026-07-12):
+  agent declined / cadence held / send dropped → the moment gets
+  `verdict='rejected'` + `verdict_reason`, so "why did nothing fire this week?"
+  is answerable from SQL, and the 4-per-month cap counts only non-rejected
+  moments — four invisible declines used to silently starve trend delivery for
+  30 days. `NICHE_THRESHOLD` default is 0.6 (calibrated live: on-niche trends
+  sit 0.40-0.55 from the nearest position, junk 0.61+; at the old 0.7 the junk
+  passed and ate the top-3 volume-verification slots). `/health` reports trend
+  readiness (`trends.provider`, `trends.buzz_gate`, `trends.last_fetch`).
 - **Consistency verdicts** are `catch_it` / `intentional_evolution` /
   `no_conflict`; catches under `CONSISTENCY_CONFIDENCE_THRESHOLD` are reported
   clear, and an intentional evolution comes back as a non-warning `note` on the

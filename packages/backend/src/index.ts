@@ -29,7 +29,23 @@ async function main(): Promise<void> {
   // never the key) — so "the bot replies but sounds like a broken robot" is
   // diagnosable with one curl instead of a log dive. Every conversational turn
   // needs OPENROUTER_API_KEY; without it the bot can only serve fallback lines.
-  app.get("/health", async () => ({ ok: true, llm: Boolean(config.OPENROUTER_API_KEY) }));
+  // `trends` does the same for the macro-moment pipeline (env drift on a deploy
+  // once silently killed it): provider key presence, the buzz-gate key, and the
+  // age of the last successful fetch.
+  app.get("/health", async () => {
+    const lastTrend = await import("./db/pool.js")
+      .then(({ queryOne }) => queryOne<{ last: string | null }>(`SELECT max(fetched_at)::text AS last FROM trends`))
+      .catch(() => null);
+    return {
+      ok: true,
+      llm: Boolean(config.OPENROUTER_API_KEY),
+      trends: {
+        provider: Boolean(config.APIFY_TOKEN || config.BRAVE_API_KEY || config.TAVILY_API_KEY),
+        buzz_gate: Boolean(config.TWITTERAPI_IO_KEY),
+        last_fetch: lastTrend?.last ?? null,
+      },
+    };
+  });
   // Telegram-only, no web dashboard — anyone landing on the bare domain in a
   // browser should bounce straight to the actual bot, not see a raw 404.
   app.get("/", async (_req, reply) => reply.redirect(botLink));

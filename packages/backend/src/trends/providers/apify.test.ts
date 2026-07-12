@@ -1,5 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { parseXTrendItems, parseLinkedInTrendItems } from "./apify.js";
+import { parseXTrendItems, parseLinkedInTrendItems, buildXContentQuery } from "./apify.js";
+
+describe("buildXContentQuery", () => {
+  it("quotes multi-word themes and leaves single words bare", () => {
+    expect(buildXContentQuery(["AI agents", "openai", "design systems"])).toBe(
+      '"AI agents" OR openai OR "design systems"',
+    );
+  });
+
+  it("caps the clause count, trims, and drops empties", () => {
+    expect(buildXContentQuery(["  a b  ", "", "c", "d", "e", "f"])).toBe('"a b" OR c OR d OR e');
+  });
+
+  it("strips embedded quotes so a theme can't break the query", () => {
+    expect(buildXContentQuery(['say "gm" daily'])).toBe('"say gm daily"');
+  });
+});
 
 // Field shapes below are trimmed from live runs (2026-07-04) of
 // kaitoeasyapi/twitter-x-data-tweet-scraper-pay-per-result-cheapest and

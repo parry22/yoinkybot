@@ -103,9 +103,14 @@ export async function trendMatchForUser(userId: string, settings: UserSettings =
       );
   if (Number(today?.n ?? 0) > 0) return false;
 
+  // Monthly cap counts OFFERS THE USER ACTUALLY GOT, not attempts: a moment the
+  // agent declined / the budget held / the send dropped is verdict='rejected'
+  // below, and must not starve the rest of the month — 4 invisible declines
+  // used to silently kill trend delivery for 30 days.
   const monthCount = await queryOne<{ count: string }>(
     `SELECT count(*)::text AS count FROM moments
-     WHERE user_id = $1 AND kind = 'trend' AND created_at > now() - interval '30 days'`,
+     WHERE user_id = $1 AND kind = 'trend' AND verdict <> 'rejected'
+       AND created_at > now() - interval '30 days'`,
     [userId],
   );
   if (Number(monthCount?.count ?? 0) >= TREND_MONTHLY_CAP) return false;
@@ -234,6 +239,18 @@ export async function trendMatchForUser(userId: string, settings: UserSettings =
 }
 
 /**
+ * A trend moment that never reached the user: record WHY on the moment row
+ * (verdict 'rejected' + reason) instead of silently returning false. This is
+ * both observability — "why did nothing fire this week?" is answerable from
+ * SQL — and correctness: the monthly cap above only counts non-rejected
+ * moments, so declines can't starve a month of delivery.
+ */
+async function rejectMoment(momentId: string, reason: string): Promise<void> {
+  await query(`UPDATE moments SET verdict = 'rejected', verdict_reason = $2 WHERE id = $1`, [momentId, reason]);
+  console.log(`trend moment ${momentId} rejected: ${reason}`);
+}
+
+/**
  * The composition agent + distinct delivery. The agent researches (cached
  * tweets, memory, voice, goals, the gate data) and either writes a grounded
  * take or declines — a skipped moment costs nothing, a forced one costs trust.
@@ -312,12 +329,15 @@ async function composeAndDeliverTake(
     maxTokens: 800,
   });
 
-  if (!output.fires || !output.reply.trim()) return false;
+  if (!output.fires || !output.reply.trim()) {
+    await rejectMoment(input.momentId, `agent declined: ${output.angle || "no real angle for this user"}`);
+    return false;
+  }
 
   // Right time, not just right thing: quiet hours + the shared proactive budget.
   const cadence = await canDeliverProactive(userId, settings);
   if (!cadence.ok) {
-    console.log(`trend take for ${userId} held: ${cadence.reason}`);
+    await rejectMoment(input.momentId, `held by cadence: ${cadence.reason}`);
     return false;
   }
 
@@ -351,6 +371,7 @@ async function composeAndDeliverTake(
   if (!sent) {
     // Don't leave a phantom surfacing that eats the budget for a DM that never landed.
     await query(`DELETE FROM surfacings WHERE id = $1`, [surfacing.id]);
+    await rejectMoment(input.momentId, "telegram send failed");
     return false;
   }
   return true;

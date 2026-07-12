@@ -21,6 +21,21 @@ connect your accounts, get diagnosed, build a plan, and ship content.
 
 <!-- Keep newest-first. Update this whenever a change ships that a reader of the repo should know about. -->
 
+- **2026-07-12 — Trend discovery actually finds the niche's news cycle now.**
+  The macro-moment pipeline was searching X for the user base's biggest memory
+  clusters verbatim — which are dominated by personal-life chatter — so a week
+  of major AI news (a Musk/Altman feud, model launches) produced zero trend
+  offers. Three fixes, all verified against live data: (1) discovery seeds are
+  now LLM-distilled from brand profiles + clusters + positions into 4-6 short
+  professional search terms ("AI agents", not "Punjab and Drinks"), with a
+  deterministic fallback; (2) the niche gate tightened 0.7 → 0.6 — at 0.7,
+  off-niche junk passed and ate the top-3 volume-verification slots, crowding
+  real trends out; (3) a trend the agent declined / cadence held / send dropped
+  is now recorded on the moment (verdict + reason) instead of vanishing — and
+  no longer burns the 4-per-month cap, which invisible declines used to starve.
+  `/health` now also reports trend-scrape readiness (provider key, buzz-gate
+  key, last fetch time) so a prod env drift can't silently kill the pipeline
+  again.
 - **2026-07-12 — Native scheduled posting.** You can now queue a post and have
   Yoinky publish it to X or LinkedIn at a set time, all in chat: "post this to
   linkedin tomorrow 9am: …" schedules it, and **/scheduled** lists everything

@@ -77,9 +77,11 @@ const schema = z.object({
   // buzzScore (trends/scoring.ts, components normalized 0..1) must clear this.
   BUZZ_THRESHOLD: z.coerce.number().default(0.5),
   // Max cosine distance between a trend and the user's nearest position for the
-  // niche gate (was hardcoded 0.7 in trend-match; text-embedding-v4 puts
-  // on-topic paraphrases around 0.55-0.65).
-  NICHE_THRESHOLD: z.coerce.number().default(0.7),
+  // niche gate. Calibrated against live data (2026-07-12): with text-embedding-v4,
+  // genuinely on-niche trends sit 0.40-0.55 from the nearest position while
+  // off-niche chatter sits 0.61+ — at the old 0.7 the junk not only passed, it
+  // ate the top-3 volume-verification slots and could crowd a real trend out.
+  NICHE_THRESHOLD: z.coerce.number().default(0.6),
   // twitterapi.io advanced_search pagination cap per query — $0.00015/tweet is
   // cheap per topic but not free at scale; never paginate unbounded.
   TWITTERAPI_SEARCH_PAGE_CAP: z.coerce.number().default(3),

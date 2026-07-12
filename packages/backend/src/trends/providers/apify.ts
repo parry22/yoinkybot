@@ -56,9 +56,23 @@ export function parseXTrendItems(items: unknown[]): Trend[] {
   return trends.sort((a, b) => (b.volume ?? 0) - (a.volume ?? 0));
 }
 
+/**
+ * Build the X search query from theme terms: multi-word themes are quoted so
+ * `AI agents OR design` can't parse as word soup, single words pass through.
+ * Pure — unit-tested in apify.test.ts.
+ */
+export function buildXContentQuery(themes: string[], max = 4): string {
+  return themes
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .slice(0, max)
+    .map((t) => (/\s/.test(t) ? `"${t.replace(/"/g, "")}"` : t))
+    .join(" OR ");
+}
+
 async function runXActor(themes: string[], limit: number): Promise<Trend[]> {
   const items = await runApifyActor(config.APIFY_X_ACTOR, {
-    twitterContent: themes.slice(0, 3).join(" OR "),
+    twitterContent: buildXContentQuery(themes),
     queryType: "Top",
     maxItems: limit * 2,
     min_faves: 100,
