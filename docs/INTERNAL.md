@@ -88,7 +88,7 @@ full prior implementation if it ever needs to come back.
 
 | Area | Path | What it does |
 |---|---|---|
-| Telegram bot | `src/telegram/` | grammY bot, command handlers, conversation state. Commands (deliberately lean): `start, help, connect, draft, repurpose, scheduled, connectposting, peers, settings, upgrade`. `scheduled` (view/cancel the post queue) and `connectposting` (grant write access) were added 2026-07-12 with scheduling — see §3e. Everything else (check, search/ask, status, diagnosis refresh, voice, forget, plan, positions, *creating* a scheduled post, clearing your account) is done in plain language via the agentic chat layer (see §3a). |
+| Telegram bot | `src/telegram/` | grammY bot, command handlers, conversation state. Commands (deliberately lean): `start, help, connect, draft, repurpose, connectposting, peers, settings, upgrade`. `connectposting` (grant write access) was added 2026-07-12 with scheduling — see §3e. The scheduling engine is built and tested, but its user-facing surface (`/scheduled`, the `schedule_post` chat tool) is deliberately not wired in yet — see §3e. Everything else (check, search/ask, status, diagnosis refresh, voice, forget, plan, positions, clearing your account) is done in plain language via the agentic chat layer (see §3a). |
 | Strategist flow | `src/strategist/` | The a16z Personal Brand Strategist onboarding. Profile-first arc: profiling (Stages 1-6, 7 fields) → connect → gap analysis → three-month plan → proactive. `session-machine.ts` is the state machine; `state.ts` persists it; `profile.ts` owns the stated profile; `gap.ts` computes the stated-vs-actual gap. See §3b. |
 | Capture pipeline | `src/capture/` | Immutable capture of user input + imports (X via twitterapi.io→Apify, LinkedIn via Apify). Captures are never mutated. |
 | Memory core | `src/memory/` | Extraction → embed → link → search (RRF hybrid). `positions.ts` (stated positions), `confidence.ts`, `forget.ts` (hard delete), `classification.ts` (rhetorical mode/sincerity/motive taxonomy + gating helper), `corrections.ts` (user-correction mechanism + monthly recalibration). See §3d. |
@@ -100,7 +100,7 @@ full prior implementation if it ever needs to come back.
 | Benchmark / peers | `src/benchmark/` | Peer benchmarking as territory, not scoreboard; relative-only. |
 | Surfacing | `src/surfacing/` | Deterministic resurfacing selection (`scoring.ts`), cadence, nudges. LLM only composes the message. |
 | Jobs | `src/jobs/` | pg-boss workers: extract, embed-link, cluster, resurface, offer-angles, trend-fetch, trend-match, weekly-plan, transcribe, campaign-detect, classification-recalibrate, scheduled-post. `boss.ts`/`workers.ts` wire them. |
-| Scheduling | `src/scheduling/` + `src/social/` | Native scheduled posting. `scheduling/service.ts` queues/lists/cancels; `jobs/scheduled-post.ts` publishes at fire time; `social/publish.ts` calls the X/LinkedIn write APIs; `routes/oauth.ts` is the write-scope OAuth connect. See §3e. |
+| Scheduling | `src/scheduling/` + `src/social/` | Native scheduled posting. `scheduling/service.ts` queues/lists/cancels; `jobs/scheduled-post.ts` publishes at fire time; `social/publish.ts` calls the X/LinkedIn write APIs; `routes/oauth.ts` is the user-context OAuth (onboarding connect §3f + posting §3e), with `telegram/connect-auth.ts` running the offer/skip sequence. |
 | Billing | `src/billing/` | DodoPayments (merchant of record). Webhook `webhook.ts` (Standard Webhooks sig), `entitlements.ts`, `PAYWALL_ENABLED` gate. |
 | STT | `src/stt/` | Speech-to-text, tried in order: Sarvam → Groq → OpenAI Whisper. |
 | Usage | `src/usage/` | `meter.ts` writes `usage_events` for every LLM/embed call (cost visibility, daily cap). |
@@ -238,7 +238,8 @@ profile *before* reading history, so the diagnosis lands as a measured
 stated-vs-actual gap rather than a cold read. The whole arc runs on the same
 deterministic-reducer + paced-LLM engine as before.
 
-**The arc.** `profiling` (Stages 1-6 intake) → `connect_transition` (Stage 7) →
+**The arc.** `profiling` (Stages 1-6 intake) → `connect_transition` (Stage 7,
+OAuth-first when the platform apps are configured — see §3f) →
 connect + ingest + diagnosis → `gap_analysis` (Stage 10) → `plan_build` (Stage 11,
 the three-month plan) → `active`. Phases live in `state.ts#SessionPhase`;
 `isProfilingPhase`/`isOnboardingPhase` gate routing. Durable milestones on
@@ -501,7 +502,7 @@ platform API docs).
 - **The scheduler is the job queue.** `scheduling/service.ts#schedulePost`
   inserts a `scheduled_posts` row and sends a `QUEUES.scheduledPost` job with
   `startAfter = the target Date` (pg-boss takes an absolute Date, so there's no
-  polling). `listScheduled` / `cancelScheduled` back the `/scheduled` command.
+  polling). `listScheduled` / `cancelScheduled` are the read/cancel API.
   **Cancel is a pure status flip** (`pending → canceled`): the due job
   re-reads status at fire time, so a canceled post is a no-op and we never
   reach into pg-boss to kill the delayed job.
@@ -528,12 +529,78 @@ platform API docs).
   SECRET` (paid X tier for `tweet.write`) and `LINKEDIN_CLIENT_ID/SECRET`
   (approved `w_member_social` app) are required; without them the routes 503 and
   `/connectposting` tells the user posting isn't set up.
-- **Creating vs. viewing.** Creating a scheduled post is natural-language (the
-  `schedule_post` chat tool — `converse.v3` resolves "tomorrow 9am" to an ISO
-  instant using the CURRENT TIME now injected into the chat context, and the
-  confirmation echoes the resolved absolute time so a bad parse is obvious).
-  Viewing/cancelling is the `/scheduled` command (explicit list + per-post
-  cancel buttons, `schedq:cancel:<id>` callback).
+- **Held back from users, deliberately (2026-07-13).** The engine above is
+  built, unit-tested, and live-probe-verified end-to-end (schedule → enqueue →
+  atomic-claim → fail-closed → cancel) — but the user-facing surface is NOT
+  wired in yet: the `/scheduled` command and the `schedule_post` chat tool were
+  pulled from `bot.ts` / `chat-tools.ts` / `actions.ts` / `converse.v3.ts` right
+  after being built, so nobody can create a scheduled post through the product
+  today. This was a deliberate pause (cost: X publishing runs ~$0.015/post on
+  X's pay-per-use API, no free tier), not a bug — the code (`runSchedulePost`,
+  `runShowScheduled` in `telegram/actions.ts`, the `schedq:cancel:<id>` callback
+  in `bot.ts`) is intact and ready to re-wire in a few lines whenever the
+  product decision is made. `connectposting` stays live independent of this —
+  granting write access is harmless and now doubles as what the OAuth-first
+  onboarding connect (§3f) grants for free during account connect.
+
+---
+
+## 3f. OAuth-first onboarding connect (2026-07-12)
+
+When the platform app credentials exist, the Stage-7 connect hand-off leads
+with **real account authorization** instead of asking for a handle to scrape.
+One consent now serves both halves: it verifies the account is really the
+user's (identity for the read) *and* stores the write token (posting), so
+`/connectposting` is never needed by a user who onboarded this way. All of it
+lives in `telegram/connect-auth.ts`; `routes/oauth.ts` hands off to
+`afterOAuthConnected` after storing a token.
+
+- **The sequence (product rule).** X is offered first (inline URL button →
+  `/oauth/x/start?u=<id>` + a `cauth:skip:<platform>` skip button). Once X
+  resolves — connected or skipped — LinkedIn gets its offer. Either may be
+  skipped, but skipping **both** with nothing connected is refused: the skip
+  ledger resets and the buttons come back, because everything downstream runs
+  on the read and there is no read without history. A typed @handle / profile
+  URL satisfies the gate too (it produces an account to read) and remains the
+  path everywhere, including when no platform app is configured — then the
+  flow is exactly the old handle ask. Cursor: `strategist_state.connectFlow =
+  { offered[], skipped[] }`.
+- **What auth actually buys per platform (the compliance reality — don't
+  "fix" this).**
+  - **X:** scopes stay least-privilege (`tweet.read tweet.write users.read
+    offline.access`). After the callback we make exactly one user-token read,
+    `GET /2/users/me` (works on every tier), to get the **verified** handle +
+    profile metadata (bio, followers — stamped into `connected_accounts.meta`
+    with `verified_via_oauth: true`), then kick the normal history ingest
+    against that verified handle. Full timeline reads via the official API
+    need a paid tier and are a follow-up; the ingest pull itself still runs
+    through twitterapi.io/Apify — but now only ever against an account the
+    user has demonstrably proven they own.
+  - **LinkedIn:** there is **no open scope that reads a member's posts**
+    (`r_member_social` / Community Management API is partner-approval-gated —
+    never request it without that approval). So LinkedIn auth = verified
+    identity + posting rights (`w_member_social openid profile`), and the
+    read still needs the profile URL, which the bot asks for right after the
+    callback (`awaitingConnect` is set, the pasted URL flows through the
+    existing `parseConnectTarget` → scrape path).
+- **Failure honesty.** X identity fetch fails (rate limit / tier hiccup) →
+  token is kept (posting works) and the bot falls back to asking for the
+  handle. Telegram rejects non-HTTPS/localhost URL buttons → the offer
+  re-sends as plain-text links (`sendOffer` fallback), so a dev instance
+  doesn't go silent at the hand-off. OAuth follow-through runs detached from
+  the callback HTTP response — a Telegram hiccup can never turn a stored
+  token into an error page.
+- **Entry points.** `maybeSendConnectAuthOffer` fires one-shot after the
+  profiling turn that lands in `connect_transition` (mirrors
+  `maybeSendToneMenu`), and force-fires (ignoring prior offers/skips) on
+  `/start` resume at the hand-off and no-arg `/connect`. The
+  `strategist-session.v2` prompt gets an `authConnect` flag so the hand-off
+  copy points at the button ("tap it, approve") instead of dictating a bare
+  handle; the deterministic fallback line in `runProfilingTurn` matches.
+- **Like the rest of the OAuth surface, this is credential-gated and NOT
+  live-tested** against the real providers (needs `X_CLIENT_ID/SECRET`,
+  `LINKEDIN_CLIENT_ID/SECRET`). The scrape ingest path is unchanged and
+  remains fully exercised.
 
 ---
 
@@ -571,9 +638,11 @@ Keys that matter most:
 - `OPENAI_API_KEY` / `QWEN_API_KEY` — embeddings (OpenAI preferred, Qwen fallback).
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `ADMIN_TELEGRAM_ID`.
 - `TREND_PROVIDER` + `APIFY_TOKEN` / `TWITTERAPI_IO_KEY` / `BRAVE_API_KEY` / `TAVILY_API_KEY`.
-- `X_CLIENT_ID/SECRET`, `LINKEDIN_CLIENT_ID/SECRET` — write-scope OAuth for
-  scheduled *posting* (§3e), distinct from the read-ingestion keys above. Unset
-  → scheduling works but publishing fails closed. X posting needs a paid X tier.
+- `X_CLIENT_ID/SECRET`, `LINKEDIN_CLIENT_ID/SECRET` — the user-context OAuth
+  apps. They power both the OAuth-first onboarding connect (§3f) and scheduled
+  *posting* (§3e), distinct from the read-ingestion keys above. Unset →
+  onboarding falls back to the typed-handle ask, scheduling works but
+  publishing fails closed. X posting needs a paid X tier.
 - `DODO_*`, `PAYWALL_ENABLED`.
 
 Never commit real secrets. Secrets in git history stay there forever even after

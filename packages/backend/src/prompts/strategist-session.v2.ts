@@ -29,6 +29,9 @@ export interface StrategistProfilingVars {
   alreadyPushed: boolean;
   relevantMemories: string[];
   landItNow: boolean;
+  /** True when OAuth connect is configured: the hand-off points at the connect
+   *  button (sent right after the reply) instead of asking for a bare handle. */
+  authConnect: boolean;
 }
 
 const goalList = GOAL_OPTIONS.map((g) => `  - ${g.key}: ${g.label}`).join("\n");
@@ -162,7 +165,11 @@ Actions is often a single item or empty. Only emit an action for something that 
         );
       }
     } else if (v.phase === "connect_transition") {
-      blocks.push("The intake is complete. Deliver the connect hand-off (see CONNECT_TRANSITION above) and wait for their X or LinkedIn handle.");
+      blocks.push(
+        v.authConnect
+          ? "The intake is complete. Deliver the confident hand-off (see CONNECT_TRANSITION above), with ONE change to the concrete action: a 'connect X' button arrives right below your message — tell them to tap it and approve (it verifies the account is really theirs, gives you a clean read, and lets you post for them later when they say go). X first; LinkedIn gets its turn once X is sorted. Typing their @handle or LinkedIn profile URL also works if they'd rather not tap. Do not ask any new profile questions."
+          : "The intake is complete. Deliver the connect hand-off (see CONNECT_TRANSITION above) and wait for their X or LinkedIn handle.",
+      );
     }
 
     if (v.relevantMemories.length) {

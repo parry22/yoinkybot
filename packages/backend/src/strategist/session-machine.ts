@@ -16,6 +16,7 @@ import { currentDiagnosis, diagnosisById, type Diagnosis } from "./diagnosis.js"
 import { submitGoal, GOAL_TYPES } from "./goals.js";
 import { generatePlanDraft, generateThreeMonthPlan, confirmPlan, setPlanCadence, getPlan } from "./plan.js";
 import { otherUnconnectedPlatform } from "./connect.js";
+import { publishConfigured } from "../social/publish.js";
 import {
   PROFILE_FIELDS,
   upsertProfileField,
@@ -446,10 +447,15 @@ async function runProfilingTurn(userId: string, message: string, state: Strategi
 
   // A plain, deterministic fallback so a transient LLM/DB hiccup never dead-ends
   // the intake — the machine already knows the next field, so just ask it.
+  // OAuth-first when configured: the connect button (sent by the bot right
+  // after this reply) is the primary action; the typed handle stays the out.
+  const authConnect = publishConfigured("x") || publishConfigured("linkedin");
   const fallbackReply =
     phase === "profiling" && field
       ? FALLBACK_QUESTION[field]
-      : "Drop your X handle (like @yourname) or your LinkedIn profile URL and I'll read your history from here.";
+      : authConnect
+        ? "Tap the connect button below to link your X (LinkedIn's next), or drop your @handle / LinkedIn profile URL and I'll read your history from that."
+        : "Drop your X handle (like @yourname) or your LinkedIn profile URL and I'll read your history from here.";
 
   // Context loads are best-effort: a DB hiccup on any of them must NOT kill the
   // turn (that was the loop bug — a failed getProfile threw before the LLM ran,
@@ -483,6 +489,7 @@ async function runProfilingTurn(userId: string, message: string, state: Strategi
         alreadyPushed: field ? (cursor.pushed ?? []).includes(field) : false,
         relevantMemories: relevant.map((m) => m.content),
         landItNow: turnsInPhase >= WATCHDOG[phase],
+        authConnect,
       }),
       json: true,
       maxTokens: 700,

@@ -36,15 +36,29 @@ connect your accounts, get diagnosed, build a plan, and ship content.
   `/health` now also reports trend-scrape readiness (provider key, buzz-gate
   key, last fetch time) so a prod env drift can't silently kill the pipeline
   again.
-- **2026-07-12 — Native scheduled posting.** You can now queue a post and have
-  Yoinky publish it to X or LinkedIn at a set time, all in chat: "post this to
-  linkedin tomorrow 9am: …" schedules it, and **/scheduled** lists everything
-  queued with one-tap cancel. Built natively on the existing job queue (a due
-  post is just a delayed job) — no third-party scheduler. Publishing uses the
-  official X/LinkedIn APIs via a write-scope OAuth connect (**/connectposting**);
-  until an account is connected for posting, scheduling still works and a due
-  post reports that it couldn't publish rather than failing silently. Posting to
-  X requires a paid X API tier; both need their platform app credentials set.
+- **2026-07-12 — Onboarding connect is now OAuth-first.** When the platform
+  apps are configured, the connect hand-off leads with real account
+  authorization (tap → approve → done) instead of asking for a handle to
+  scrape: X is offered first, LinkedIn once X resolves; either can be skipped
+  but skipping both is refused until at least one account is connected (a
+  typed @handle / profile URL still counts and stays the fallback everywhere,
+  including on instances with no platform apps). What auth buys, honestly: on
+  X, one sanctioned `users.read` call resolves the *verified* handle + profile
+  metadata and the history ingest runs against that (so we only read accounts
+  the user demonstrably owns) — and the same consent unlocks posting, so no
+  second `/connectposting` auth later. On LinkedIn no open API scope can read
+  a member's posts (the read scope is partner-gated, we don't request it), so
+  auth there means verified identity + posting rights, and the bot asks for
+  the profile URL right after to do the actual reading. Credential-gated and
+  not live-tested against the real providers, like the rest of the OAuth
+  surface (see docs/INTERNAL.md §3f).
+- **2026-07-12 — Native scheduled posting, engine built (not yet user-facing).**
+  Built natively on the existing job queue (a due post is just a delayed job,
+  no third-party scheduler) with real X/LinkedIn publishers behind a write-scope
+  OAuth connect (**/connectposting**), verified end-to-end against the real
+  queue and DB. Held back on purpose right after being built: X's official API
+  charges per post (no free tier), so exposing "/scheduled" and the natural-
+  language scheduling tool waits on that call. Nothing user-facing changed yet.
 - **2026-07-11 — Posts are now classified by rhetorical mode, sincerity, and
   motive — not just content.** The direct fix for shitposts/jokes being
   misread as sincere beliefs: extraction now also scores sincerity register

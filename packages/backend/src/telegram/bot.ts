@@ -42,10 +42,10 @@ import {
   deliverRepurposed,
   deliverTurnOutput,
   chatToolExecutor,
-  runShowScheduled,
 } from "./actions.js";
 import { cancelScheduled } from "../scheduling/service.js";
 import { publishConfigured } from "../social/publish.js";
+import { maybeSendConnectAuthOffer, handleAuthSkip } from "./connect-auth.js";
 import { runSerializedTurn } from "./turns.js";
 
 let bot: Bot | undefined;
@@ -148,11 +148,19 @@ export function createBot(): Bot | undefined {
     // Mid-intake with real progress → resume where they left off, don't wipe it.
     if (isProfilingPhase(st) && (st.profile?.captured?.length ?? 0) > 0) {
       const next = nextIntakeField(st.profile?.captured);
-      await ctx.reply(
-        next
-          ? `picking up where we left off. ${FALLBACK_QUESTION[next as ProfileField]}`
-          : "we're almost there. drop your X handle (like @yourname) or your LinkedIn profile URL and I'll read your history.",
-      );
+      if (next) {
+        await ctx.reply(`picking up where we left off. ${FALLBACK_QUESTION[next as ProfileField]}`);
+        return;
+      }
+      // At the connect hand-off: re-send the auth buttons (OAuth-first), since
+      // /start on resume means they lost the earlier message or stalled on it.
+      // The offer copy carries the full ask; plain handle ask is the fallback.
+      const offered = await maybeSendConnectAuthOffer(user.id, { force: true }).catch(() => false);
+      if (!offered) {
+        await ctx.reply(
+          "we're almost there. drop your X handle (like @yourname) or your LinkedIn profile URL and I'll read your history.",
+        );
+      }
       return;
     }
     // Fresh start: profile-first, so the diagnosis lands as a stated-vs-actual gap.
@@ -169,11 +177,17 @@ export function createBot(): Bot | undefined {
     if (!arg) {
       const st = await getState(user.id);
       await setState(user.id, { ...st, awaitingConnect: true });
-      await ctx.reply(
-        "connect your public presence so i can read your work. " +
-          "just send your @handle, or:\n" +
-          "/connect x <your @handle>\n/connect linkedin <your profile url>",
-      );
+      // OAuth-first when the platform apps are configured: real account auth
+      // (verified identity + posting unlocked) beats a typed handle. The offer
+      // message carries its own copy; the typed forms stay the fallback.
+      const offered = await maybeSendConnectAuthOffer(user.id, { force: true }).catch(() => false);
+      if (!offered) {
+        await ctx.reply(
+          "connect your public presence so i can read your work. " +
+            "just send your @handle, or:\n" +
+            "/connect x <your @handle>\n/connect linkedin <your profile url>",
+        );
+      }
       return;
     }
     const [platformRaw, ...rest] = arg.split(/\s+/);
@@ -215,15 +229,6 @@ export function createBot(): Bot | undefined {
     const platform: "x" | "linkedin" = platMatch && /^(linkedin|li)$/i.test(platMatch[1]!) ? "linkedin" : "x";
     const topic = platMatch ? platMatch[2]!.trim() : arg;
     await withTyping(ctxChannel(ctx), () => runDraft(user, topic, platform, ctxChannel(ctx)));
-  });
-
-  // See what's queued to publish, and cancel any of it. Scheduling itself is
-  // done in plain language ("post this to linkedin tomorrow 9am"), per the
-  // lean-commands convention — this command is the "show me the queue" surface.
-  bot.command("scheduled", async (ctx) => {
-    const user = await requireUser(ctx);
-    if (!user) return;
-    await withTyping(ctxChannel(ctx), () => runShowScheduled(user, ctxChannel(ctx)));
   });
 
   // Grant posting (write) access so scheduled posts can actually publish. The
@@ -401,6 +406,18 @@ export function createBot(): Bot | undefined {
       const id = data.slice("schedq:cancel:".length);
       const ok = await cancelScheduled(user.id, id);
       return void (await ctx.answerCallbackQuery({ text: ok ? "canceled" : "already gone" }));
+    }
+
+    // "skip for now" on an OAuth connect offer. The module decides what comes
+    // next: the other platform's offer, a shrug (something's already connected),
+    // or the at-least-one refusal that puts the buttons back.
+    if (data.startsWith("cauth:skip:")) {
+      const p = data.slice("cauth:skip:".length);
+      await ctx.answerCallbackQuery();
+      if (p === "x" || p === "linkedin") {
+        await handleAuthSkip(user.id, p).catch((err) => console.error("connect auth skip failed", err));
+      }
+      return;
     }
 
     if (data.startsWith("clr:")) {
@@ -741,7 +758,6 @@ export function createBot(): Bot | undefined {
       { command: "connect", description: "Connect your X/LinkedIn so I can read your work" },
       { command: "draft", description: "Write a post from your thinking, in your voice" },
       { command: "repurpose", description: "Reshape finished content, or synthesize scattered takes" },
-      { command: "scheduled", description: "See and cancel posts you've scheduled" },
       { command: "connectposting", description: "Let me publish to your X/LinkedIn for scheduled posts" },
       { command: "peers", description: "Watch a few peers — territory comparison, not a scoreboard" },
       { command: "settings", description: "Quiet hours, timezone, proactive frequency" },
@@ -798,6 +814,12 @@ async function handleTextTurn(user: User, text: string, ctx: Context): Promise<v
         const r = await runSessionTurn(user.id, text);
         await deliverTurnOutput(user, text, r, channel);
         await maybeSendToneMenu(user.id, ctx);
+        // The intake just completed → the connect hand-off leads with the OAuth
+        // buttons (X first, LinkedIn once X resolves). One-shot: no-ops unless
+        // the phase is connect_transition and nothing has been offered yet.
+        await maybeSendConnectAuthOffer(user.id).catch((err) =>
+          console.error("connect auth offer failed", err),
+        );
         // A small aside, after the real reply — not competing with it for
         // attention. Only fires the one turn a goal is captured.
         if (r.offerSecondPlatform) {

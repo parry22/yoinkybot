@@ -36,16 +36,6 @@ export const chatToolSchema = z.discriminatedUnion("name", [
     handle: z.string().min(1),
   }),
   z.object({ name: z.literal("forget"), query: z.string().min(1) }),
-  // Queue a post to publish later. `when` is an ISO 8601 instant the model
-  // resolves from natural language ("tomorrow 9am") using the CURRENT TIME in
-  // context; the executor validates it's parseable and in the future and echoes
-  // the resolved time back so a bad parse is caught immediately.
-  z.object({
-    name: z.literal("schedule_post"),
-    platform: z.enum(["x", "linkedin"]),
-    content: z.string().min(1),
-    when: z.string().min(1),
-  }),
   // User is correcting how a past post was read ("that was a joke", "that
   // wasn't sincere") — the model resolves WHICH field and the corrected value
   // from what they said; the executor resolves WHICH post via search.

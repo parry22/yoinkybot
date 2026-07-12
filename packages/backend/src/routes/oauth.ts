@@ -3,14 +3,21 @@ import { createHash, randomBytes } from "node:crypto";
 import { config } from "../config.js";
 import { query } from "../db/pool.js";
 import { publishConfigured } from "../social/publish.js";
+import { afterOAuthConnected } from "../telegram/connect-auth.js";
 import type { Platform } from "../lib/types.js";
 
 /**
- * Write-scope OAuth — the ONLY place Yoinky asks for permission to post as the
- * user (everything else reads public history by handle, no auth). Two legs:
+ * The user-context OAuth flow — the ONLY place Yoinky asks the user to
+ * authorize their account. It serves two purposes with one consent:
+ *   - onboarding connect (telegram/connect-auth.ts): proves account ownership,
+ *     resolves the verified X handle via users.read, and gates the history read
+ *     on demonstrated consent instead of a typed handle;
+ *   - posting (social/publish.ts): the stored write token publishes scheduled
+ *     posts on the user's behalf.
+ * Two legs:
  *   GET /oauth/:platform/start     → redirect the user to the platform's consent
- *   GET /oauth/:platform/callback  → exchange the code, store the write token
- * The stored token is what social/publish.ts uses when a scheduled post is due.
+ *   GET /oauth/:platform/callback  → exchange the code, store the token, then
+ *     hand off to afterOAuthConnected (Telegram follow-through + ingest kick).
  *
  * CREDENTIAL-GATED + NOT LIVE-TESTED: this needs real app credentials
  * (X_CLIENT_ID/SECRET with a paid X tier for tweet.write; LINKEDIN_CLIENT_ID/
@@ -182,19 +189,28 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
         return reply.type("text/html").send(DONE_HTML("That link expired — start the connect again from the bot."));
       }
 
+      let accessToken: string;
       try {
         if (platform === "x") {
           const tok = await exchangeX(code, pend.verifier);
           await storeToken(pend.userId, "x", tok);
+          accessToken = tok.accessToken;
         } else {
           const tok = await exchangeLinkedIn(code);
           await storeToken(pend.userId, "linkedin", tok);
+          accessToken = tok.accessToken;
         }
       } catch (err) {
         req.log.error({ err }, "oauth token exchange failed");
         return reply.type("text/html").send(DONE_HTML("Something went wrong connecting your account. Try again from the bot."));
       }
-      return reply.type("text/html").send(DONE_HTML(`Your ${platform === "x" ? "X" : "LinkedIn"} account is connected for posting. ✅`));
+      // Follow-through happens in Telegram (verify identity, kick the history
+      // ingest, offer the next platform) — failures there must never turn a
+      // stored token into an error page, so it runs detached from this response.
+      void afterOAuthConnected(pend.userId, platform, accessToken).catch((err) =>
+        req.log.error({ err }, "oauth follow-through failed"),
+      );
+      return reply.type("text/html").send(DONE_HTML(`Your ${platform === "x" ? "X" : "LinkedIn"} account is connected. ✅ I've picked things up in Telegram.`));
     },
   );
 }

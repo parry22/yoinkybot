@@ -73,6 +73,13 @@ export interface StrategistState {
   lastTurnAt?: string;
   /** The bot just asked for a handle — the next bare "@handle" reply is the answer. */
   awaitingConnect?: boolean;
+  /**
+   * The OAuth-first connect sequence cursor (telegram/connect-auth.ts): which
+   * platforms we've sent the auth-button offer for, and which the user tapped
+   * "skip" on. X is offered first, LinkedIn once X resolves; skipping both is
+   * refused until at least one account is connected (auth or typed handle).
+   */
+  connectFlow?: { offered?: ("x" | "linkedin")[]; skipped?: ("x" | "linkedin")[] };
   /** The Stage 4 tone inline-keyboard has been sent once (don't resend each turn). */
   toneMenuSent?: boolean;
 }

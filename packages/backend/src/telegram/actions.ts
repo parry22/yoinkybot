@@ -321,9 +321,6 @@ export async function executeChatTool(user: User, tool: ChatTool, channel: Chann
     case "connect_account":
       return connectAccount(user, tool.platform, tool.handle, channel);
 
-    case "schedule_post":
-      return runSchedulePost(user, tool.platform, tool.content, tool.when, channel);
-
     case "forget": {
       const matches = await hybridSearch(user.id, tool.query, 3);
       if (matches.length === 0) {
