@@ -220,12 +220,20 @@ export async function trendMatchForUser(userId: string, settings: UserSettings =
   // the user's positions, dedup'd against any trend that already has a moment
   // (sent or rejected). Runs BEFORE the paid volume checks. Loose prefilter —
   // it only drops clearly unrelated trends; the gates below are the real bar.
+  //
+  // X-ONLY (2026-07-12): this whole pipeline is X-native — buzz is verified on X
+  // (twitterapi.io advanced_search) and the source post the agent cites comes
+  // from X (get_top_tweets). A LinkedIn-seeded trend would be delivered with an
+  // X driving-post but a LinkedIn seed link, which is incoherent. The Apify
+  // fetch still pulls both platforms into `trends`; the macro-moment feature
+  // consumes only the X ones. (Flip this filter to re-include LinkedIn seeds.)
   const candidates = await query<TrendCandidate>(
     `SELECT t.id, t.topic, t.summary, t.url, t.platform,
             (SELECT min(t.embedding <=> p.embedding) FROM positions p
              WHERE p.user_id = $1 AND p.status = 'active' AND p.embedding IS NOT NULL) AS distance
      FROM trends t
      WHERE t.fetched_at > now() - interval '3 days' AND t.embedding IS NOT NULL
+       AND t.platform = 'x'
        AND NOT EXISTS (SELECT 1 FROM moments m WHERE m.user_id = $1 AND m.trend_id = t.id)
      ORDER BY distance ASC NULLS LAST
      LIMIT 12`,
@@ -431,20 +439,22 @@ async function composeAndDeliverTake(
   // Distinct delivery treatment: no 🔥/💤/🗑 resurfacing card — this should read
   // as "this is different" before they even open it. The wrapper is Yoinky
   // talking (casual); an embedded draft is feed content and stays untouched.
-  // The source line names the specific post driving the volume — a permalink
-  // plus the agent's one-line paraphrase — so the user sees what they'd ride.
+  // ONE link, and it's the specific X post driving the volume (source_url from
+  // get_top_tweets) — with the trend's own X permalink as the fallback when the
+  // agent didn't surface a specific post. We never append the raw trend seed
+  // separately: with the X-only candidate filter above every link here is an X
+  // link, and a second trailing URL just muddied the message.
   const embedded = output.embedded_draft?.trim();
   const sourceUrl = output.source_url?.trim();
   const sourceNote = output.source_note?.trim();
-  const sourceLine = sourceUrl
-    ? `\n\nwhat's driving it: ${sourceNote ? `${casualize(sourceNote)}\n` : ""}${sourceUrl}`
+  const drivingUrl = sourceUrl || trend.url || "";
+  const sourceLine = drivingUrl
+    ? `\n\nwhat's driving it: ${sourceNote ? `${casualize(sourceNote)}\n` : ""}${drivingUrl}`
     : "";
   const message =
     `⚡ ${casualize(output.reply)}` +
     sourceLine +
-    (embedded ? `\n\nif you want the exact words:\n\n${enforceStyle(embedded)}` : "") +
-    // Only show the topic link when it isn't already the source permalink.
-    (trend.url && trend.url !== sourceUrl ? `\n\n${trend.url}` : "");
+    (embedded ? `\n\nif you want the exact words:\n\n${enforceStyle(embedded)}` : "");
   const sent = await sendTelegram(userId, message).catch(() => false);
   if (!sent) {
     // Don't leave a phantom surfacing that eats the budget for a DM that never landed.

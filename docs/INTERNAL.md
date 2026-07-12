@@ -398,7 +398,17 @@ Notes worth knowing:
   `trend-take.v2` requires the permalink + a one-line paraphrase (never a long
   quote — copyright) of the specific tweet driving the volume, plus the user's
   angle; `get_top_tweets` now includes each tweet's permalink so the agent can
-  cite it. Stored on the surfacing payload (`source_url`, `source_note`).
+  cite it. Stored on the surfacing payload (`source_url`, `source_note`). The
+  delivery shows exactly ONE link (the X driving-post, or the trend's own X
+  permalink as fallback) — no trailing seed URL.
+- **X-only candidate pool** (2026-07-12): the Apify fetch seeds `trends` from
+  BOTH X and LinkedIn, but the macro-moment niche query filters to
+  `t.platform = 'x'`. The feature is X-native end to end — buzz is verified on
+  X (twitterapi.io) and the cited source post comes from X — so a LinkedIn-
+  seeded trend would arrive with an X driving-post but a LinkedIn seed link,
+  which is incoherent. (The filter is a single `AND t.platform = 'x'` in
+  `trendMatchForUser`; flip it to re-include LinkedIn seeds. LinkedIn trend rows
+  are otherwise unused today.)
 - **Trend non-deliveries are recorded** (2026-07-12): agent declined / cadence
   held / send dropped / no position collides → the moment gets
   `verdict='rejected'` + `verdict_reason`, so "why did nothing fire this week?"
