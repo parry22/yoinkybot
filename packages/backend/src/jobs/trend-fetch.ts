@@ -3,6 +3,8 @@ import { query, queryOne, toVector } from "../db/pool.js";
 import { embed } from "../llm/embeddings.js";
 import { llmCall } from "../llm/gateway.js";
 import { fetchTrendsWithFallback } from "../trends/registry.js";
+import { discoverXTrends } from "../trends/discover-x.js";
+import { twitterapiConfigured } from "../trends/providers/twitterapi.js";
 import { trendThemes } from "../prompts/trend-themes.v1.js";
 
 /**
@@ -15,7 +17,24 @@ export async function handleTrendFetch(): Promise<void> {
   if (themes.length === 0) return;
   console.log(`trend fetch: searching for [${themes.join(", ")}]`);
 
-  const { trends, provider } = await fetchTrendsWithFallback({ themes, limit: 24 });
+  // Primary: same-day X trend CLUSTERS via twitterapi (searchable term topics +
+  // a driving source tweet + verified live volume — see discover-x.ts). The
+  // macro-moment feature is X-only, and this is the source that actually fires.
+  // Fall back to the provider registry (Apify verbatim-tweet trends) only when
+  // twitterapi isn't configured — that path can't clear the buzz gate, but it
+  // keeps the table populated for the degraded angle-offer flow.
+  let trends = twitterapiConfigured()
+    ? await discoverXTrends(themes, 12).catch((err) => {
+        console.error("trend fetch: X cluster discovery failed", err);
+        return [];
+      })
+    : [];
+  let provider = "twitterapi";
+  if (trends.length === 0) {
+    const fallback = await fetchTrendsWithFallback({ themes, limit: 24 });
+    trends = fallback.trends;
+    provider = fallback.provider ?? "none";
+  }
   if (trends.length === 0) {
     console.warn("trend fetch: no provider produced trends");
     return;

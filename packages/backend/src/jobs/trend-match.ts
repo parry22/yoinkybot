@@ -50,7 +50,7 @@ const takeSchema = z.object({
   confidence: z.number().min(0).max(1).catch(0),
 });
 
-interface TrendCandidate {
+export interface TrendCandidate {
   id: string;
   topic: string;
   summary: string;
@@ -227,12 +227,19 @@ export async function trendMatchForUser(userId: string, settings: UserSettings =
   // X driving-post but a LinkedIn seed link, which is incoherent. The Apify
   // fetch still pulls both platforms into `trends`; the macro-moment feature
   // consumes only the X ones. (Flip this filter to re-include LinkedIn seeds.)
+  // FRESHNESS (2026-07-12): gate on observed_at (the driving tweet's own time),
+  // not just fetched_at — a same-day trend is the whole point. discover-x sets
+  // observed_at to the source tweet's timestamp, so a moment 5 days stale can't
+  // resurface here. 36h keeps it "today / yesterday" while surviving the gap
+  // between fetch runs.
   const candidates = await query<TrendCandidate>(
     `SELECT t.id, t.topic, t.summary, t.url, t.platform,
             (SELECT min(t.embedding <=> p.embedding) FROM positions p
              WHERE p.user_id = $1 AND p.status = 'active' AND p.embedding IS NOT NULL) AS distance
      FROM trends t
-     WHERE t.fetched_at > now() - interval '3 days' AND t.embedding IS NOT NULL
+     WHERE t.fetched_at > now() - interval '3 days'
+       AND t.observed_at > now() - interval '36 hours'
+       AND t.embedding IS NOT NULL
        AND t.platform = 'x'
        AND NOT EXISTS (SELECT 1 FROM moments m WHERE m.user_id = $1 AND m.trend_id = t.id)
      ORDER BY distance ASC NULLS LAST
@@ -325,7 +332,7 @@ async function rejectMoment(momentId: string, reason: string): Promise<void> {
  * tweets, memory, voice, goals, the gate data) and either writes a grounded
  * take or declines — a skipped moment costs nothing, a forced one costs trust.
  */
-async function composeAndDeliverTake(
+export async function composeAndDeliverTake(
   userId: string,
   settings: UserSettings,
   input: {

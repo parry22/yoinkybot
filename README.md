@@ -21,6 +21,19 @@ connect your accounts, get diagnosed, build a plan, and ship content.
 
 <!-- Keep newest-first. Update this whenever a change ships that a reader of the repo should know about. -->
 
+- **2026-07-12 — Trend detection now finds same-day clusters, not stale single
+  tweets.** Two problems made trend alerts miss: they were built around one hot
+  tweet (whose exact text was then searched for volume — finding only that one
+  tweet, so nothing ever cleared the bar), and they weren't time-bounded (a
+  5-day-old tweet could resurface). Rebuilt around what a trend actually is:
+  pull the last 24h of tweets in your space, cluster them into the topics
+  **multiple people are posting about right now**, verify each is genuinely
+  high-volume on X, and hand you the specific driving post to engage with —
+  gated to the last 36h so it's always current. Proven live: the old approach
+  scored a topic at buzz 0.15 (0 authors); the new one scores "Claude Code" at
+  0.86 with ~58 authors. Also fixed a twitterapi quirk (its "Top" query returns
+  nothing on time-windowed searches) that was zeroing both the volume signal and
+  the source-tweet pool.
 - **2026-07-12 — Macro-moment: a daily *band* of high-volume trends, each
   showing the post that's driving it.** The trend agent used to send at most one
   trend a day (capped at 4 a month). It now aims for **at least 2 genuinely

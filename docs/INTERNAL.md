@@ -95,7 +95,7 @@ full prior implementation if it ever needs to come back.
 | Voice | `src/voice/` | Voice profile from a user's own corpus; used to ground drafting. |
 | Consistency | `src/consistency/` | Pre-publish check: does a draft contradict a stated position? Embed → match positions → LLM meaning-level compare. Ambiguous matches (top-2 within `CONSISTENCY_AMBIGUITY_DELTA`) escalate to a bounded agent (see §3c). |
 | Drafting | `src/drafting/` | `angle-draft.ts` (3 ways to tell a story), `draft.ts`, `repurpose.ts` (transform, not regenerate). |
-| Trends | `src/trends/` | Provider registry with ordered fallback (`TREND_PROVIDER`: apify → brave → tavily). Actor ids in config are verified against live runs — see provider files for field shapes. Discovery seeds are LLM-distilled (`prompts/trend-themes.v1.ts`, from `jobs/trend-fetch.ts#interestThemes`) into short professional search terms — raw cluster labels proved to be personal-life noise that made the pipeline miss an entire AI news cycle (2026-07-12). `scoring.ts` (deterministic buzzScore) + `providers/twitterapi.ts` (advanced_search volume verification) gate the macro-moment agent, which now delivers a daily *band* of source-post-grounded takes rather than one/day (§3c). |
+| Trends | `src/trends/` | **X trend discovery is cluster-first** (`trends/discover-x.ts`, 2026-07-12): same-day tweets → LLM-clustered into searchable topic TERMS (`prompts/trend-clusters.v1.ts`) → each verified for live volume and grounded in a driving source tweet. Falls back to the interest terms themselves when GLM's cluster JSON flakes. Interest terms are LLM-distilled (`prompts/trend-themes.v1.ts`, `jobs/trend-fetch.ts#interestThemes`) into short professional search terms. The old provider registry (`TREND_PROVIDER`: apify → brave → tavily, verbatim-tweet trends) remains only as the fallback when twitterapi isn't configured. `scoring.ts` (deterministic buzzScore) + `providers/twitterapi.ts` (advanced_search volume verification) gate the macro-moment agent, which delivers a daily *band* of fresh, source-grounded takes (§3c). |
 | Engagement | `src/engagement/` | Reply-worthiness scored in code (`scoring.ts`); the model only drafts — now via a bounded agent (`reply-agent.ts`, §3c) grounded by `heuristics.ts` (deterministic visibility facts). One draft per slot; DMs out of scope. |
 | Benchmark / peers | `src/benchmark/` | Peer benchmarking as territory, not scoreboard; relative-only. |
 | Surfacing | `src/surfacing/` | Deterministic resurfacing selection (`scoring.ts`), cadence, nudges. LLM only composes the message. |
@@ -401,6 +401,21 @@ Notes worth knowing:
   cite it. Stored on the surfacing payload (`source_url`, `source_note`). The
   delivery shows exactly ONE link (the X driving-post, or the trend's own X
   permalink as fallback) — no trailing seed URL.
+- **Fresh, cluster-based, term-searchable trends** (2026-07-12 — the fix that
+  made the feature actually fire): trends used to be stored as individual hot
+  tweets with the *verbatim tweet text* as the topic. Volume verification then
+  searched that exact sentence and found only the one original tweet — proven
+  live at **buzz 0.15 (0 authors)**, so nothing ever cleared the 0.5 gate. Now
+  `trends/discover-x.ts` pulls same-day tweets, LLM-clusters them into
+  searchable TERMS (with a driving source tweet), and verifies each term —
+  `"Claude Code"` scores **buzz 0.86 with ~58 authors**. Three concrete fixes:
+  (1) discovery stores a term as `topic` + the driving tweet as `url` +
+  `observed_at` = that tweet's time; (2) trend-match gates on
+  `observed_at > now() - 36h` so a 5-day-stale tweet can't resurface (the
+  "why did it show me a 5-day-old tweet" bug); (3) `verifyTrendVolume` uses
+  queryType `"Latest"` for both passes (twitterapi's `"Top"` returns nothing on
+  windowed queries — it silently zeroed the engagement pass and the source-tweet
+  pool) and pools source tweets from the UNION of both passes.
 - **X-only candidate pool** (2026-07-12): the Apify fetch seeds `trends` from
   BOTH X and LinkedIn, but the macro-moment niche query filters to
   `t.platform = 'x'`. The feature is X-native end to end — buzz is verified on
