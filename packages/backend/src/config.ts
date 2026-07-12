@@ -74,6 +74,18 @@ const schema = z.object({
   REPLY_AGENT_MAX_TOOL_CALLS: z.coerce.number().default(3),
   // Macro-moment (trend take) agent + its deterministic gates.
   TREND_TAKE_MAX_TOOL_CALLS: z.coerce.number().default(4),
+  // Trend-delivery band (2026-07-12 rework; replaces the old "at most one a day"
+  // + 4-per-30-days caps, which are arithmetically incompatible with a 2/day
+  // target). Two distinct, load-bearing knobs:
+  //   MIN = per-RUN send cap. trendMatch runs 3×/day; one run delivers at most
+  //   this many, so a single run serves a helping rather than dumping the whole
+  //   day's band at once, leaving room for a fresher/bigger trend a later run
+  //   finds. This is the "target 2 a day from one good run" number.
+  //   MAX = hard per-DAY ceiling, checked before any paid provider work.
+  // A quiet day delivers fewer — the code fills toward the band from qualifying
+  // candidates but never manufactures buzz or relaxes a gate to hit the number.
+  MIN_DAILY_TREND_SENDS: z.coerce.number().default(2),
+  MAX_DAILY_TREND_SENDS: z.coerce.number().default(3),
   // buzzScore (trends/scoring.ts, components normalized 0..1) must clear this.
   BUZZ_THRESHOLD: z.coerce.number().default(0.5),
   // Max cosine distance between a trend and the user's nearest position for the

@@ -5,7 +5,7 @@ import { getBoss, QUEUES } from "./boss.js";
 import { llmCall } from "../llm/gateway.js";
 import { runToolLoop } from "../llm/tool-loop.js";
 import { macroMatch } from "../prompts/macro-match.v1.js";
-import { trendTake } from "../prompts/trend-take.v1.js";
+import { trendTake } from "../prompts/trend-take.v2.js";
 import { trendTakeToolSchema } from "../trends/tools.js";
 import { verifyTrendVolume, twitterapiConfigured, type VolumeVerification } from "../trends/providers/twitterapi.js";
 import { activePositions, type WeightedPosition } from "../memory/positions.js";
@@ -19,11 +19,11 @@ import { casualize, enforceStyle } from "../prompts/style.js";
 import { sendTelegram } from "../telegram/bot.js";
 import type { UserSettings } from "../lib/time.js";
 
-/** At most this many trend-driven offers per user per 30 days — rarity is the feature. */
-const TREND_MONTHLY_CAP = 4;
 /** Volume-verify at most this many niche-nearest candidates per user per run —
- *  no point paying for tweet volume on a topic that's nowhere near their niche. */
-const VERIFY_CANDIDATES = 3;
+ *  no point paying for tweet volume on a topic that's nowhere near their niche.
+ *  Kept a touch above MAX_DAILY_TREND_SENDS so a run can still fill the day's
+ *  band even if one or two verified candidates fail the position gate. */
+const VERIFY_CANDIDATES = 5;
 
 const matchSchema = z.object({
   match: z
@@ -39,6 +39,11 @@ const matchSchema = z.object({
 const takeSchema = z.object({
   fires: z.boolean().catch(false),
   reply: z.string().catch(""),
+  // The specific post driving the volume: permalink + a short paraphrase (never
+  // a long quote). The whole point of the v2 delivery — the user sees exactly
+  // what they'd be riding.
+  source_url: z.string().nullish(),
+  source_note: z.string().catch(""),
   embedded_draft: z.string().nullish(),
   angle: z.string().catch(""),
   cited_memory_ids: z.array(z.string()).catch([]),
@@ -58,16 +63,25 @@ interface TrendCandidate {
  * The macro-moment pipeline, per user. Deterministic gates in code, in order —
  * only a candidate that clears all of them reaches the composition agent:
  *
- *   daily/monthly caps → Stage C niche gate (pgvector vs positions, cheap,
- *   BEFORE any twitterapi.io spend) → Stage B buzz gate (verified volume via
- *   advanced_search, buzzScore > BUZZ_THRESHOLD) → Stage D position gate (the
- *   high-bar macro-match LLM compare, unchanged) → the trend-take agent
+ *   daily band → Stage C niche gate (pgvector vs positions, cheap, BEFORE any
+ *   twitterapi.io spend) → Stage B buzz gate (verified volume via
+ *   advanced_search, buzzScore > BUZZ_THRESHOLD) → rank by buzzScore → Stage D
+ *   position gate (per-trend macro-match compare) → the trend-take agent
  *   (research + composition only; it can decline to fire, never select).
  *
- * Runs a few times a day but sends at most once: the first run that produces a
- * firing take wins; later runs bail on the already-sent check before any LLM
- * work. Without TWITTERAPI_IO_KEY the volume gate can't run, so the pipeline
- * degrades to the previous behavior (niche + position gate → angle offer).
+ * WHICH trends and HOW MANY is decided entirely in code (2026-07-12 rework):
+ * buzz-verified survivors are ranked by buzzScore and taken top-down until the
+ * day's remaining band (MAX_DAILY_TREND_SENDS − already delivered today) is
+ * filled, aiming for MIN_DAILY_TREND_SENDS while qualifying candidates last.
+ * The position gate now runs PER TREND — a yes/no + which-position judgment on a
+ * single candidate — not as a cross-trend pick, so the model never selects
+ * which trend to cover. (This replaced the old single-send-a-day + 4-per-month
+ * rarity caps; see config.MIN/MAX_DAILY_TREND_SENDS.)
+ *
+ * Runs a few times a day; each run tops up toward the band and bails before any
+ * provider spend once the ceiling is hit. Without TWITTERAPI_IO_KEY the volume
+ * gate can't run, so the pipeline degrades to the previous behavior (niche +
+ * single position gate → angle offer).
  */
 export async function handleTrendMatch(): Promise<void> {
   const users = await query<{ id: string; settings: UserSettings }>(
@@ -84,13 +98,108 @@ export async function handleTrendMatch(): Promise<void> {
   }
 }
 
+/** The shared theme context handed to the per-trend position gate. */
+async function gatherThemes(userId: string): Promise<string[]> {
+  const [themeRows, planRow, goalRow] = await Promise.all([
+    query<{ label: string }>(
+      `SELECT label FROM clusters WHERE user_id = $1 ORDER BY array_length(memory_ids,1) DESC LIMIT 5`,
+      [userId],
+    ),
+    queryOne<{ throughline: string }>(
+      `SELECT throughline FROM brand_plans WHERE user_id = $1 AND status = 'active' ORDER BY created_at DESC LIMIT 1`,
+      [userId],
+    ),
+    queryOne<{ detail: string }>(
+      `SELECT detail FROM goals WHERE user_id = $1 AND status = 'active' ORDER BY created_at DESC LIMIT 1`,
+      [userId],
+    ),
+  ]);
+  return [
+    ...(planRow?.throughline ? [`THROUGHLINE: ${planRow.throughline}`] : []),
+    ...(goalRow?.detail ? [`GOAL: ${goalRow.detail}`] : []),
+    ...themeRows.map((t) => t.label),
+  ];
+}
+
+/**
+ * Stage D as a PER-TREND gate: does any of this user's stated positions collide
+ * with THIS one trend, hard enough to clear the high-bar macro-match compare?
+ * Returns the matched position + why-now, or null. Selection across trends is
+ * done in code (buzzScore rank) before this runs — the model only judges one
+ * candidate at a time, never picks which to cover.
+ */
+async function runPositionGate(
+  userId: string,
+  trend: TrendCandidate,
+  positions: WeightedPosition[],
+  themes: string[],
+): Promise<{ position: WeightedPosition; whyNow: string } | null> {
+  const res = await llmCall({
+    userId,
+    eventType: "trend_match",
+    tier: macroMatch.tier,
+    system: macroMatch.system,
+    user: macroMatch.render({
+      discourse: [{ title: trend.topic, snippet: trend.summary, url: trend.url ?? "" }],
+      positions: positions.slice(0, 20).map((p) => ({ id: p.id, statement: p.statement })),
+      themes,
+    }),
+    json: true,
+    maxTokens: 512,
+  });
+  const parsed = matchSchema.parse(res.parsed);
+  if (!parsed.match) return null;
+  const position = positions.find((p) => p.id === parsed.match!.position_id);
+  if (!position) return null;
+  return { position, whyNow: parsed.match.why_now };
+}
+
+/**
+ * Record the gated trend as a moment — the anchor for the daily-band count, the
+ * per-trend dedup (the niche query excludes trends that already have a moment),
+ * and timeline inspection. `position`/`whyNow` are null for a moment created
+ * only to tombstone a candidate that failed the position gate.
+ */
+async function createTrendMoment(
+  userId: string,
+  trend: TrendCandidate,
+  position: WeightedPosition | null,
+  whyNow: string | null,
+  verification?: VolumeVerification,
+): Promise<string | null> {
+  const excerpt = position
+    ? `${trend.summary}\n\nYour stated position: "${position.statement}"`
+    : trend.summary;
+  const moment = await queryOne<{ id: string }>(
+    `INSERT INTO moments (user_id, profile_id, kind, url, title, excerpt, signals, shareability, verdict, verdict_reason, trend_id, gated_at)
+     VALUES ($1,$1,'trend',$2,$3,$4,$5,0.9,'shareable',$6,$7, now()) RETURNING id`,
+    [
+      userId,
+      trend.url,
+      trend.topic,
+      excerpt,
+      JSON.stringify({
+        platform: trend.platform,
+        ...(whyNow ? { why_now: whyNow } : {}),
+        ...(position ? { position_id: position.id } : {}),
+        ...(verification ? { buzz: verification.buzz, buzz_signals: verification.signals } : {}),
+      }),
+      whyNow,
+      trend.id,
+    ],
+  );
+  return moment?.id ?? null;
+}
+
 export async function trendMatchForUser(userId: string, settings: UserSettings = {}): Promise<boolean> {
-  // At most one send a day: the first run that fires wins, later runs bail
-  // here before any LLM or provider work. A run where the agent DECLINED
-  // doesn't burn the day — a later run may try a different trend (per-trend
-  // dedup below stops the same one being reconsidered). The degraded path has
-  // no agent decline, so there the old once-a-day moment check applies.
-  const today = twitterapiConfigured()
+  const verified = twitterapiConfigured();
+
+  // Explicit daily-band check. MAX is the hard ceiling: bail here before any LLM
+  // or provider spend once it's hit. The loop below fills toward MIN while
+  // qualifying candidates last (it can't manufacture buzz, so a quiet day sends
+  // fewer). Verified path counts delivered trend_take surfacings; the degraded
+  // path has no such delivery, so it counts trend moments created today.
+  const sentRow = verified
     ? await queryOne<{ n: string }>(
         `SELECT count(*)::text AS n FROM surfacings
          WHERE user_id = $1 AND type = 'trend_take' AND delivered_at > date_trunc('day', now())`,
@@ -101,25 +210,16 @@ export async function trendMatchForUser(userId: string, settings: UserSettings =
          WHERE user_id = $1 AND kind = 'trend' AND created_at > date_trunc('day', now())`,
         [userId],
       );
-  if (Number(today?.n ?? 0) > 0) return false;
-
-  // Monthly cap counts OFFERS THE USER ACTUALLY GOT, not attempts: a moment the
-  // agent declined / the budget held / the send dropped is verdict='rejected'
-  // below, and must not starve the rest of the month — 4 invisible declines
-  // used to silently kill trend delivery for 30 days.
-  const monthCount = await queryOne<{ count: string }>(
-    `SELECT count(*)::text AS count FROM moments
-     WHERE user_id = $1 AND kind = 'trend' AND verdict <> 'rejected'
-       AND created_at > now() - interval '30 days'`,
-    [userId],
-  );
-  if (Number(monthCount?.count ?? 0) >= TREND_MONTHLY_CAP) return false;
+  const remaining = config.MAX_DAILY_TREND_SENDS - Number(sentRow?.n ?? 0);
+  if (remaining <= 0) return false;
 
   const positions = await activePositions(userId);
   if (positions.length === 0) return false;
 
   // Stage C — niche gate (deterministic): recent trends semantically near ANY of
-  // the user's positions. Runs BEFORE the paid volume checks.
+  // the user's positions, dedup'd against any trend that already has a moment
+  // (sent or rejected). Runs BEFORE the paid volume checks. Loose prefilter —
+  // it only drops clearly unrelated trends; the gates below are the real bar.
   const candidates = await query<TrendCandidate>(
     `SELECT t.id, t.topic, t.summary, t.url, t.platform,
             (SELECT min(t.embedding <=> p.embedding) FROM positions p
@@ -128,122 +228,84 @@ export async function trendMatchForUser(userId: string, settings: UserSettings =
      WHERE t.fetched_at > now() - interval '3 days' AND t.embedding IS NOT NULL
        AND NOT EXISTS (SELECT 1 FROM moments m WHERE m.user_id = $1 AND m.trend_id = t.id)
      ORDER BY distance ASC NULLS LAST
-     LIMIT 8`,
+     LIMIT 12`,
     [userId],
   );
-  // Loose prefilter — it only exists to drop clearly unrelated trends; the LLM
-  // gate below is the real (high) bar. text-embedding-v4 puts on-topic
-  // paraphrases around 0.55-0.65 distance.
   const near = candidates.filter((c) => c.distance !== null && c.distance < config.NICHE_THRESHOLD);
   if (near.length === 0) return false;
 
-  // Stage B — buzz gate (deterministic, verified volume). Skipped when
-  // twitterapi.io isn't configured: the pipeline then degrades to the previous
-  // niche+position-gate → angle-offer behavior.
-  let surviving = near;
-  const verifications = new Map<string, VolumeVerification>();
-  if (twitterapiConfigured()) {
-    surviving = [];
-    for (const c of near.slice(0, VERIFY_CANDIDATES)) {
-      try {
-        const v = await verifyTrendVolume(c.topic, true);
-        if (v.buzz > config.BUZZ_THRESHOLD) {
-          verifications.set(c.id, v);
-          surviving.push(c);
-        }
-      } catch (err) {
-        console.error(`buzz verification failed for trend "${c.topic}"`, err);
-      }
+  const themes = await gatherThemes(userId);
+
+  // Degraded path (no volume verification available): no buzz to rank by, so
+  // take the nearest on-niche candidate that clears the position gate and hand
+  // it to the shared angle-offer flow (the pre-buzz behavior).
+  if (!verified) {
+    for (const c of near) {
+      const gate = await runPositionGate(userId, c, positions, themes);
+      if (!gate) continue;
+      const momentId = await createTrendMoment(userId, c, gate.position, gate.whyNow);
+      if (!momentId) return false;
+      await getBoss().send(QUEUES.offerAngles, { momentId, userId });
+      return true;
     }
-    surviving.sort((a, b) => (verifications.get(b.id)?.buzz ?? 0) - (verifications.get(a.id)?.buzz ?? 0));
-    if (surviving.length === 0) return false;
+    return false;
   }
 
-  // Stage D — position gate (unchanged high-bar semantic compare; fires rarely,
-  // weak matches never fire).
-  const themeRows = await query<{ label: string }>(
-    `SELECT label FROM clusters WHERE user_id = $1 ORDER BY array_length(memory_ids,1) DESC LIMIT 5`,
-    [userId],
-  );
-  const planRow = await queryOne<{ throughline: string }>(
-    `SELECT throughline FROM brand_plans WHERE user_id = $1 AND status = 'active' ORDER BY created_at DESC LIMIT 1`,
-    [userId],
-  );
-  const goalRow = await queryOne<{ detail: string }>(
-    `SELECT detail FROM goals WHERE user_id = $1 AND status = 'active' ORDER BY created_at DESC LIMIT 1`,
-    [userId],
-  );
-  const themes = [
-    ...(planRow?.throughline ? [`THROUGHLINE: ${planRow.throughline}`] : []),
-    ...(goalRow?.detail ? [`GOAL: ${goalRow.detail}`] : []),
-    ...themeRows.map((t) => t.label),
-  ];
-
-  const res = await llmCall({
-    userId,
-    eventType: "trend_match",
-    tier: macroMatch.tier,
-    system: macroMatch.system,
-    user: macroMatch.render({
-      discourse: surviving.map((c) => ({ title: c.topic, snippet: c.summary, url: c.url ?? "" })),
-      positions: positions.slice(0, 20).map((p) => ({ id: p.id, statement: p.statement })),
-      themes,
-    }),
-    json: true,
-    maxTokens: 512,
-  });
-  const parsed = matchSchema.parse(res.parsed);
-  if (!parsed.match) return false;
-  const trend = surviving.find((c) => c.url === parsed.match!.url || c.topic === parsed.match!.title) ?? surviving[0]!;
-  const position = positions.find((p) => p.id === parsed.match!.position_id);
-  if (!position) return false;
-
-  const verification = verifications.get(trend.id);
-
-  // The match becomes a trend moment either way — it anchors the daily/monthly
-  // caps and the per-trend dedup, and keeps the timeline inspectable.
-  const moment = await queryOne<{ id: string }>(
-    `INSERT INTO moments (user_id, profile_id, kind, url, title, excerpt, signals, shareability, verdict, verdict_reason, trend_id, gated_at)
-     VALUES ($1,$1,'trend',$2,$3,$4,$5,0.9,'shareable',$6,$7, now()) RETURNING id`,
-    [
-      userId,
-      trend.url,
-      trend.topic,
-      `${trend.summary}\n\nYour stated position: "${position.statement}"`,
-      JSON.stringify({
-        platform: trend.platform,
-        why_now: parsed.match.why_now,
-        position_id: position.id,
-        ...(verification ? { buzz: verification.buzz, buzz_signals: verification.signals } : {}),
-      }),
-      parsed.match.why_now,
-      trend.id,
-    ],
-  );
-  if (!moment) return false;
-
-  // Degraded path (no volume verification available): the previous delivery —
-  // the moment flows into the shared angle-offer pipeline.
-  if (!verification) {
-    await getBoss().send(QUEUES.offerAngles, { momentId: moment.id, userId });
-    return true;
+  // Stage B — buzz gate (deterministic, verified volume): verify the nearest
+  // few, keep those clearing BUZZ_THRESHOLD, rank by buzzScore. Distinct-author-
+  // weighted score is what separates "the whole timeline is on this" from "a
+  // few niche accounts are."
+  const verifications = new Map<string, VolumeVerification>();
+  const surviving: TrendCandidate[] = [];
+  for (const c of near.slice(0, VERIFY_CANDIDATES)) {
+    try {
+      const v = await verifyTrendVolume(c.topic, true);
+      if (v.buzz > config.BUZZ_THRESHOLD) {
+        verifications.set(c.id, v);
+        surviving.push(c);
+      }
+    } catch (err) {
+      console.error(`buzz verification failed for trend "${c.topic}"`, err);
+    }
   }
+  if (surviving.length === 0) return false;
+  surviving.sort((a, b) => (verifications.get(b.id)?.buzz ?? 0) - (verifications.get(a.id)?.buzz ?? 0));
 
-  return composeAndDeliverTake(userId, settings, {
-    momentId: moment.id,
-    trend,
-    position,
-    whyNow: parsed.match.why_now,
-    verification,
-  });
+  // Stage D + compose, per candidate in buzzScore order. Bounded by BOTH the
+  // per-run cap (MIN — one run serves a helping, not the whole day) and the
+  // remaining daily band (MAX − already sent today); the smaller wins. Each
+  // candidate gets a moment (anchors dedup + observability); one that fails the
+  // position gate is tombstoned 'rejected' with the reason.
+  const perRun = Math.min(remaining, Math.max(1, config.MIN_DAILY_TREND_SENDS));
+  let sent = 0;
+  for (const trend of surviving) {
+    if (sent >= perRun) break;
+    const verification = verifications.get(trend.id)!;
+    const gate = await runPositionGate(userId, trend, positions, themes);
+    const momentId = await createTrendMoment(userId, trend, gate?.position ?? null, gate?.whyNow ?? null, verification);
+    if (!momentId) continue;
+    if (!gate) {
+      await rejectMoment(momentId, "no stated position collides with this trend");
+      continue;
+    }
+    const delivered = await composeAndDeliverTake(userId, settings, {
+      momentId,
+      trend,
+      position: gate.position,
+      whyNow: gate.whyNow,
+      verification,
+    });
+    if (delivered) sent++;
+  }
+  return sent > 0;
 }
 
 /**
  * A trend moment that never reached the user: record WHY on the moment row
- * (verdict 'rejected' + reason) instead of silently returning false. This is
- * both observability — "why did nothing fire this week?" is answerable from
- * SQL — and correctness: the monthly cap above only counts non-rejected
- * moments, so declines can't starve a month of delivery.
+ * (verdict 'rejected' + reason) instead of silently returning false, so "why
+ * did nothing fire this week?" is answerable from SQL. It also anchors the
+ * per-trend dedup (the niche query skips any trend that already has a moment),
+ * so a rejected candidate isn't re-verified on the next run.
  */
 async function rejectMoment(momentId: string, reason: string): Promise<void> {
   await query(`UPDATE moments SET verdict = 'rejected', verdict_reason = $2 WHERE id = $1`, [momentId, reason]);
@@ -277,8 +339,13 @@ async function composeAndDeliverTake(
         : verification.topTweets;
       const picked = (pool.length ? pool : verification.topTweets).slice(0, 8);
       if (picked.length === 0) return "no verified tweets in the pool";
+      // Include the permalink — the agent needs it to cite the specific post
+      // driving the moment (the v2 source-post requirement).
       return picked
-        .map((t) => `@${t.authorHandle} (${t.likeCount}♥/${t.retweetCount}rt/${t.replyCount}re): ${t.text.slice(0, 220)}`)
+        .map(
+          (t) =>
+            `@${t.authorHandle} [${t.url ?? "no-permalink"}] (${t.likeCount}♥/${t.retweetCount}rt/${t.replyCount}re): ${t.text.slice(0, 220)}`,
+        )
         .join("\n");
     },
     search_memory: async (args) => {
@@ -353,6 +420,8 @@ async function composeAndDeliverTake(
         confidence: output.confidence,
         cited_memory_ids: output.cited_memory_ids,
         buzz: verification.buzz,
+        source_url: output.source_url ?? null,
+        source_note: output.source_note || null,
         agent_steps: steps.map((s) => ({ tool: s.tool, args: s.args })),
       }),
     ],
@@ -362,11 +431,20 @@ async function composeAndDeliverTake(
   // Distinct delivery treatment: no 🔥/💤/🗑 resurfacing card — this should read
   // as "this is different" before they even open it. The wrapper is Yoinky
   // talking (casual); an embedded draft is feed content and stays untouched.
+  // The source line names the specific post driving the volume — a permalink
+  // plus the agent's one-line paraphrase — so the user sees what they'd ride.
   const embedded = output.embedded_draft?.trim();
+  const sourceUrl = output.source_url?.trim();
+  const sourceNote = output.source_note?.trim();
+  const sourceLine = sourceUrl
+    ? `\n\nwhat's driving it: ${sourceNote ? `${casualize(sourceNote)}\n` : ""}${sourceUrl}`
+    : "";
   const message =
     `⚡ ${casualize(output.reply)}` +
+    sourceLine +
     (embedded ? `\n\nif you want the exact words:\n\n${enforceStyle(embedded)}` : "") +
-    (trend.url ? `\n\n${trend.url}` : "");
+    // Only show the topic link when it isn't already the source permalink.
+    (trend.url && trend.url !== sourceUrl ? `\n\n${trend.url}` : "");
   const sent = await sendTelegram(userId, message).catch(() => false);
   if (!sent) {
     // Don't leave a phantom surfacing that eats the budget for a DM that never landed.

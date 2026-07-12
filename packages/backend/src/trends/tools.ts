@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * Tool contract for the macro-moment composition agent (trend-take.v1).
+ * Tool contract for the macro-moment composition agent (trend-take.v2).
  * Schemas only — executors live in jobs/trend-match.ts. Everything upstream
  * (buzz verification, niche gate, position gate) already ran in code; these
  * tools exist for research depth and composition, never selection.

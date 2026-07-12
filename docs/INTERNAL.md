@@ -95,7 +95,7 @@ full prior implementation if it ever needs to come back.
 | Voice | `src/voice/` | Voice profile from a user's own corpus; used to ground drafting. |
 | Consistency | `src/consistency/` | Pre-publish check: does a draft contradict a stated position? Embed → match positions → LLM meaning-level compare. Ambiguous matches (top-2 within `CONSISTENCY_AMBIGUITY_DELTA`) escalate to a bounded agent (see §3c). |
 | Drafting | `src/drafting/` | `angle-draft.ts` (3 ways to tell a story), `draft.ts`, `repurpose.ts` (transform, not regenerate). |
-| Trends | `src/trends/` | Provider registry with ordered fallback (`TREND_PROVIDER`: apify → brave → tavily). Actor ids in config are verified against live runs — see provider files for field shapes. Discovery seeds are LLM-distilled (`prompts/trend-themes.v1.ts`, from `jobs/trend-fetch.ts#interestThemes`) into short professional search terms — raw cluster labels proved to be personal-life noise that made the pipeline miss an entire AI news cycle (2026-07-12). `scoring.ts` (deterministic buzzScore) + `providers/twitterapi.ts` (advanced_search volume verification) gate the macro-moment agent (§3c). |
+| Trends | `src/trends/` | Provider registry with ordered fallback (`TREND_PROVIDER`: apify → brave → tavily). Actor ids in config are verified against live runs — see provider files for field shapes. Discovery seeds are LLM-distilled (`prompts/trend-themes.v1.ts`, from `jobs/trend-fetch.ts#interestThemes`) into short professional search terms — raw cluster labels proved to be personal-life noise that made the pipeline miss an entire AI news cycle (2026-07-12). `scoring.ts` (deterministic buzzScore) + `providers/twitterapi.ts` (advanced_search volume verification) gate the macro-moment agent, which now delivers a daily *band* of source-post-grounded takes rather than one/day (§3c). |
 | Engagement | `src/engagement/` | Reply-worthiness scored in code (`scoring.ts`); the model only drafts — now via a bounded agent (`reply-agent.ts`, §3c) grounded by `heuristics.ts` (deterministic visibility facts). One draft per slot; DMs out of scope. |
 | Benchmark / peers | `src/benchmark/` | Peer benchmarking as territory, not scoreboard; relative-only. |
 | Surfacing | `src/surfacing/` | Deterministic resurfacing selection (`scoring.ts`), cadence, nudges. LLM only composes the message. |
@@ -366,7 +366,7 @@ because its tools have chat side effects (deliveries, turn persistence).
 
 | Loop | Deterministic gate (code, before any loop runs) | Tools | Cap |
 |---|---|---|---|
-| Macro-moment (`jobs/trend-match.ts` → `trend-take.v1`) | daily send gate → monthly cap → niche gate (pgvector vs positions, `NICHE_THRESHOLD`, *before* any paid twitterapi.io call) → buzz gate (`trends/providers/twitterapi.ts` two-pass advanced_search → `trends/scoring.ts#buzzScore` > `BUZZ_THRESHOLD`; distinct authors weigh more than raw tweet count) → position gate (macro-match.v1, unchanged) | `get_top_tweets` (cached verified pool, no new spend), `search_memory`, `get_voice_profile`, `get_goals_and_pillars`, `get_positions` | 4 |
+| Macro-moment (`jobs/trend-match.ts` → `trend-take.v2`) | daily-band gate (`MAX_DAILY_TREND_SENDS`, checked *before* provider spend) → niche gate (pgvector vs positions, `NICHE_THRESHOLD`, *before* any paid twitterapi.io call) → buzz gate (`trends/providers/twitterapi.ts` two-pass advanced_search → `trends/scoring.ts#buzzScore` > `BUZZ_THRESHOLD`; distinct authors weigh more than raw tweet count) → **rank survivors by buzzScore, iterate top-down** → position gate (macro-match.v1, now run PER-TREND: a yes/no on one candidate, not a cross-trend pick) | `get_top_tweets` (cached verified pool w/ permalinks, no new spend), `search_memory`, `get_voice_profile`, `get_goals_and_pillars`, `get_positions` | 4 |
 | Consistency (`consistency/check.ts` → `consistency-check.v2`) | two escalation signals, both code-decided: top-2 position matches within `CONSISTENCY_AMBIGUITY_DELTA` (from embeddings, before any model call), OR the single-shot v1 pass returns `confidence < CONSISTENCY_CONFIDENCE_THRESHOLD` (a shaky first read is escalated, not acted on). The confident, clean-match common case stays single-shot v1 | `search_more_positions`, `get_position_context`, `search_memory` | 3 |
 | Reply drafting (`engagement/reply-agent.ts` → `reply-draft.v2`) | reply-worthiness scoring + learned threshold (`engagement/scoring.ts`) — untouched, decides *whether* to draft at all | `search_memory`, `get_voice_profile`, `get_content_pillars`, `get_thread_context`, `get_engagement_heuristics` | 3 |
 
@@ -375,20 +375,39 @@ Notes worth knowing:
   0016, in `PROACTIVE_TYPES` so it shares the unified budget + quiet hours), a
   `⚡`-framed DM with no 🔥/💤/🗑 resurfacing card. The agent may return
   `fires: false` — a skipped moment costs nothing, a forced one costs trust; a
-  declined trend doesn't burn the day (only a *sent* take does), but the trend
-  itself is dedup'd via its moment row. `trendMatch` is scheduled 3×/day; the
-  handler enforces at-most-one send. Without `TWITTERAPI_IO_KEY` the buzz gate
-  can't run and the pipeline degrades to the old niche+position → angle-offer
-  flow.
-- **Trend non-deliveries are recorded, and don't burn the month** (2026-07-12):
-  agent declined / cadence held / send dropped → the moment gets
+  declined trend doesn't burn the band (only a *sent* take counts), but the
+  trend itself is dedup'd via its moment row. Without `TWITTERAPI_IO_KEY` the
+  buzz gate can't run and the pipeline degrades to the old niche+position →
+  angle-offer flow.
+- **≥2 high-volume trends/day, source-post grounded** (2026-07-12 rework):
+  the pipeline was reworked from "at most ONE send a day + 4-per-30-days" to a
+  two-knob band: **`MIN_DAILY_TREND_SENDS`=2 is the per-RUN cap** (one run
+  serves a helping, not the whole day — leaving room for a fresher/bigger trend
+  a later run finds) and **`MAX_DAILY_TREND_SENDS`=3 is the hard per-DAY
+  ceiling** (checked before any provider spend). The per-candidate loop is
+  bounded by `min(MAX − sentToday, MIN)`. WHICH trends and HOW MANY is fully
+  code-decided: buzz-verified survivors are ranked by `buzzScore` and taken
+  top-down. The macro-match position gate went from a *cross-trend selector*
+  (picked one from a list — a latent doctrine leak) to a *per-trend gate*
+  (yes/no on a single candidate), so the model never picks which trend to cover.
+  `trendMatch` is scheduled 3×/day: point-4 answer — 2/day comes from a single
+  good run sending up to MIN, topped up by later runs up to MAX. **The old
+  `TREND_MONTHLY_CAP`=4 was removed, deliberately** — 2/day and 4/30-days are
+  arithmetically incompatible (burns out in two days); rarity is now the daily
+  band + the gates, not a monthly counter. Delivery names the **source post**:
+  `trend-take.v2` requires the permalink + a one-line paraphrase (never a long
+  quote — copyright) of the specific tweet driving the volume, plus the user's
+  angle; `get_top_tweets` now includes each tweet's permalink so the agent can
+  cite it. Stored on the surfacing payload (`source_url`, `source_note`).
+- **Trend non-deliveries are recorded** (2026-07-12): agent declined / cadence
+  held / send dropped / no position collides → the moment gets
   `verdict='rejected'` + `verdict_reason`, so "why did nothing fire this week?"
-  is answerable from SQL, and the 4-per-month cap counts only non-rejected
-  moments — four invisible declines used to silently starve trend delivery for
-  30 days. `NICHE_THRESHOLD` default is 0.6 (calibrated live: on-niche trends
-  sit 0.40-0.55 from the nearest position, junk 0.61+; at the old 0.7 the junk
-  passed and ate the top-3 volume-verification slots). `/health` reports trend
-  readiness (`trends.provider`, `trends.buzz_gate`, `trends.last_fetch`).
+  is answerable from SQL, and a rejected trend is dedup'd out of the next run's
+  niche query (not re-verified). `NICHE_THRESHOLD` default is 0.6 (calibrated
+  live: on-niche trends sit 0.40-0.55 from the nearest position, junk 0.61+; at
+  the old 0.7 the junk passed and ate the volume-verification slots). `/health`
+  reports trend readiness (`trends.provider`, `trends.buzz_gate`,
+  `trends.last_fetch`).
 - **Boot-time catch-up for the two trend jobs** (`jobs/workers.ts#nudgeStaleTrendJobs`,
   2026-07-12): on a host that spins the process down when idle (Render free
   tier — this app's deploy target), a missed cron minute is gone forever;
@@ -399,8 +418,9 @@ Notes worth knowing:
   cron tick while alive at the right minute. Fix: every process boot ALSO
   sends `trendFetch` (only if `trends.fetched_at` is null or >7h stale — avoids
   re-spending on Apify/embeddings across a burst of same-session redeploys)
-  and `trendMatch` unconditionally (its handler already caps at one send/day
-  per user, so an extra boot-time attempt is a no-op, never a duplicate).
+  and `trendMatch` unconditionally (its handler enforces the daily band per
+  user and bails before any spend once the ceiling is hit, so an extra
+  boot-time attempt only tops up toward the band, never over-sends).
   Verified live: wiping `fetched_at` into the past and re-running
   `registerWorkers` produces fresh rows within the boot sequence, no cron
   wait needed.

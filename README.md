@@ -21,6 +21,21 @@ connect your accounts, get diagnosed, build a plan, and ship content.
 
 <!-- Keep newest-first. Update this whenever a change ships that a reader of the repo should know about. -->
 
+- **2026-07-12 — Macro-moment: a daily *band* of high-volume trends, each
+  showing the post that's driving it.** The trend agent used to send at most one
+  trend a day (capped at 4 a month). It now aims for **at least 2 genuinely
+  high-volume, on-niche trends per user per day** (hard ceiling 3) — the kind of
+  thing you'd already be seeing on your own feed. Every delivery now names the
+  specific post/thread driving the volume: a permalink plus a one-line
+  paraphrase (never a long quote), so you can see exactly what you'd be riding
+  before you weigh in, alongside the angle that's yours to take. Selection stays
+  fully deterministic — candidates are volume-verified (distinct-author-weighted
+  buzz), ranked, and taken top-down until the day's band fills; the model only
+  writes the take, never picks the trend (this rework actually *tightened* that,
+  moving the position match from a cross-trend pick to a per-trend yes/no). The
+  old 4-per-month rarity cap was removed on purpose — it's incompatible with a
+  2/day target; rarity is now the daily band plus the unchanged niche/buzz/
+  position gates. Not deployed/observed live yet — pending a real trend firing.
 - **2026-07-12 — Migrated production from Render to Railway (Hobby plan).**
   Render's free tier spins the process down when idle, which silently broke
   `pg-boss`'s in-process cron (see the trend-discovery fix below) — moving to
