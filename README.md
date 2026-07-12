@@ -21,6 +21,21 @@ connect your accounts, get diagnosed, build a plan, and ship content.
 
 <!-- Keep newest-first. Update this whenever a change ships that a reader of the repo should know about. -->
 
+- **2026-07-13 — GLM's flaky JSON no longer kills jobs.** Every structured LLM
+  call routes through one gateway, and GLM 5.2 was intermittently failing them
+  ("no JSON found") — silently breaking resurfacing, mention replies, trend
+  clustering, and trend composition. Root causes found and fixed, not just
+  retried: (1) GLM is a hybrid reasoning model and some OpenRouter providers
+  return the whole answer in the `reasoning` field with empty `content` — the
+  gateway now reads it; (2) tight token budgets cut JSON off mid-structure —
+  truncation is now detected (`finish_reason`) and re-run once with a doubled
+  budget; (3) the old "corrective retry" re-asked the question cold and just
+  re-rolled the same dice — it now hands the model its *own previous answer*
+  and asks it to reformat, which converges; (4) a last-resort salvage closes
+  truncated JSON so a cut-off list degrades to its complete items instead of a
+  dead job; (5) the extractor now also survives prose *after* the JSON and
+  trailing commas. Verified live: the trend-clustering call that failed 2 of 3
+  attempts yesterday ran 5/5 clean.
 - **2026-07-12 — Trend detection now finds same-day clusters, not stale single
   tweets.** Two problems made trend alerts miss: they were built around one hot
   tweet (whose exact text was then searched for volume — finding only that one

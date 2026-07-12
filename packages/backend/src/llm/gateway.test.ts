@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractJson } from "./gateway.js";
+import { extractJson, salvageTruncatedJson } from "./gateway.js";
 
 describe("extractJson", () => {
   it("parses clean JSON", () => {
@@ -23,5 +23,51 @@ describe("extractJson", () => {
 
   it("throws when there is no JSON", () => {
     expect(() => extractJson("no json here")).toThrow();
+  });
+
+  it("parses JSON with TRAILING prose after the value", () => {
+    expect(extractJson('{"reply":"hey"} \n\nHope that helps!')).toEqual({ reply: "hey" });
+  });
+
+  it("parses nested structures with trailing prose (brace inside string)", () => {
+    expect(extractJson('{"a":{"b":"x } y"},"c":[1]} extra')).toEqual({ a: { b: "x } y" }, c: [1] });
+  });
+
+  it("parses an unterminated code fence", () => {
+    expect(extractJson('```json\n{"ok":true}')).toEqual({ ok: true });
+  });
+
+  it("drops trailing commas", () => {
+    expect(extractJson('{"list":[1,2,],}')).toEqual({ list: [1, 2] });
+  });
+});
+
+describe("salvageTruncatedJson", () => {
+  it("closes a structure truncated mid-string", () => {
+    expect(salvageTruncatedJson('{"reply":"the take is')).toEqual({ reply: "the take is" });
+  });
+
+  it("degrades a truncated array to its complete items", () => {
+    const out = salvageTruncatedJson('{"trends":[{"term":"a"},{"term":"b"},{"ter') as {
+      trends: Array<{ term: string }>;
+    };
+    expect(out.trends.length).toBeGreaterThanOrEqual(2);
+    expect(out.trends[0]).toEqual({ term: "a" });
+    expect(out.trends[1]).toEqual({ term: "b" });
+  });
+
+  it("drops a dangling key with no value", () => {
+    expect(salvageTruncatedJson('{"a":1,"b":')).toEqual({ a: 1 });
+  });
+
+  it("returns undefined when nothing structured exists", () => {
+    expect(salvageTruncatedJson("just prose, no json")).toBeUndefined();
+  });
+
+  it("handles fenced truncated output", () => {
+    expect(salvageTruncatedJson('```json\n{"fires":true,"reply":"go')).toEqual({
+      fires: true,
+      reply: "go",
+    });
   });
 });

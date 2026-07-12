@@ -46,8 +46,25 @@ directly.** As of 2026-07-10 this is deliberately simple:
 - One model for **all** requests: `z-ai/glm-5.2` via **OpenRouter**
   (`config.MODEL_CHAT`). No tier routing, no multi-provider fallback chain.
 - `llmCall(req)` does: per-user daily cap check → single OpenRouter call with
-  retries (`withRetries`, 3 attempts, backoff on 429/5xx/timeout) → optional
-  JSON extraction with one corrective retry (`extractJson`).
+  retries (`withRetries`, 3 attempts, backoff on 429/5xx/timeout) → for
+  `json: true`, a **bounded JSON recovery ladder** (2026-07-13 — GLM's flaky
+  JSON was silently killing resurface/mentions/clustering/trend-compose jobs):
+  1. `extractJson` — string/escape-aware balanced-slice parse, tolerating code
+     fences (even unterminated), leading AND trailing prose, trailing commas.
+  2. finish_reason `"length"` → the JSON was truncated: re-run once with a
+     doubled token budget (capped 4096). GLM front-loads prose before the JSON,
+     so tight budgets cut the JSON off mid-structure.
+  3. Repair, not re-ask: hand the model its OWN previous output and ask it to
+     convert that to the required JSON (the old "corrective retry" re-asked
+     cold and just re-rolled the same dice; live it failed back-to-back).
+  4. `salvageTruncatedJson` — last resort: close open strings/brackets and
+     parse, chopping the broken tail if needed, so a cut-off array degrades to
+     its complete items instead of a dead job. Logged with a `salvage used`
+     warning; callers zod-validate whatever comes out.
+  Also fixed at the source: GLM is a hybrid reasoning model and some providers
+  return the whole answer in `message.reasoning` with empty `content` —
+  `callModel` now falls back to `reasoning` text, which used to surface as
+  "no JSON found" on calls that had actually answered.
 - Cost metering: every call writes a row to `usage_events` (`src/usage/meter.ts`).
 - Hard per-call timeout via `fetchWithTimeout` (`LLM_PROVIDER_TIMEOUT_MS`, default 45s).
 - Per-user daily call cap (`LLM_DAILY_CALL_CAP`, default 400) bounds interactive
