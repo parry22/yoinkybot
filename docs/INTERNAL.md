@@ -388,6 +388,21 @@ Notes worth knowing:
   sit 0.40-0.55 from the nearest position, junk 0.61+; at the old 0.7 the junk
   passed and ate the top-3 volume-verification slots). `/health` reports trend
   readiness (`trends.provider`, `trends.buzz_gate`, `trends.last_fetch`).
+- **Boot-time catch-up for the two trend jobs** (`jobs/workers.ts#nudgeStaleTrendJobs`,
+  2026-07-12): on a host that spins the process down when idle (Render free
+  tier — this app's deploy target), a missed cron minute is gone forever;
+  `boss.schedule()` does not backfill it. Production hit this for real: a
+  `trend.fetch` crash on 2026-07-08 (fixed the same day) meant the trends
+  table sat completely empty for 4 days afterward, because the process kept
+  redeploying/restarting more often than the 8h interval and never landed a
+  cron tick while alive at the right minute. Fix: every process boot ALSO
+  sends `trendFetch` (only if `trends.fetched_at` is null or >7h stale — avoids
+  re-spending on Apify/embeddings across a burst of same-session redeploys)
+  and `trendMatch` unconditionally (its handler already caps at one send/day
+  per user, so an extra boot-time attempt is a no-op, never a duplicate).
+  Verified live: wiping `fetched_at` into the past and re-running
+  `registerWorkers` produces fresh rows within the boot sequence, no cron
+  wait needed.
 - **Consistency verdicts** are `catch_it` / `intentional_evolution` /
   `no_conflict`; catches under `CONSISTENCY_CONFIDENCE_THRESHOLD` are reported
   clear, and an intentional evolution comes back as a non-warning `note` on the

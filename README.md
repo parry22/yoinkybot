@@ -35,7 +35,13 @@ connect your accounts, get diagnosed, build a plan, and ship content.
   no longer burns the 4-per-month cap, which invisible declines used to starve.
   `/health` now also reports trend-scrape readiness (provider key, buzz-gate
   key, last fetch time) so a prod env drift can't silently kill the pipeline
-  again.
+  again. Root-caused why prod had zero trend rows in the first place: a
+  one-time crash on 2026-07-08 (already fixed the same day) meant the trends
+  table sat empty for 4 days after, because Render's free tier spins the
+  process down when idle and a missed cron minute never gets backfilled. Every
+  process boot now also tries `trendFetch`/`trendMatch` once (both safe to
+  over-fire), so a process that's constantly restarting still gets a
+  guaranteed floor of at least one real attempt per lifetime.
 - **2026-07-12 — Onboarding connect is now OAuth-first.** When the platform
   apps are configured, the connect hand-off leads with real account
   authorization (tap → approve → done) instead of asking for a handle to

@@ -1,4 +1,5 @@
 import type PgBoss from "pg-boss";
+import { queryOne } from "../db/pool.js";
 import {
   QUEUES,
   type EmbedLinkJob,
@@ -143,4 +144,33 @@ export async function registerWorkers(boss: PgBoss): Promise<void> {
       // never scheduled on this install — fine
     }
   }
+
+  await nudgeStaleTrendJobs(boss);
+}
+
+/**
+ * On a host that spins the process down when idle (Render free tier), a
+ * missed cron minute is just gone — pg-boss's schedule() doesn't backfill it,
+ * it only fires while the process happens to be alive at the right time. This
+ * bit hard in production (2026-07-12): trend.fetch crashed once on 2026-07-08,
+ * and with the app redeploying/restarting far more often than its 8h interval
+ * since, it never got another aligned window — the trends table sat empty for
+ * 4 days with zero user-visible symptom until someone noticed no trend offers
+ * ever fired.
+ *
+ * Rather than chase host reliability, make boot itself a chance to catch up:
+ * every process start also tries trendFetch/trendMatch once, in addition to
+ * the cron. Both are safe to over-fire — trendMatch's handler already caps at
+ * one send/day per user internally, and trendFetch dedupes by external_id — so
+ * this only ever adds a guaranteed floor ("at least once per process
+ * lifetime"), never a duplicate side effect. trendFetch is additionally gated
+ * on staleness so a burst of redeploys in one dev session doesn't re-spend on
+ * Apify/embeddings every single restart.
+ */
+async function nudgeStaleTrendJobs(boss: PgBoss): Promise<void> {
+  const STALE_AFTER_MS = 7 * 60 * 60 * 1000; // just under the 8h cron interval
+  const row = await queryOne<{ last: string | null }>(`SELECT max(fetched_at)::text AS last FROM trends`);
+  const staleOrNever = !row?.last || Date.now() - new Date(row.last).getTime() > STALE_AFTER_MS;
+  if (staleOrNever) await boss.send(QUEUES.trendFetch, {});
+  await boss.send(QUEUES.trendMatch, {});
 }
