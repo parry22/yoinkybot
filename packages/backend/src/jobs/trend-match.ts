@@ -342,6 +342,7 @@ export async function composeAndDeliverTake(
     whyNow: string;
     verification: VolumeVerification;
   },
+  opts: { skipCadence?: boolean } = {},
 ): Promise<boolean> {
   const { trend, position, verification } = input;
 
@@ -417,10 +418,14 @@ export async function composeAndDeliverTake(
   }
 
   // Right time, not just right thing: quiet hours + the shared proactive budget.
-  const cadence = await canDeliverProactive(userId, settings);
-  if (!cadence.ok) {
-    await rejectMoment(input.momentId, `held by cadence: ${cadence.reason}`);
-    return false;
+  // skipCadence is for manual/ops fires (an explicitly requested send isn't
+  // subject to the automated anti-spam spacing); the scheduled job never sets it.
+  if (!opts.skipCadence) {
+    const cadence = await canDeliverProactive(userId, settings);
+    if (!cadence.ok) {
+      await rejectMoment(input.momentId, `held by cadence: ${cadence.reason}`);
+      return false;
+    }
   }
 
   const surfacing = await queryOne<{ id: string }>(
