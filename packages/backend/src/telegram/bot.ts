@@ -249,12 +249,26 @@ export function createBot(): Bot | undefined {
         "posting isn't set up on my end yet — i can schedule posts, but publishing needs the platform apps configured first.",
       ));
     }
-    const lines = available.map(
-      (p) => `${p === "x" ? "X" : "LinkedIn"}: ${config.PUBLIC_URL}/oauth/${p}/start?u=${user.id}`,
-    );
-    await ctx.reply(
-      "connect an account so i can actually post for you — open the link, approve, done:\n\n" + lines.join("\n"),
-    );
+    // Buttons, not raw URLs — a bare /oauth/... link with a UUID reads like
+    // phishing. Same look as the onboarding connect offer. Telegram refuses
+    // URL buttons on non-HTTPS/localhost instances, so fall back to plain
+    // links rather than going silent.
+    const kb = new InlineKeyboard();
+    for (const p of available) {
+      kb.url(`🔗 connect ${p === "x" ? "X" : "LinkedIn"}`, `${config.PUBLIC_URL}/oauth/${p}/start?u=${user.id}`).row();
+    }
+    const names = available.map((p) => (p === "x" ? "x" : "linkedin")).join(" or ");
+    const text =
+      `let's unlock posting — tap below, approve on ${names}, done. ` +
+      "takes ten seconds, and from then on i can actually publish for you when you say go.";
+    try {
+      await ctx.reply(text, { reply_markup: kb });
+    } catch {
+      const lines = available.map(
+        (p) => `${p === "x" ? "X" : "LinkedIn"}: ${config.PUBLIC_URL}/oauth/${p}/start?u=${user.id}`,
+      );
+      await ctx.reply(`${text}\n\n${lines.join("\n")}`);
+    }
   });
 
   // Quiet hours, timezone, proactive frequency — how I behave around your life.
