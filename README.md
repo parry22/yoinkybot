@@ -21,6 +21,16 @@ connect your accounts, get diagnosed, build a plan, and ship content.
 
 <!-- Keep newest-first. Update this whenever a change ships that a reader of the repo should know about. -->
 
+- **2026-07-12 — Product analytics via PostHog (server-side).** Since Yoinky is
+  Telegram-native with no web frontend, there's no browser snippet — events are
+  captured server-side with `posthog-node`, keyed by the internal user id, at
+  the funnel choke points: `user_signed_up`, `message_received`,
+  `capture_created`, `account_connected`, `draft_generated`,
+  `onboarding_completed`, `subscription_activated`. Fully optional and
+  privacy-conscious: no `POSTHOG_API_KEY` → every call is a silent no-op, and
+  only metadata (platform, plan, counts) is ever sent — never post text or
+  captured thoughts. `/health` reports `analytics: true|false`. Set
+  `POSTHOG_API_KEY` (project key) to turn it on.
 - **2026-07-12 — Trend discovery actually finds the niche's news cycle now.**
   The macro-moment pipeline was searching X for the user base's biggest memory
   clusters verbatim — which are dominated by personal-life chatter — so a week

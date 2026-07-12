@@ -1,5 +1,6 @@
 import { queryOne } from "../db/pool.js";
 import { getBoss, QUEUES } from "../jobs/boss.js";
+import { track } from "../analytics/posthog.js";
 
 export type CaptureSource =
   | "telegram_voice"
@@ -76,6 +77,12 @@ export async function createCapture(
     } else {
       await boss.send(QUEUES.extract, { captureId: inserted.id, userId: input.userId });
     }
+  }
+  // Only the user's own dropped thoughts are an activation signal — the bulk
+  // x_import/linkedin_import rows during connect would drown that out, so track
+  // just the telegram-authored captures (no raw text — metadata only).
+  if (input.source === "telegram_text" || input.source === "telegram_voice") {
+    track(input.userId, "capture_created", { source: input.source });
   }
   return { capture: inserted, created: true };
 }

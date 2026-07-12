@@ -99,6 +99,14 @@ const schema = z.object({
   LINKEDIN_CLIENT_ID: z.string().optional(),
   LINKEDIN_CLIENT_SECRET: z.string().optional(),
 
+  // Product analytics (PostHog, server-side via posthog-node). Optional: unset
+  // → every track/identify call is a silent no-op, nothing else changes. This
+  // is a Telegram backend with no web frontend, so there's no client snippet /
+  // autocapture — events are captured explicitly at product choke points
+  // (analytics/posthog.ts), keyed by the internal user id.
+  POSTHOG_API_KEY: z.string().optional(),
+  POSTHOG_HOST: z.string().default("https://us.i.posthog.com"),
+
   DODO_API_KEY: z.string().optional(),
   DODO_WEBHOOK_SECRET: z.string().optional(),
   DODO_ENV: z.enum(["test_mode", "live_mode"]).default("test_mode"),

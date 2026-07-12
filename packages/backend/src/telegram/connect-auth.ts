@@ -193,14 +193,44 @@ export async function handleAuthSkip(userId: string, platform: Platform): Promis
   const platforms = PLATFORM_ORDER.filter(authConnectAvailable);
   const kb = new InlineKeyboard();
   for (const p of platforms) kb.url(`🔗 connect ${label(p)}`, authUrl(userId, p)).row();
+  // Name only the platform(s) that actually have a button — a single-platform
+  // instance (e.g. X auth configured, LinkedIn not yet) must not promise a
+  // LinkedIn button that isn't there.
+  const connectWord = platforms.length ? platforms.map(label).join(" or ") : "an account";
   await sendOffer(
     userId,
     "here's the thing — everything i do starts from your actual history. no account, no read, and " +
       "the whole thing runs on the read. you can skip one platform, not both.\n\n" +
-      "connect x or linkedin below, or just drop your @handle / profile url and i'll read it that way.",
+      `connect ${connectWord} below, or just drop your @handle / profile url and i'll read it that way.`,
     kb,
     platforms.map((p) => `${label(p)}: ${authUrl(userId, p)}`),
   );
+}
+
+/**
+ * The typed-link fallback for whichever platform ISN'T auth-configured: fires
+ * once, right after the other platform connects (via button or typed handle),
+ * during onboarding only. Keeps the "X first, then LinkedIn" promise true even
+ * on an instance that only has X app credentials — LinkedIn still gets asked
+ * for, just as a plain profile-URL request instead of a connect button.
+ * Honors an explicit skip and never repeats (both tracked on connectFlow).
+ */
+export async function nudgeOtherPlatformTyped(userId: string, justConnected: Platform): Promise<void> {
+  const other: Platform = justConnected === "x" ? "linkedin" : "x";
+  if (authConnectAvailable(other)) return; // that platform's button flow owns the ask
+  const st = await getState(userId);
+  if (st.phase !== "profiling" && st.phase !== "connect_transition") return;
+  const flow = st.connectFlow ?? {};
+  if ((flow.skipped ?? []).includes(other)) return;
+  if ((flow.offered ?? []).includes(other)) return;
+  if (await isConnected(userId, other)) return;
+  await setState(userId, { ...st, connectFlow: { ...flow, offered: [...(flow.offered ?? []), other] } });
+  const copy =
+    other === "linkedin"
+      ? "want linkedin in the picture too? a different register usually lives there, worth having " +
+        "both. no button for this one yet, just drop your profile url (linkedin.com/in/you) and i'll read it."
+      : "want x in the picture too? drop your @handle and i'll pull that history as well.";
+  await sendTelegram(userId, copy).catch(() => {});
 }
 
 interface XIdentity {
@@ -316,10 +346,15 @@ export async function afterOAuthConnected(userId: string, platform: Platform, ac
   // The sequence leg: X landed → offer LinkedIn (or vice versa if they went
   // LinkedIn-first via /connect). Only mid-onboarding, only if not already
   // connected/skipped/offered-and-pending — steady-state reconnects stay quiet.
+  // When the other platform has no app credentials configured, there's no
+  // button to offer — fall back to the plain typed-link ask so it still gets
+  // asked for, just not via OAuth.
   if (inOnboarding) {
     const next = await nextAuthPlatform(userId);
     if (next && next !== platform) {
       await offerAuthConnect(userId, next, { first: platform === "linkedin" && next === "x" });
+    } else {
+      await nudgeOtherPlatformTyped(userId, platform);
     }
   }
 }

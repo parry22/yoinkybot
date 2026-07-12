@@ -8,6 +8,7 @@ import { currentDiagnosis } from "./diagnosis.js";
 import { activeGoals } from "./goals.js";
 import { setStage } from "./state.js";
 import { profileSummaryForPrompt, type BrandProfile } from "./profile.js";
+import { track, identify } from "../analytics/posthog.js";
 
 const planSchema = z.object({
   throughline: z.string(),
@@ -178,7 +179,7 @@ export async function generateThreeMonthPlan(
 export async function confirmPlan(userId: string, planId: string): Promise<boolean> {
   // All four mutations are one transaction so a mid-way failure can't leave the
   // plan active while the stage/state say otherwise (adversarial-review finding).
-  return withTransaction(async (client) => {
+  const confirmed = await withTransaction(async (client) => {
     const res = await client.query(
       `UPDATE brand_plans SET status = 'active', confirmed_at = now()
        WHERE id = $1 AND user_id = $2 AND status = 'draft' RETURNING id`,
@@ -192,6 +193,13 @@ export async function confirmPlan(userId: string, planId: string): Promise<boole
     await client.query(`UPDATE users SET strategist_stage = 'plan_active', strategist_state = '{}'::jsonb WHERE id = $1`, [userId]);
     return true;
   });
+  // Activation: the full onboarding arc (profile → connect → diagnosis → plan)
+  // is done and the user is now in steady state.
+  if (confirmed) {
+    identify(userId, { stage: "plan_active" });
+    track(userId, "onboarding_completed", {});
+  }
+  return confirmed;
 }
 
 export function parseCadence(text: string): number {

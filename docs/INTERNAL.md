@@ -104,6 +104,7 @@ full prior implementation if it ever needs to come back.
 | Billing | `src/billing/` | DodoPayments (merchant of record). Webhook `webhook.ts` (Standard Webhooks sig), `entitlements.ts`, `PAYWALL_ENABLED` gate. |
 | STT | `src/stt/` | Speech-to-text, tried in order: Sarvam → Groq → OpenAI Whisper. |
 | Usage | `src/usage/` | `meter.ts` writes `usage_events` for every LLM/embed call (cost visibility, daily cap). |
+| Analytics | `src/analytics/` | Product analytics via PostHog (`posthog-node`, server-side — no web frontend so no browser snippet). `posthog.ts` exposes `track`/`identify`/`shutdownAnalytics`, gated on `POSTHOG_API_KEY` (unset → silent no-op). Events fired at funnel choke points; metadata only, never raw content. See §3g. |
 | Prompts | `src/prompts/*.v{n}.ts` | Versioned prompt files (never inline strings; `converse` is at v3, `reply-draft` and `consistency-check` at v2). `types.ts`, `style.ts`. |
 | Lib | `src/lib/` | `apify.ts`, `alerts.ts` (admin DM on job failure, throttled), `auth.ts`, `kmeans.ts`, `time.ts` (quiet hours), `voice-stats.ts`. |
 
@@ -580,6 +581,19 @@ lives in `telegram/connect-auth.ts`; `routes/oauth.ts` hands off to
   path everywhere, including when no platform app is configured — then the
   flow is exactly the old handle ask. Cursor: `strategist_state.connectFlow =
   { offered[], skipped[] }`.
+- **Per-platform credentials are independent — a partial setup degrades
+  cleanly, it doesn't half-break.** `authConnectAvailable(platform)` just
+  checks that platform's own `_CLIENT_ID`/`_CLIENT_SECRET`. Run X-only (the
+  common bring-up order, since LinkedIn needs an approved Company Page +
+  product first): X gets the real button; LinkedIn is never offered a button
+  that would 503. Instead `nudgeOtherPlatformTyped` (called from both
+  `afterOAuthConnected`'s tail and `bot.ts#beginConnect`, so it fires whether
+  the first platform connected via OAuth *or* a typed handle) sends one
+  plain-text "drop your LinkedIn profile URL" ask, once, honoring an explicit
+  skip and never repeating (same `connectFlow.offered`/`skipped` ledger). The
+  "X first, LinkedIn gets its turn" hand-off promise from the LLM prompt stays
+  true either way — the code decides whether "its turn" is a button or a
+  typed ask, the model doesn't need to know which.
 - **What auth actually buys per platform (the compliance reality — don't
   "fix" this).**
   - **X:** scopes stay least-privilege (`tweet.read tweet.write users.read
@@ -616,6 +630,40 @@ lives in `telegram/connect-auth.ts`; `routes/oauth.ts` hands off to
   live-tested** against the real providers (needs `X_CLIENT_ID/SECRET`,
   `LINKEDIN_CLIENT_ID/SECRET`). The scrape ingest path is unchanged and
   remains fully exercised.
+
+---
+
+## 3g. Product analytics (PostHog, server-side) (2026-07-12)
+
+`src/analytics/posthog.ts` — `posthog-node`, not the browser SDK: Yoinky is
+Telegram-native with no web frontend, so there is no client snippet and no
+autocapture. Every event is captured explicitly in backend code.
+
+- **`track(distinctId, event, props)` / `identify(distinctId, props)` /
+  `shutdownAnalytics()`.** `distinctId` is always the internal `users.id`
+  (stable for a user's whole life, unlike the Telegram id). Lazy singleton
+  gated on `POSTHOG_API_KEY`: no key → client never constructed, every call a
+  silent no-op (same graceful-degradation contract as every other optional
+  integration). Every call is wrapped and swallows its own errors — a metrics
+  outage must never break a product action.
+- **Events, at their choke points** (metadata only — NEVER raw post text or
+  captured thoughts; those don't belong in an analytics store): `user_signed_up`
+  + `identify` (`lib/auth.ts`, the new-user INSERT branch); `message_received`
+  (`telegram/bot.ts` inbound middleware — kind text/voice/command only);
+  `capture_created` (`capture/service.ts`, telegram-authored sources only, so
+  bulk connect imports don't drown the activation signal); `account_connected`
+  (`strategist/connect.ts`); `draft_generated` (`telegram/actions.ts`);
+  `onboarding_completed` + `identify` (`strategist/plan.ts#confirmPlan`, the
+  activation moment); `subscription_activated` (`billing/dodo.ts`, only the
+  transition INTO active). That's the full funnel: signup → engage → capture →
+  connect → activate → monetize.
+- **Flush:** `posthog-node` batches (flushAt 20 / flushInterval 10s) and
+  `index.ts` calls `shutdownAnalytics()` on SIGTERM/SIGINT so events buffered
+  right before a Render redeploy aren't lost. `/health` reports
+  `analytics: true|false`.
+- **Verified** end-to-end against a local capture server: events reach the wire
+  gzip-batched to `/batch/` with the right names, `distinct_id`, and
+  metadata-only props; no-key path sends zero requests and never throws.
 
 ---
 
@@ -659,6 +707,8 @@ Keys that matter most:
   onboarding falls back to the typed-handle ask, scheduling works but
   publishing fails closed. X posting needs a paid X tier.
 - `DODO_*`, `PAYWALL_ENABLED`.
+- `POSTHOG_API_KEY` / `POSTHOG_HOST` — server-side product analytics (§3g).
+  Optional; unset = no-op.
 
 Never commit real secrets. Secrets in git history stay there forever even after
 deletion — set them in the deploy dashboard only.

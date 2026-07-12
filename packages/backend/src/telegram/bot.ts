@@ -45,7 +45,8 @@ import {
 } from "./actions.js";
 import { cancelScheduled } from "../scheduling/service.js";
 import { publishConfigured } from "../social/publish.js";
-import { maybeSendConnectAuthOffer, handleAuthSkip } from "./connect-auth.js";
+import { track } from "../analytics/posthog.js";
+import { maybeSendConnectAuthOffer, handleAuthSkip, nudgeOtherPlatformTyped } from "./connect-auth.js";
 import { runSerializedTurn } from "./turns.js";
 
 let bot: Bot | undefined;
@@ -123,6 +124,9 @@ export function createBot(): Bot | undefined {
     if (msg && ctx.chat?.type === "private") {
       const user = await findOrCreateUserByTelegram(msg.from.id);
       await recordMessage(user.id, msg.chat.id, msg.message_id);
+      // Core engagement signal. Kind only — never the message content.
+      const kind = "voice" in msg ? "voice" : "command" in msg || msg.text?.startsWith("/") ? "command" : "text";
+      track(user.id, "message_received", { kind });
     }
     await next();
   });
@@ -930,6 +934,11 @@ async function beginConnect(
   handle: string,
 ): Promise<void> {
   await connectAccount(user, platform, handle, ctxChannel(ctx));
+  // A typed handle connected the platform whose OAuth app isn't configured on
+  // this instance (or OAuth isn't set up at all) — still ask for the other
+  // platform once, mid-onboarding, so an X-only OAuth setup doesn't silently
+  // drop the LinkedIn ask. No-ops outside onboarding / once already asked.
+  await nudgeOtherPlatformTyped(user.id, platform).catch(() => {});
 }
 
 /**

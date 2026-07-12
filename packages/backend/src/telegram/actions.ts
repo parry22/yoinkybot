@@ -17,6 +17,7 @@ import { createCapture } from "../capture/service.js";
 import { createIdeaMoment } from "../jobs/offer-angles.js";
 import { saveTurn } from "./conversation.js";
 import { recordCorrection, encodeCorrection } from "../memory/corrections.js";
+import { track } from "../analytics/posthog.js";
 import { schedulePost, listScheduled } from "../scheduling/service.js";
 import { publishConfigured, resolveWriteAuth } from "../social/publish.js";
 import type { ChatTool } from "./chat-tools.js";
@@ -149,6 +150,7 @@ export async function runDraft(
      VALUES ($1,$2,$3,$4,$5) RETURNING id`,
     [user.id, res.draft, platform, res.sources.map((s) => s.id), res.note ?? ""],
   );
+  track(user.id, "draft_generated", { platform, sources: res.sources.length });
   const otherPlatform = platform === "x" ? "li" : "x";
   const otherLabel = platform === "x" ? "♻️ LinkedIn version" : "♻️ X version";
   const kb = row ? new InlineKeyboard().text(otherLabel, `rpz:d:${row.id}:${otherPlatform}`) : undefined;

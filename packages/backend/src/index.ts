@@ -6,6 +6,7 @@ import { registerWorkers } from "./jobs/workers.js";
 import { createBot } from "./telegram/bot.js";
 import { webhookRoutes } from "./routes/webhooks.js";
 import { oauthRoutes } from "./routes/oauth.js";
+import { analyticsEnabled, shutdownAnalytics } from "./analytics/posthog.js";
 
 async function main(): Promise<void> {
   await migrate();
@@ -39,6 +40,7 @@ async function main(): Promise<void> {
     return {
       ok: true,
       llm: Boolean(config.OPENROUTER_API_KEY),
+      analytics: analyticsEnabled(),
       trends: {
         provider: Boolean(config.APIFY_TOKEN || config.BRAVE_API_KEY || config.TAVILY_API_KEY),
         buzz_gate: Boolean(config.TWITTERAPI_IO_KEY),
@@ -94,6 +96,15 @@ async function main(): Promise<void> {
       );
     }
   }
+}
+
+// Render sends SIGTERM before a redeploy/spin-down. Flush any buffered
+// analytics events so the ones captured in the last few seconds aren't lost;
+// then exit and let the platform restart us.
+for (const sig of ["SIGTERM", "SIGINT"] as const) {
+  process.once(sig, () => {
+    void shutdownAnalytics().finally(() => process.exit(0));
+  });
 }
 
 // Last-resort process guards: log + page the admin instead of dying silently.

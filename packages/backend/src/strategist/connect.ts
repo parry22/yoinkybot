@@ -4,6 +4,7 @@ import { createCapture } from "../capture/service.js";
 import { pullXProfile, pullLinkedInProfile } from "../capture/imports/apify-profile.js";
 import { applyRecencyWindow } from "../capture/imports/x.js";
 import { sendTelegram } from "../telegram/bot.js";
+import { track } from "../analytics/posthog.js";
 import type { Platform } from "../lib/types.js";
 
 export type { Platform };
@@ -68,6 +69,7 @@ export async function startConnect(userId: string, platform: Platform, handle: s
     [userId, platform, handle],
   );
   await getBoss().send(QUEUES.ingestProfile, { accountId: account!.id, userId });
+  track(userId, "account_connected", { platform });
   return account!.id;
 }
 

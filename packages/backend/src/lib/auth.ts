@@ -1,5 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { query, queryOne } from "../db/pool.js";
+import { track, identify } from "../analytics/posthog.js";
 
 export interface User {
   id: string;
@@ -78,9 +79,13 @@ export async function findOrCreateUserByTelegram(telegramId: number): Promise<Us
     | User
     | undefined;
   if (existing) return existing;
-  return (await queryOne(`INSERT INTO users (telegram_id) VALUES ($1) RETURNING *`, [
+  const created = (await queryOne(`INSERT INTO users (telegram_id) VALUES ($1) RETURNING *`, [
     telegramId,
   ])) as unknown as User;
+  // First time we've seen this Telegram user — the top of the funnel.
+  identify(created.id, { source: "telegram", created_at: created.created_at });
+  track(created.id, "user_signed_up", { source: "telegram" });
+  return created;
 }
 
 /** Read-only lookup — never creates a row. Used by the outgoing message tracker

@@ -1,5 +1,6 @@
 import { config } from "../config.js";
 import { query, queryOne } from "../db/pool.js";
+import { track } from "../analytics/posthog.js";
 import type { Plan } from "./entitlements.js";
 
 const FOUNDING_CAP = 500;
@@ -109,6 +110,9 @@ export async function handleDodoEvent(event: DodoSubscriptionEvent): Promise<voi
         d.next_billing_date ?? null,
       ],
     );
+    // Monetization event — only the transition INTO an active subscription,
+    // not the informational churn/renewal statuses.
+    if (status === "active") track(userId, "subscription_activated", { plan: plan ?? "unknown", provider: "dodo" });
     return;
   }
 
