@@ -1101,18 +1101,67 @@ export async function sendTelegram(
   );
   if (!user?.telegram_id) return false;
   const reply_markup = keyboard ?? (surfacingId ? reactionKeyboard(surfacingId) : undefined);
+  const chatId = Number(user.telegram_id);
+  // Telegram hard-caps a message at 4096 chars — a long draft/breakdown would
+  // throw and (pre-soft-fail) corrupt state. Split on paragraph/line boundaries;
+  // the keyboard rides the LAST chunk so buttons still attach to the whole message.
+  const chunks = splitForTelegram(text);
   // Fail SOFT: a blocked/deactivated user makes sendMessage throw 403 (and a
   // stale chat can 400). Callers treat the boolean as "delivered?" and clean up
   // on false (drop the phantom surfacing, don't mark the mention drafted) — a
   // throw here instead skipped that cleanup, so a user who blocked the bot piled
   // up mentions forever and leaked cadence budget. Return false, never throw.
   try {
-    await bot.api.sendMessage(Number(user.telegram_id), text, { reply_markup });
+    for (let i = 0; i < chunks.length; i++) {
+      const last = i === chunks.length - 1;
+      await bot.api.sendMessage(chatId, chunks[i]!, last ? { reply_markup } : undefined);
+    }
     return true;
   } catch (err) {
     console.error(`sendTelegram to ${userId} failed`, err);
     return false;
   }
+}
+
+/**
+ * Split text into <=4096-char Telegram messages, preferring paragraph then line
+ * then hard-char boundaries so a split never lands mid-word where it can help it.
+ */
+export function splitForTelegram(text: string, max = 4000): string[] {
+  if (text.length <= max) return [text];
+  const out: string[] = [];
+  let buf = "";
+  const flush = () => {
+    if (buf) out.push(buf);
+    buf = "";
+  };
+  for (const para of text.split(/\n\n/)) {
+    const block = para.length > max ? para : (buf ? `${buf}\n\n${para}` : para);
+    if (block.length <= max) {
+      buf = block;
+      continue;
+    }
+    flush();
+    // A single paragraph over the cap — break it on lines, then hard chars.
+    let line = "";
+    for (const ln of para.split(/\n/)) {
+      const withLn = line ? `${line}\n${ln}` : ln;
+      if (withLn.length <= max) {
+        line = withLn;
+      } else {
+        if (line) out.push(line);
+        if (ln.length <= max) {
+          line = ln;
+        } else {
+          for (let i = 0; i < ln.length; i += max) out.push(ln.slice(i, i + max));
+          line = "";
+        }
+      }
+    }
+    buf = line;
+  }
+  flush();
+  return out;
 }
 
 /**
