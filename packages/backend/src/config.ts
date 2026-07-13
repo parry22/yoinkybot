@@ -135,6 +135,11 @@ const schema = z.object({
   // (analytics/posthog.ts), keyed by the internal user id.
   POSTHOG_API_KEY: z.string().optional(),
   POSTHOG_HOST: z.string().default("https://us.i.posthog.com"),
+  // Optional: a personal API key + project id enable erasing a user's analytics
+  // person on account wipe (clear_everything). Without them, wipe still clears
+  // everything in our own DB; PostHog erasure is just skipped (best-effort).
+  POSTHOG_PERSONAL_API_KEY: z.string().optional(),
+  POSTHOG_PROJECT_ID: z.string().optional(),
 
   DODO_API_KEY: z.string().optional(),
   DODO_WEBHOOK_SECRET: z.string().optional(),

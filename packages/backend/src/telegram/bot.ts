@@ -326,6 +326,9 @@ export function createBot(): Bot | undefined {
 
   // Voice notes / audio → capture with the Telegram file URL; transcription is async.
   bot.on(["message:voice", "message:audio", "message:video_note"], async (ctx) => {
+    // Private DMs only, same as the text handler — a voice note in a group would
+    // otherwise get captured + transcribed against a shared chat. 1:1 by design.
+    if (ctx.chat?.type !== "private") return;
     const user = await requireUser(ctx);
     if (!user) return;
     // A walled user's voice note would otherwise be transcribed + run through the

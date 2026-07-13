@@ -1,4 +1,5 @@
 import { query, queryOne, withTransaction } from "../db/pool.js";
+import { deletePerson } from "../analytics/posthog.js";
 import type { ProfileField } from "./profile.js";
 
 /**
@@ -149,6 +150,10 @@ export async function resetUserData(userId: string): Promise<void> {
       [userId],
     );
   });
+  // After our own tables are wiped, best-effort erase the user's analytics person
+  // too so "delete everything" also covers PostHog. No-op unless configured; can
+  // never fail the wipe (own errors swallowed).
+  await deletePerson(userId);
 }
 
 export async function getStage(userId: string): Promise<string> {

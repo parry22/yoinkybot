@@ -65,6 +65,30 @@ export function identify(distinctId: string, properties: Record<string, unknown>
   }
 }
 
+/**
+ * Erase a user's analytics person on account wipe, so `clear_everything`'s
+ * "delete everything" promise also covers PostHog, not just our own DB. Uses the
+ * async bulk-delete API (deletes the person AND all their events). Best-effort
+ * and config-gated: a no-op unless a personal API key + project id are set, and
+ * it swallows every failure — a wipe must never fail because analytics erasure
+ * did. Keyed by the same internal user id used as distinctId in `track`.
+ */
+export async function deletePerson(distinctId: string): Promise<void> {
+  const key = config.POSTHOG_PERSONAL_API_KEY;
+  const project = config.POSTHOG_PROJECT_ID;
+  if (!key || !project) return;
+  try {
+    await fetch(`${config.POSTHOG_HOST}/api/projects/${project}/persons/bulk_delete/`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+      body: JSON.stringify({ distinct_ids: [distinctId], delete_events: true }),
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch (err) {
+    console.error("posthog person delete failed (analytics may retain events for this user)", err);
+  }
+}
+
 /** Flush + close on graceful shutdown so in-flight events aren't lost on deploy. */
 export async function shutdownAnalytics(): Promise<void> {
   if (!client) return;

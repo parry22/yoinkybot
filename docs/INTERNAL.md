@@ -803,6 +803,12 @@ autocapture. Every event is captured explicitly in backend code.
   `index.ts` calls `shutdownAnalytics()` on SIGTERM/SIGINT so events buffered
   right before a Render redeploy aren't lost. `/health` reports
   `analytics: true|false`.
+- **Erasure on wipe (2026-07-13):** `deletePerson(userId)` calls PostHog's async
+  `persons/bulk_delete/` (person + all their events), so `clear_everything` /
+  `resetUserData` also clears analytics, not just our own tables. Best-effort and
+  config-gated on `POSTHOG_PERSONAL_API_KEY` + `POSTHOG_PROJECT_ID` (a project
+  write key can't delete) — a no-op without them, and it can never fail the wipe
+  (own errors swallowed, called after the DB transaction).
 - **Verified** end-to-end against a local capture server: events reach the wire
   gzip-batched to `/batch/` with the right names, `distinct_id`, and
   metadata-only props; no-key path sends zero requests and never throws.

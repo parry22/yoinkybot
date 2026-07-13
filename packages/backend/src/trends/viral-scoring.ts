@@ -95,14 +95,20 @@ export async function selectFromPool(userId: string, pool: XTweet[]): Promise<Vi
 
   // Dedup: never the same tweet twice, and hold off a repeat-offender author for
   // the cooldown window. One query covers both.
-  const sent = await query<{ tweet_id: string; author_handle: string }>(
-    `SELECT tweet_id, author_handle FROM viral_benchmarks
+  const sent = await query<{ tweet_id: string; author_handle: string; in_window: boolean }>(
+    `SELECT tweet_id, author_handle,
+            (sent_at > now() - ($2 || ' days')::interval) AS in_window
+     FROM viral_benchmarks
      WHERE user_id = $1
        AND (sent_at > now() - ($2 || ' days')::interval OR tweet_id = ANY($3))`,
     [userId, String(config.VIRAL_AUTHOR_COOLDOWN_DAYS), pool.map((t) => t.id)],
   );
+  // Never resend the same tweet (any age). But only COOL an author when a send
+  // actually falls inside the window — an old tweet resurfacing in the candidate
+  // pool (matched by tweet_id, not by window) must not re-block its author past
+  // the cooldown, which was silently over-blocking authors indefinitely.
   const sentTweetIds = new Set(sent.map((r) => r.tweet_id));
-  const cooledAuthors = new Set(sent.map((r) => r.author_handle.toLowerCase()));
+  const cooledAuthors = new Set(sent.filter((r) => r.in_window).map((r) => r.author_handle.toLowerCase()));
   const fresh = pool.filter((t) => !sentTweetIds.has(t.id) && !cooledAuthors.has(t.authorHandle.toLowerCase()));
   if (fresh.length === 0) return null;
 
