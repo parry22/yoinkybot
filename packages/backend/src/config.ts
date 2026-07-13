@@ -98,6 +98,23 @@ const schema = z.object({
   // cheap per topic but not free at scale; never paginate unbounded.
   TWITTERAPI_SEARCH_PAGE_CAP: z.coerce.number().default(3),
 
+  // ── Daily viral tweet case study (jobs/viral-benchmark.ts, §3h) ──────────
+  // The impression band a candidate must land in: high-six-to-seven-digit, so
+  // it's a genuine breakout but not a once-a-year megaviral outlier.
+  VIRAL_VIEW_MIN: z.coerce.number().default(100_000),
+  VIRAL_VIEW_MAX: z.coerce.number().default(9_999_999),
+  // No min_views search operator exists on twitterapi.io — we floor the search
+  // by likes as a proxy, then post-filter the returned set by real viewCount.
+  // ~600 likes empirically corresponds to the low-100k-views band for this ICP.
+  VIRAL_MIN_FAVES_PROXY: z.coerce.number().default(600),
+  // "Blew up recently", not an evergreen-viral archive lookup. 48h matches the
+  // niche news cycle (a launch/take is still worth a case study a day later).
+  VIRAL_RECENCY_HOURS: z.coerce.number().default(48),
+  // Don't resurface the same author within this window (repeat-offender guard).
+  VIRAL_AUTHOR_COOLDOWN_DAYS: z.coerce.number().default(14),
+  // Bounded composition agent (why-it-worked + one angle).
+  VIRAL_MAX_TOOL_CALLS: z.coerce.number().default(3),
+
   // ── Native scheduled posting (write access) ─────────────────────────────
   // OAuth 2.0 user-context credentials for PUBLISHING on the user's behalf —
   // separate from the read-only ingestion above (Apify/twitterapi.io scrape by

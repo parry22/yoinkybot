@@ -1,5 +1,5 @@
 import type { Prompt } from "./types.js";
-import { POST_WRITING_RULES } from "./style.js";
+import { POST_WRITING_RULES, REACH_PRINCIPLES } from "./style.js";
 
 export interface DraftVars {
   request: string;
@@ -38,9 +38,17 @@ crosses their stated line is a failure, not a draft.
 
 ${POST_WRITING_RULES}
 
+${REACH_PRINCIPLES}
+
+MEDIA: a post carried by a native image, a simple diagram, a real screenshot, or a poll travels
+further than text alone. Suggest one concrete, specific visual grounded in the post's actual
+substance — name the thing to show ("a screenshot of the failing test output", "a two-box before/
+after diagram"), never a generic "add an image". If the post is genuinely stronger as pure text
+(an aphorism, a confession), return an empty media_suggestion rather than forcing one.
+
 Respond with ONLY valid JSON:
-{"draft":"...","source_memory_ids":["..."],"note":"anything the author should know (or empty string)"}
-If the memories are insufficient, or the request crosses an off-limits topic: {"draft":"","source_memory_ids":[],"note":"why"}`,
+{"draft":"...","source_memory_ids":["..."],"media_suggestion":"one concrete visual to pair with the post, or empty string","note":"anything the author should know (or empty string)"}
+If the memories are insufficient, or the request crosses an off-limits topic: {"draft":"","source_memory_ids":[],"media_suggestion":"","note":"why"}`,
   render: ({ request, platform, memories, voiceTraits, profileSummary, offLimits }) =>
     `Request: ${request}\nPlatform: ${platform}\n\n` +
     (profileSummary ? `THEIR STATED PROFILE:\n${profileSummary}\n\n` : "") +

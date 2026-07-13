@@ -1,6 +1,6 @@
 import { Bot, InlineKeyboard, type Context } from "grammy";
 import { config } from "../config.js";
-import { queryOne } from "../db/pool.js";
+import { query, queryOne } from "../db/pool.js";
 import {
   consumeTelegramLinkToken,
   findOrCreateUserByTelegram,
@@ -484,6 +484,26 @@ export function createBot(): Bot | undefined {
       return;
     }
 
+    // Viral case-study feedback (👍/👎) → record relevance signal for tuning.
+    const vb = /^vbfb:([0-9a-f-]{36}):(useful|off)$/.exec(data);
+    if (vb) {
+      const [, surfacingId, reaction] = vb as unknown as [string, string, "useful" | "off"];
+      await query(
+        `UPDATE viral_benchmarks SET reaction = $3, reaction_at = now()
+         WHERE surfacing_id = $1 AND user_id = $2`,
+        [surfacingId, user.id, reaction],
+      );
+      await ctx.answerCallbackQuery({ text: reaction === "useful" ? "noted, more like this." : "got it, i'll tune." });
+      try {
+        await ctx.editMessageReplyMarkup({
+          reply_markup: new InlineKeyboard().text(reaction === "useful" ? "👍 useful" : "👎 noted", "noop"),
+        });
+      } catch {
+        // message too old to edit — reaction already recorded
+      }
+      return;
+    }
+
     // Angle chosen → write the full draft in-voice from the chosen angle.
     const ang = /^ang:([0-9a-f-]{36}):(\d)$/.exec(data);
     if (ang) {
@@ -504,8 +524,9 @@ export function createBot(): Bot | undefined {
         await ctx.reply(result.note || "couldn't write that one.");
         return;
       }
-      // The draft is content for their feed — only the label around it is casual.
-      await ctx.reply(`✍️ here you go:\n\n${result.draft}`, {
+      // The draft is content for their feed — only the label and media nudge are casual.
+      const media = result.mediaSuggestion ? `\n\n📎 pair it with: ${result.mediaSuggestion}` : "";
+      await ctx.reply(`✍️ here you go:\n\n${result.draft}${media}`, {
         reply_markup: new InlineKeyboard().text("🔥 love it", `angfb:${surfacingId}:fire`).text("💤 meh", `angfb:${surfacingId}:later`),
       });
       return;

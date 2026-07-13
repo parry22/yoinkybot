@@ -11,6 +11,7 @@ export const QUEUES = {
   offerAngles: "offer.angles",
   trendFetch: "trend.fetch",
   trendMatch: "trend.match",
+  viralBenchmark: "trend.viral",
   ingestProfile: "strategist.ingest",
   diagnose: "strategist.diagnose",
   progressReport: "strategist.progress",

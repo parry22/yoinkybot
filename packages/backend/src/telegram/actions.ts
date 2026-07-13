@@ -155,9 +155,10 @@ export async function runDraft(
   const otherLabel = platform === "x" ? "♻️ LinkedIn version" : "♻️ X version";
   const kb = row ? new InlineKeyboard().text(otherLabel, `rpz:d:${row.id}:${otherPlatform}`) : undefined;
   // The draft itself is content for their feed, so it keeps its own capitalization;
-  // only the little label around it is Yoinky talking.
-  await channel.say(`✍️ here you go:\n\n${res.draft}`, kb);
-  return `✍️ draft (${platform}):\n\n${res.draft}`;
+  // only the little label around it (and the media nudge) is Yoinky talking.
+  const media = res.mediaSuggestion ? `\n\n📎 pair it with: ${res.mediaSuggestion}` : "";
+  await channel.say(`✍️ here you go:\n\n${res.draft}${media}`, kb);
+  return `✍️ draft (${platform}):\n\n${res.draft}${media}`;
 }
 
 /** One repurposed variant at a time: the output, any honest caveats, and a used/skip loop. */

@@ -1,5 +1,5 @@
 import type { Prompt } from "./types.js";
-import { CHAT_STYLE_RULES } from "./style.js";
+import { CHAT_STYLE_RULES, REACH_PRINCIPLES } from "./style.js";
 
 export interface GenerateAnglesVars {
   /** The thing to narrate: a moment excerpt or a matched trend. */
@@ -38,6 +38,8 @@ ${CHAT_STYLE_RULES}
 Additionally for hooks specifically: never open with a hook-label ("Contrarian take:") — the
 label field is separate from the hook text; the hook itself must read as the first real sentence
 of the post, landing cold with no framing.
+
+${REACH_PRINCIPLES}
 
 Respond with ONLY valid JSON:
 {"angles":[{"label":"2-4 word name","angle":"one sentence: the take","hook":"the opening line","why_it_lands":"one sentence"}]}

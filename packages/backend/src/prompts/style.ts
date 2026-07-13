@@ -150,8 +150,11 @@ ALWAYS:
 
 PLATFORM CALIBRATION
 
-X: shorter. One idea, landed hard, in as few lines as it needs. Threads only when the memory
-genuinely has sequential beats, never padded for length.
+X: one idea, landed hard, in as few lines as it needs. If the idea carries real depth or genuine
+sequential beats, default to a thread instead of cramming it into one post — but the first post
+must stand alone and earn the read, each post carries its own complete micro-idea, and you number
+them (1/, 2/). Never pad a complete single thought into a thread. Depth earns the thread; length
+never does.
 
 LinkedIn: slightly more room, but resist the platform's pull toward padded, line-broken,
 self-help-cadence writing ("Sometimes— / the smallest thing— / changes everything."). If this
@@ -175,3 +178,58 @@ Before finalizing, check the draft against this list. If it fails any, rewrite b
   swapped in? If yes, it's too generic — add the detail that makes it unmistakably theirs.
 - Does it end with a tidy summary sentence? Cut it, end one line earlier.
 - Would this person's own voice profile flag it as inconsistent in tone or punctuation? Adjust.`;
+
+/**
+ * The reach/strategy layer for content the user PUBLISHES to their own feed
+ * (full drafts, angle hooks, repurposed posts, trend-take embedded drafts).
+ * POST_WRITING_RULES governs how the words are built; this governs what makes a
+ * post travel and earn a reply. Deliberately NOT applied to reply drafts (a reply
+ * into someone else's thread is a different game, tuned in reply-draft.v2) or to
+ * Yoinky's own casual chatter.
+ *
+ * Reconciled against POST_WRITING_RULES on purpose (see the copywriting decisions
+ * in docs/INTERNAL.md): it permits grounded contrarian and real-number hooks and a
+ * soft, genuine closing invitation, but it never overrides the sentence-craft bans
+ * — no bait-label openers, no engagement-bait CTAs, no invented numbers. Where the
+ * two documents touch the same thing, they say the same thing.
+ */
+export const REACH_PRINCIPLES = `HOW A POST ACTUALLY TRAVELS (write with this in mind; never mention any of it in the post itself)
+
+Distribution is decided fast. The first 30 to 60 minutes of engagement — replies above all —
+determine whether a post spreads or dies in testing. A reply is worth far more than a like; saves
+and reposts are strong signals too. So the bar is not "would someone nod at this," it is "would
+someone who knows this space stop and say something back." Write to earn the reply, never to
+farm one.
+
+Never put a link in the post body — it suppresses reach. If a link genuinely matters, the post
+stands on its own and the link goes in the first reply.
+
+WHO IS READING
+
+The people a post reaches already care about this lane. They are past needing the problem
+explained from zero — problem-aware or solution-aware. Open at the insight or the tension, not
+with a paragraph teaching them what they already know. Respect what they already understand.
+
+THE FIRST LINE EARNS THE STOP
+
+Line one does most of the work. What makes a specific reader stop is substance, not a formula:
+one concrete, textured detail; a real number pulled from their actual memory (never invented for
+effect); or a genuine contrarian stance they actually hold. A grounded contrarian take or a real
+number is a strong, allowed opener. A bait label is not — never "Unpopular opinion:", "The brutal
+truth about X", or a parenthetical curiosity tease. The stop comes from the thing being specific
+and true, not from dressing it up.
+
+WHY PEOPLE REPLY, SAVE, AND FOLLOW
+
+They engage when they feel seen — when the post reads like someone a step further down the same
+road they are on, being honest about it. Lead with real value or a real, specific admission; that
+is what earns a response back. Warmth and authority together, not one or the other. Write about
+the reader, using the person's own story and specifics as the proof, not a broadcast about
+themselves.
+
+CLOSING
+
+Ending on the sharpest line and simply stopping is still often the strongest move. But a soft,
+genuine close is allowed when it fits: a real open question the writer actually wants answered, or
+a light invitation to weigh in. Never engagement-bait — no "tag someone who", no poll for a poll's
+sake, no question the writer already knows the answer to.`;

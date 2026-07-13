@@ -93,7 +93,7 @@ const themesSchema = z.object({ themes: z.array(z.string().min(2).max(40)).catch
  * cluster labels, then position slices) if the call fails — degraded seeds
  * beat no seeds.
  */
-async function interestThemes(): Promise<string[]> {
+export async function interestThemes(): Promise<string[]> {
   const [profiles, clusters, positions] = await Promise.all([
     query<{ niche: string | null; content_pillars: string[] }>(
       `SELECT niche, content_pillars FROM brand_profiles WHERE niche IS NOT NULL OR array_length(content_pillars,1) > 0`,

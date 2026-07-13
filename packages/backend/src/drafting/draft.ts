@@ -9,6 +9,7 @@ import { enforceStyle } from "../prompts/style.js";
 const draftSchema = z.object({
   draft: z.string(),
   source_memory_ids: z.array(z.string()).default([]),
+  media_suggestion: z.string().default(""),
   note: z.string().default(""),
 });
 
@@ -16,6 +17,8 @@ export interface DraftResult {
   ok: boolean;
   draft: string;
   note: string;
+  /** One concrete visual to pair with the post for reach, or "" if none fits. */
+  mediaSuggestion: string;
   sources: Array<{ id: string; content: string; kind: string }>;
 }
 
@@ -35,13 +38,14 @@ export async function generateDraft(
       ok: false,
       draft: "",
       note: "No voice profile yet — run /voice build once you have ~50 memories. Drafting without it would sound like everyone else.",
+      mediaSuggestion: "",
       sources: [],
     };
   }
 
   const memories = await hybridSearch(userId, request, 12);
   if (memories.length === 0) {
-    return { ok: false, draft: "", note: "No memories match this request — capture some thinking on it first.", sources: [] };
+    return { ok: false, draft: "", note: "No memories match this request — capture some thinking on it first.", mediaSuggestion: "", sources: [] };
   }
 
   const brandProfile = await getProfile(userId).catch(() => null);
@@ -73,6 +77,7 @@ export async function generateDraft(
     ok: draft.length > 0,
     draft,
     note: parsed.note,
+    mediaSuggestion: parsed.media_suggestion,
     // If the model cited nothing explicitly, show everything it was given.
     sources: sources.length > 0 ? sources : memories.map((m) => ({ id: m.id, content: m.content, kind: m.kind })),
   };

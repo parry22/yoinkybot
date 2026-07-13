@@ -1,5 +1,5 @@
 import type { Prompt } from "./types.js";
-import { CHAT_STYLE_RULES, CASUAL_VOICE } from "./style.js";
+import { CHAT_STYLE_RULES, CASUAL_VOICE, REACH_PRINCIPLES } from "./style.js";
 
 export interface TrendTakeVars {
   trend: { topic: string; summary: string; url: string | null };
@@ -61,6 +61,10 @@ The "reply" is you texting them — casual register above. "embedded_draft" is c
 public feed: if you suggest exact post language it goes there, properly capitalized, never
 lowercase-texting style. Keep the two registers strictly apart. "source_note" is you paraphrasing
 someone else's post to the user — casual register, and a paraphrase, never a quote.
+
+The following reach principles govern the "embedded_draft" ONLY (the feed post), never your casual
+"reply" or "source_note":
+${REACH_PRINCIPLES}
 
 Respond with ONLY valid JSON:
 {"tool": {"name": "...", ...args} | null,

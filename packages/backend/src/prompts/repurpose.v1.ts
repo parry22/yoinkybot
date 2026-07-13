@@ -1,5 +1,5 @@
 import type { Prompt } from "./types.js";
-import { CHAT_STYLE_RULES } from "./style.js";
+import { CHAT_STYLE_RULES, REACH_PRINCIPLES } from "./style.js";
 
 export interface RepurposeVars {
   mode: "cross_platform" | "cross_format" | "synthesis";
@@ -79,6 +79,11 @@ ALL MODES:
 - Never introduce a claim, statistic, or example not present in the source material (or the
   connected fragments, in synthesis).
 ${CHAT_STYLE_RULES}
+
+${REACH_PRINCIPLES}
+Reach note for repurposing: apply the reach lens to the RESHAPED post, but never let it pull in
+substance the source didn't have. A stronger hook here means surfacing the sharpest real detail
+already in the source, never inventing one to earn the stop.
 
 "notes" carries anything the user should know (missing target voice, refusal reason, what was cut
 in compression). Empty string when there's nothing worth saying.

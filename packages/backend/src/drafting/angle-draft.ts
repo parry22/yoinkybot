@@ -11,6 +11,7 @@ import { enforceStyle } from "../prompts/style.js";
 const draftSchema = z.object({
   draft: z.string(),
   source_memory_ids: z.array(z.string()).default([]),
+  media_suggestion: z.string().default(""),
   note: z.string().default(""),
 });
 
@@ -18,6 +19,8 @@ export interface AngleDraftResult {
   ok: boolean;
   draft: string;
   note: string;
+  /** One concrete visual to pair with the post for reach, or "" if none fits. */
+  mediaSuggestion: string;
 }
 
 /**
@@ -34,7 +37,7 @@ export async function draftFromAngle(
 ): Promise<AngleDraftResult> {
   const ent = await entitlementsFor(userId);
   if (!ent.drafting) {
-    return { ok: false, draft: "", note: "Drafting is a paid feature — upgrade to have Yoinky write it for you." };
+    return { ok: false, draft: "", note: "Drafting is a paid feature — upgrade to have Yoinky write it for you.", mediaSuggestion: "" };
   }
 
   const angle = await queryOne<{
@@ -48,7 +51,7 @@ export async function draftFromAngle(
     `SELECT id, angle, hook, label, moment_id, trend_id FROM angles WHERE id = $1 AND user_id = $2 AND surfacing_id = $3`,
     [angleId, userId, surfacingId],
   );
-  if (!angle) return { ok: false, draft: "", note: "That angle expired." };
+  if (!angle) return { ok: false, draft: "", note: "That angle expired.", mediaSuggestion: "" };
 
   // Anchor text: the moment excerpt or the trend summary the angle is about.
   let anchor = "";
@@ -87,7 +90,7 @@ export async function draftFromAngle(
     maxTokens: 1200,
   });
   const parsed = draftSchema.parse(res.parsed);
-  if (!parsed.draft) return { ok: false, draft: "", note: parsed.note || "Couldn't produce a draft from that angle." };
+  if (!parsed.draft) return { ok: false, draft: "", note: parsed.note || "Couldn't produce a draft from that angle.", mediaSuggestion: "" };
   const draft = enforceStyle(parsed.draft);
 
   // Persist the draft and link it back to the angle.
@@ -107,5 +110,5 @@ export async function draftFromAngle(
   // If this draft develops a pending unlock-list idea, close the loop.
   await markUnlockDeveloped(userId, draft, draftRow?.id).catch(() => {});
 
-  return { ok: true, draft, note: parsed.note };
+  return { ok: true, draft, note: parsed.note, mediaSuggestion: parsed.media_suggestion };
 }

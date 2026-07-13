@@ -17,6 +17,7 @@ import { maybeOfferAngles } from "./offer-angles.js";
 import { alertAdmin } from "../lib/alerts.js";
 import { handleTrendFetch } from "./trend-fetch.js";
 import { handleTrendMatch } from "./trend-match.js";
+import { handleViralBenchmark } from "./viral-benchmark.js";
 import { handleIngestProfile } from "../strategist/connect.js";
 import { handleDiagnose } from "../strategist/diagnosis.js";
 import { handleProgressReport } from "../strategist/progress.js";
@@ -74,6 +75,7 @@ export async function registerWorkers(boss: PgBoss): Promise<void> {
   await boss.work(QUEUES.voiceRebuild, logged(QUEUES.voiceRebuild, () => handleVoiceRebuild()));
   await boss.work(QUEUES.trendFetch, logged(QUEUES.trendFetch, () => handleTrendFetch()));
   await boss.work(QUEUES.trendMatch, logged(QUEUES.trendMatch, () => handleTrendMatch()));
+  await boss.work(QUEUES.viralBenchmark, logged(QUEUES.viralBenchmark, () => handleViralBenchmark()));
   await boss.work<IngestProfileJob>(
     QUEUES.ingestProfile,
     logged(QUEUES.ingestProfile, (d: IngestProfileJob) => handleIngestProfile(d)),
@@ -118,6 +120,10 @@ export async function registerWorkers(boss: PgBoss): Promise<void> {
   // runs only get a shot when the earlier ones didn't fire.
   await boss.schedule(QUEUES.trendFetch, "0 */8 * * *");
   await boss.schedule(QUEUES.trendMatch, "30 2,7,13 * * *"); // 08:00 / 12:30 / 19:00 IST
+  // Daily viral case study: once a day, late-morning IST — its own budget, so it
+  // doesn't compete with trend_match for the shared proactive cadence slot. The
+  // handler enforces once-a-day per user internally.
+  await boss.schedule(QUEUES.viralBenchmark, "0 6 * * *"); // 11:30 IST
   // Public mentions ingest (classification + scoring only — the hourly
   // proactive tick decides delivery, replies get priority in that slot).
   await boss.schedule(QUEUES.mentionsFetch, "15 */6 * * *");

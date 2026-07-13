@@ -21,6 +21,17 @@ connect your accounts, get diagnosed, build a plan, and ship content.
 
 <!-- Keep newest-first. Update this whenever a change ships that a reader of the repo should know about. -->
 
+- **2026-07-13 — Daily viral case study.** Once a day, Yoinky shows you one
+  tweet in your niche that just blew up (100k–10M views) and breaks down *why* it
+  worked — from real numbers, not folklore: its breakout ratio (views ÷ the
+  author's followers, i.e. how far it escaped their normal reach), engagement and
+  bookmark rates, velocity, and format — plus one angle you could take on it in
+  your own voice. It's a learn-from-the-best spotlight, distinct from trend
+  alerts (what everyone's discussing right now) and peer benchmarking (how you
+  compare to specific peers). Selection is fully deterministic — an impression
+  band, a recency window, a niche-relevance gate against your positions, and
+  dedup (never the same tweet or a repeat-offender author) pick the tweet; the
+  model only explains and suggests. 👍/👎 on each one tunes relevance over time.
 - **2026-07-13 — GLM's flaky JSON no longer kills jobs.** Every structured LLM
   call routes through one gateway, and GLM 5.2 was intermittently failing them
   ("no JSON found") — silently breaking resurfacing, mention replies, trend

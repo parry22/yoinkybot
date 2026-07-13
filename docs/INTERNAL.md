@@ -212,13 +212,43 @@ two registers and they must not bleed into each other, because they share
 - **Content written for the user's public feed** (post drafts, reply drafts,
   repurposed posts, angle hooks) stays properly capitalized. Its prompts
   (`draft.v1`, `reply-draft.v2`, `repurpose.v1`, `generate-angles.v1`, the
-  `embedded_draft` field of `trend-take.v1`) use
+  `embedded_draft` field of `trend-take.v2`) use
   `CHAT_STYLE_RULES`/`POST_WRITING_RULES` but **must never** get `CASUAL_VOICE`,
   and `casualize()`/`enforceStyle` is never run over their output as a
   lowercasing pass. `sendTelegram` (single-message) is deliberately NOT
   casualized because it carries this content; only `sendTelegramSequence` is.
   When a chat wrapper embeds content (e.g. `"✍️ here you go:\n\n{draft}"`), only
   the label is casual — the draft body keeps its own capitalization.
+
+**Reach/copywriting layer: `REACH_PRINCIPLES`** (2026-07-13, `prompts/style.ts`).
+`POST_WRITING_RULES` governs *how the words are built* (sentence craft, anti-AI-tells,
+narrative structure). `REACH_PRINCIPLES` is a companion block governing *what makes a
+published post travel and earn a reply* — the strategy layer distilled from the
+x-copywriting skill (`docs/x-copywriting-personal-branding-skill.md`, the full source):
+first-30-60-min reply velocity, replies weighted over likes,
+links-to-first-reply (never in body), Schwartz awareness levels (open at insight, the
+reader is already problem/solution-aware), and the connection drivers behind
+replies/saves. Injected into the prompts that write content the user **publishes** —
+`draft.v1`, `generate-angles.v1`, `repurpose.v1`, and the `embedded_draft` of
+`trend-take.v2`. Deliberately **not** in `reply-draft.v2`: a reply into someone else's
+thread is a different game (hooks/threads/media don't apply), and its own doctrine is
+already tuned. It is scoped to the feed/"properly-written" side exactly like
+`POST_WRITING_RULES`, never the casual side.
+- **Reconciled against `POST_WRITING_RULES`, not stacked blindly** (the conflicts were
+  decided explicitly). Adopted: grounded **contrarian + real-number hooks** are allowed
+  openers (the ban on bait-label openers like "Unpopular opinion:" stays); a **soft,
+  genuine closing invitation** is allowed (engagement-bait like "tag someone" stays
+  banned); **thread-lean-for-depth** — `POST_WRITING_RULES` platform calibration now
+  defaults X to a thread when the idea has real sequential beats, still never padded.
+  Held to the stricter existing register: no guru power-words, emoji still voice-profile-
+  gated, and numbers must be grounded in a real memory (never invented for a hook). Where
+  the two documents touch the same rule, they state it identically.
+- **Media suggestion.** The draft engine (`draft.v1`) now emits a `media_suggestion`
+  field (concrete visual to pair with the post, or `""` for genuinely text-only posts).
+  It flows through `DraftResult.mediaSuggestion` / `AngleDraftResult.mediaSuggestion` and
+  renders as a casual `📎 pair it with: …` line under the draft in both delivery paths
+  (`telegram/actions.ts` `deliverDraft`, `telegram/bot.ts` angle-draft handler). Not
+  persisted — it's ephemeral guidance, not part of the draft body.
 
 **Message tracking + wiping everything** (`telegram/message-log.ts`, added
 2026-07-11; the `/clear` command itself was removed 2026-07-11, superseded by
@@ -729,9 +759,60 @@ autocapture. Every event is captured explicitly in backend code.
 
 ---
 
+## 3h. Daily viral tweet case study (2026-07-13)
+
+A **single-tweet spotlight**: once a day, one tweet in the user's niche that hit
+a high-impression band (100k–9.99M views), with a computed "why it worked"
+breakdown and an angle they could take. Distinct from the macro-moment agent
+(§3c, aggregate discourse volume) and from `src/benchmark/` (peer-relative). Same
+doctrine: **code selects the tweet, the model only explains and suggests.**
+
+- **View-count field — VERIFIED, but no search operator.** twitterapi.io's
+  `advanced_search` returns `viewCount` populated (confirmed live 2026-07-13:
+  12k–82k on real results, alongside `bookmarkCount`, `quoteCount`,
+  `author.followers`, `isBlueVerified`, `extendedEntities` for media). But there
+  is **no `min_views` query operator** (only `min_faves`/`min_retweets`/
+  `min_replies`). So the band is enforced as a documented fallback: search with a
+  `min_faves` proxy floor (`VIRAL_MIN_FAVES_PROXY`, default 600), then post-filter
+  the returned set by the real `viewCount` against `[VIRAL_VIEW_MIN,
+  VIRAL_VIEW_MAX]`. `toXTweet` now carries the view/format fields (it used to drop
+  them).
+- **Deterministic gate** (`trends/viral-scoring.ts#selectViralCandidate`):
+  niche-seeded search (reuses `trend-fetch.ts#interestThemes` — no second seed
+  pipeline) → view-count BAND filter → dedup (tweet already sent, or author within
+  `VIRAL_AUTHOR_COOLDOWN_DAYS`) → niche relevance gate (batch-embed survivors,
+  per-candidate `embedding <=> positions` vs `NICHE_THRESHOLD` — same pgvector
+  pattern as §3c) → deterministic rank → exactly one. Rank = relevance 0.5 +
+  breakout 0.3 + reach 0.2, all normalized; the model never picks.
+- **Computed facts** (`trends/viral-heuristics.ts`, pure + unit-tested, same
+  doctrine as `engagement/heuristics.ts`): breakout ratio (views ÷ followers —
+  the single best "escaped its reach" signal), engagement rates per 1k views
+  (incl. bookmarks = "saved to act on later"), amplification share, velocity
+  (views/hour), format signals (media, length bucket, opener classification:
+  question / number / bold_claim / plain). The agent NARRATES these; it never
+  invents "hooks and algorithm" folklore.
+- **Bounded agent** (`prompts/viral-case-study.v1` + `trends/viral-tools.ts`):
+  tools `get_voice_profile` / `get_content_pillars` / `search_memory` (same three
+  as reply-drafting), cap `VIRAL_MAX_TOOL_CALLS` (3). Output: a breakdown citing
+  the numbers + one angle grounded in the user's own voice/pillars/memory.
+- **Delivery + budget** (`jobs/viral-benchmark.ts`): surfacing type
+  `viral_benchmark` (migration 0019), distinct **📈** framing (not the ⚡ trend
+  take, not the 🔥/💤/🗑 resurfacing card). **Its own once-a-day budget** — NOT in
+  `PROACTIVE_TYPES`, so it doesn't compete with resurfacing/trend_take for the
+  shared cadence slot (this is a different kind of value: an external reference,
+  not personal memory or discourse-riding); only quiet hours still apply. **The
+  reaction decision: YES** — 👍/👎 buttons (`vbfb:` callback) recorded on the
+  `viral_benchmarks` ledger, the tuning surface for relevance over time.
+- **Dedup ledger** `viral_benchmarks` (migration 0019): one row per sent tweet
+  (UNIQUE on `user_id,tweet_id`), written only on a real send, so a failed
+  delivery never blocks tomorrow's retry; it's both the dedup source and the
+  daily gate. Scheduled `0 6 * * *` (11:30 IST).
+
+---
+
 ## 4. Data model
 
-Schema is a linear migration chain in `src/db/migrations/` (`0001`…`0018`),
+Schema is a linear migration chain in `src/db/migrations/` (`0001`…`0019`),
 applied on boot and via `pnpm db:migrate` (`src/db/migrate.ts`). pgvector is
 required for embedding columns.
 

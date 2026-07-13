@@ -167,27 +167,48 @@ export interface XTweet {
   text: string;
   url: string | null;
   authorHandle: string;
+  authorName: string;
   authorFollowers: number;
+  /** Blue/verified affiliation — a reach signal for the breakout ratio. */
+  authorVerified: boolean;
   likeCount: number;
   retweetCount: number;
   replyCount: number;
+  quoteCount: number;
+  /** Impressions. Populated by advanced_search (verified live 2026-07-13). */
+  viewCount: number;
+  bookmarkCount: number;
+  /** Any image/video attached — a format signal for the viral breakdown. */
+  hasMedia: boolean;
+  isReply: boolean;
   conversationId: string | null;
   createdAt: Date;
 }
 
 function toXTweet(t: RawTweet): XTweet | null {
-  const author = (t as { author?: { userName?: string; followers?: number } }).author;
+  const author = (t as {
+    author?: { userName?: string; name?: string; followers?: number; isBlueVerified?: boolean; isVerified?: boolean };
+  }).author;
   if (!t.id || !t.text?.trim()) return null;
   const date = t.createdAt ? new Date(t.createdAt) : new Date();
+  const media = t as { extendedEntities?: { media?: unknown[] }; entities?: { media?: unknown[] } };
+  const hasMedia = (media.extendedEntities?.media?.length ?? 0) > 0 || (media.entities?.media?.length ?? 0) > 0;
   return {
     id: t.id,
     text: t.text.trim(),
     url: t.url ?? null,
     authorHandle: author?.userName ?? "",
+    authorName: author?.name ?? author?.userName ?? "",
     authorFollowers: author?.followers ?? 0,
+    authorVerified: Boolean(author?.isBlueVerified || author?.isVerified),
     likeCount: t.likeCount ?? 0,
     retweetCount: t.retweetCount ?? 0,
     replyCount: t.replyCount ?? 0,
+    quoteCount: t.quoteCount ?? 0,
+    viewCount: t.viewCount ?? 0,
+    bookmarkCount: t.bookmarkCount ?? 0,
+    hasMedia,
+    isReply: t.isReply ?? false,
     conversationId: t.conversationId ?? null,
     createdAt: Number.isNaN(date.getTime()) ? new Date() : date,
   };
