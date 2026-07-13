@@ -1097,8 +1097,18 @@ export async function sendTelegram(
   );
   if (!user?.telegram_id) return false;
   const reply_markup = keyboard ?? (surfacingId ? reactionKeyboard(surfacingId) : undefined);
-  await bot.api.sendMessage(Number(user.telegram_id), text, { reply_markup });
-  return true;
+  // Fail SOFT: a blocked/deactivated user makes sendMessage throw 403 (and a
+  // stale chat can 400). Callers treat the boolean as "delivered?" and clean up
+  // on false (drop the phantom surfacing, don't mark the mention drafted) — a
+  // throw here instead skipped that cleanup, so a user who blocked the bot piled
+  // up mentions forever and leaked cadence budget. Return false, never throw.
+  try {
+    await bot.api.sendMessage(Number(user.telegram_id), text, { reply_markup });
+    return true;
+  } catch (err) {
+    console.error(`sendTelegram to ${userId} failed`, err);
+    return false;
+  }
 }
 
 /**

@@ -120,10 +120,14 @@ export async function registerWorkers(boss: PgBoss): Promise<void> {
   // runs only get a shot when the earlier ones didn't fire.
   await boss.schedule(QUEUES.trendFetch, "0 */8 * * *");
   await boss.schedule(QUEUES.trendMatch, "30 2,7,13 * * *"); // 08:00 / 12:30 / 19:00 IST
-  // Daily viral case study: once a day, late-morning IST — its own budget, so it
-  // doesn't compete with trend_match for the shared proactive cadence slot. The
-  // handler enforces once-a-day per user internally.
-  await boss.schedule(QUEUES.viralBenchmark, "0 6 * * *"); // 11:30 IST
+  // Daily viral case study: THREE spread ticks, not one. The handler caps at one
+  // delivery per user per day and drops (doesn't defer) a user who's in quiet
+  // hours right now — so a single fixed tick means a user whose quiet hours cover
+  // that instant (e.g. US-evening under a 06:00 UTC tick) would NEVER receive it.
+  // Spreading the ticks across the globe's active windows lets a later tick catch
+  // whoever the earlier one skipped; the once-a-day gate prevents duplicates and
+  // skips the paid search for anyone already delivered today.
+  await boss.schedule(QUEUES.viralBenchmark, "0 3,11,19 * * *"); // 08:30/16:30/00:30 IST — global spread
   // Public mentions ingest (classification + scoring only — the hourly
   // proactive tick decides delivery, replies get priority in that slot).
   await boss.schedule(QUEUES.mentionsFetch, "15 */6 * * *");

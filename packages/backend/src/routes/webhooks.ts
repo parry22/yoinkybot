@@ -51,13 +51,24 @@ export async function webhookRoutes(app: FastifyInstance): Promise<void> {
   const bot = getBot();
   const usingWebhooks = config.PUBLIC_URL.startsWith("https://");
   if (bot && config.TELEGRAM_BOT_TOKEN && usingWebhooks) {
+    // Fail closed: in webhook mode the secret is the ONLY thing stopping anyone
+    // who knows the public URL from POSTing forged updates and acting as any
+    // user (including wiping their data). An unset secret must abort boot, not
+    // silently ship the endpoint wide open (the old `if (secret && …)` guard
+    // meant "no secret configured" degraded to "accept everything").
+    if (!config.TELEGRAM_WEBHOOK_SECRET) {
+      throw new Error(
+        "TELEGRAM_WEBHOOK_SECRET is required in webhook mode (PUBLIC_URL is https). " +
+          "Without it the Telegram webhook accepts forged updates from anyone. Set it and redeploy.",
+      );
+    }
+    const secret = config.TELEGRAM_WEBHOOK_SECRET;
     const seen = new Set<number>();
     const seenOrder: number[] = [];
     const SEEN_MAX = 5_000;
 
     app.post("/webhooks/telegram", async (req, reply) => {
-      const secret = config.TELEGRAM_WEBHOOK_SECRET;
-      if (secret && req.headers["x-telegram-bot-api-secret-token"] !== secret) {
+      if (req.headers["x-telegram-bot-api-secret-token"] !== secret) {
         return reply.code(401).send({ error: "unauthorized" });
       }
       const update = req.body as Update | undefined;
