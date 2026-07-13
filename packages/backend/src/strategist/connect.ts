@@ -135,6 +135,23 @@ export async function handleIngestProfile(job: IngestProfileJob): Promise<void> 
 
     const boss = getBoss();
     let imported = 0;
+
+    // The profile BIO is the user's own one-line self-description — the densest
+    // signal of who they are and what they're about. Ingest it as its own
+    // capture so it flows through extraction into memory/positions/voice, not
+    // just sitting unused on the account row (which is all it did before).
+    if (pull.meta.bio?.trim()) {
+      const { capture, created } = await createCapture({
+        userId: job.userId,
+        source,
+        rawText: `${label} profile bio: ${pull.meta.bio.trim()}`,
+        clientId: `${account.platform}:bio:${account.handle}`,
+        metadata: { published: true, kind: "profile_bio", connected_account: account.id },
+        enqueue: false,
+      });
+      if (created) await boss.send(QUEUES.extract, { captureId: capture.id, userId: job.userId });
+    }
+
     for (const post of usable) {
       const { capture, created } = await createCapture({
         userId: job.userId,
