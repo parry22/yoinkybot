@@ -328,12 +328,18 @@ export function createBot(): Bot | undefined {
     if (!user) return;
     const ent = await entitlementsFor(user.id);
     if (ent.plan !== "free") return void (await ctx.reply(`you're on ${ent.plan}, you've got everything. 🙌`));
-    const seats = await foundingSeatsLeft().catch(() => 0);
-    const kb = new InlineKeyboard()
-      .text(seats > 0 ? `Founding (${seats} left, price locked)` : "Founding (full)", "bill:founding")
-      .row()
-      .text("Paid", "bill:paid");
-    await ctx.reply("unlock consistency checks, drafting, voice profile, and macro-moment matching:", { reply_markup: kb });
+    const kb = new InlineKeyboard();
+    // Only offer Founding if a founding product is actually configured — an
+    // unconfigured button just errors at checkout ("product id not configured").
+    if (config.DODO_PRODUCT_FOUNDING) {
+      const seats = await foundingSeatsLeft().catch(() => 0);
+      kb.text(seats > 0 ? `Founding (${seats} left, price locked)` : "Founding (full)", "bill:founding").row();
+    }
+    kb.text(`Go paid — ${config.PAID_PRICE_LABEL}`, "bill:paid");
+    await ctx.reply(
+      `unlock everything: consistency checks, drafting in your voice, voice profile, trend + viral spotlights.\n\n${config.PAID_PRICE_LABEL}, cancel anytime.`,
+      { reply_markup: kb },
+    );
   });
 
   // Voice notes / audio → capture with the Telegram file URL; transcription is async.

@@ -141,6 +141,9 @@ const schema = z.object({
   DODO_ENV: z.enum(["test_mode", "live_mode"]).default("test_mode"),
   DODO_PRODUCT_PAID: z.string().optional(),
   DODO_PRODUCT_FOUNDING: z.string().optional(),
+  // Human-readable price shown in /upgrade copy + the checkout button. Keep it in
+  // sync with the actual Dodo product price ($24.99/mo for "Growth Plan" today).
+  PAID_PRICE_LABEL: z.string().default("$24.99/mo"),
   // Off during testing → everyone gets full features. Set true to enforce plans.
   // NOTE: a boot warning fires (index.ts) if this is false in production, so a
   // deploy that forgets the flag can't silently give everyone the paid tier.
