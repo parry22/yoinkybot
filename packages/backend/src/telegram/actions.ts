@@ -134,9 +134,19 @@ export async function runDraft(
 ): Promise<string> {
   const ent = await entitlementsFor(user.id);
   if (!ent.drafting) {
-    const msg = "drafting's a paid thing, hit /upgrade and i'll write for you.";
-    await channel.say(msg);
-    return msg;
+    // Free users get a few LIFETIME drafts before the wall, so they taste the
+    // core promise before being asked to pay. Count what they've already made.
+    const used = await queryOne<{ n: string }>(
+      `SELECT count(*)::text n FROM drafts WHERE user_id = $1`,
+      [user.id],
+    );
+    const usedN = Number(used?.n ?? 0);
+    if (usedN >= config.FREE_DRAFT_ALLOWANCE) {
+      const msg = `that's your ${config.FREE_DRAFT_ALLOWANCE} free drafts used. /upgrade and i'll keep writing in your voice.`;
+      await channel.say(msg);
+      return msg;
+    }
+    // Otherwise fall through and generate — this is a free taste.
   }
   const res = await generateDraft(user.id, topic, platform);
   if (!res.ok) {

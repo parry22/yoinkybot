@@ -25,7 +25,16 @@ export async function handleTranscribe(job: TranscribeJob): Promise<void> {
 
   let text: string;
   try {
-    const res = await fetch(capture.audio_url);
+    // SSRF guard + defensive depth: audio_url is always server-built to
+    // api.telegram.org today, but this fetch is one code change away from
+    // pulling an attacker-controlled URL into the server's network. Pin the host
+    // and add a hard timeout so it can't be turned into an internal-network probe
+    // or a hang. HTTPS + telegram host only.
+    const parsed = new URL(capture.audio_url);
+    if (parsed.protocol !== "https:" || parsed.hostname !== "api.telegram.org") {
+      throw new Error(`refused audio host: ${parsed.hostname}`);
+    }
+    const res = await fetch(capture.audio_url, { signal: AbortSignal.timeout(30_000) });
     if (!res.ok) throw new Error(`audio download failed: ${res.status}`);
     const audio = Buffer.from(await res.arrayBuffer());
     const out = await transcribeAudio(audio, "voice.oga", job.userId);

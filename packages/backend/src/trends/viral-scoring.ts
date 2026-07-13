@@ -46,8 +46,16 @@ function rankScore(tweet: XTweet, nicheDistance: number): number {
   return Math.round((relevance * 0.5 + breakout * 0.3 + reach * 0.2) * 1000) / 1000;
 }
 
-export async function selectViralCandidate(userId: string, themes: string[]): Promise<ViralPick | null> {
-  if (themes.length === 0) return null;
+/**
+ * The SHARED half of selection: search + view-count BAND filter. The niche seeds
+ * are the same across the user base, so this runs ONCE per job run — not once
+ * per user (that re-ran the identical paid twitterapi search per user, reset the
+ * per-call rate pacing each time → self-inflicted 429s, and cost O(users) for
+ * identical data). `handleViralBenchmark` fetches this once and passes the pool
+ * to every user's `selectFromPool`.
+ */
+export async function fetchViralPool(themes: string[]): Promise<XTweet[]> {
+  if (themes.length === 0) return [];
   const nowSec = Math.floor(Date.now() / 1000);
   const sinceSec = nowSec - config.VIRAL_RECENCY_HOURS * 3600;
 
@@ -61,7 +69,7 @@ export async function selectViralCandidate(userId: string, themes: string[]): Pr
     });
   } catch (err) {
     console.error("viral: candidate search failed", err);
-    return null;
+    return [];
   }
 
   // View-count BAND filter — the defining gate. No min_views search operator
@@ -74,40 +82,43 @@ export async function selectViralCandidate(userId: string, themes: string[]): Pr
     if (t.text.trim().length < 15) continue;
     if (!banded.has(t.id)) banded.set(t.id, t);
   }
-  if (banded.size === 0) return null;
+  return [...banded.values()].sort((a, b) => b.viewCount - a.viewCount).slice(0, 20);
+}
 
-  // Dedup: never the same tweet twice, and hold off a repeat-offender author
-  // for the cooldown window. One query covers both.
+/**
+ * The PER-USER half: dedup against this user's ledger, niche-gate against their
+ * positions, deterministically rank, take one. Reads no provider — works off the
+ * shared pool from `fetchViralPool`.
+ */
+export async function selectFromPool(userId: string, pool: XTweet[]): Promise<ViralPick | null> {
+  if (pool.length === 0) return null;
+
+  // Dedup: never the same tweet twice, and hold off a repeat-offender author for
+  // the cooldown window. One query covers both.
   const sent = await query<{ tweet_id: string; author_handle: string }>(
     `SELECT tweet_id, author_handle FROM viral_benchmarks
      WHERE user_id = $1
        AND (sent_at > now() - ($2 || ' days')::interval OR tweet_id = ANY($3))`,
-    [userId, String(config.VIRAL_AUTHOR_COOLDOWN_DAYS), [...banded.keys()]],
+    [userId, String(config.VIRAL_AUTHOR_COOLDOWN_DAYS), pool.map((t) => t.id)],
   );
   const sentTweetIds = new Set(sent.map((r) => r.tweet_id));
   const cooledAuthors = new Set(sent.map((r) => r.author_handle.toLowerCase()));
-  const fresh = [...banded.values()].filter(
-    (t) => !sentTweetIds.has(t.id) && !cooledAuthors.has(t.authorHandle.toLowerCase()),
-  );
+  const fresh = pool.filter((t) => !sentTweetIds.has(t.id) && !cooledAuthors.has(t.authorHandle.toLowerCase()));
   if (fresh.length === 0) return null;
 
   // Niche relevance gate (pgvector vs the user's positions). Batch-embed the
-  // survivors once, then a cheap distance query per candidate. Cap the set so a
-  // flood of banded candidates can't blow up embedding spend.
-  const candidates = fresh
-    .sort((a, b) => b.viewCount - a.viewCount)
-    .slice(0, 20);
+  // survivors once, then a cheap distance query per candidate.
   let embeddings: number[][];
   try {
-    embeddings = await embed(candidates.map((t) => t.text.slice(0, 500)), null);
+    embeddings = await embed(fresh.map((t) => t.text.slice(0, 500)), null);
   } catch (err) {
     console.error("viral: candidate embedding failed", err);
     return null;
   }
 
   let best: ViralPick | null = null;
-  for (let i = 0; i < candidates.length; i++) {
-    const tweet = candidates[i]!;
+  for (let i = 0; i < fresh.length; i++) {
+    const tweet = fresh[i]!;
     const vec = embeddings[i];
     if (!vec) continue;
     const row = await queryOne<{ dist: number | null }>(
@@ -121,4 +132,10 @@ export async function selectViralCandidate(userId: string, themes: string[]): Pr
     if (!best || score > best.score) best = { tweet, nicheDistance: dist, score };
   }
   return best;
+}
+
+/** Convenience for one-off/manual fires: fetch the pool, then select. The
+ *  scheduled job uses fetchViralPool + selectFromPool directly to share the pool. */
+export async function selectViralCandidate(userId: string, themes: string[]): Promise<ViralPick | null> {
+  return selectFromPool(userId, await fetchViralPool(themes));
 }

@@ -9,7 +9,8 @@ import { getProfile } from "../strategist/profile.js";
 import { entitlementsFor } from "../billing/entitlements.js";
 import { inQuietHours, type UserSettings } from "../lib/time.js";
 import { interestThemes } from "./trend-fetch.js";
-import { selectViralCandidate } from "../trends/viral-scoring.js";
+import { fetchViralPool, selectFromPool } from "../trends/viral-scoring.js";
+import type { XTweet } from "../capture/imports/twitterapi-io.js";
 import { computeViralHeuristics } from "../trends/viral-heuristics.js";
 import { viralCaseStudy } from "../prompts/viral-case-study.v1.js";
 import { viralToolSchema } from "../trends/viral-tools.js";
@@ -52,6 +53,12 @@ export async function handleViralBenchmark(): Promise<void> {
   });
   if (themes.length === 0) return;
 
+  // Fetch the candidate pool ONCE for the whole run — the search is identical
+  // across users (shared niche seeds), so per-user searching was pure waste and
+  // a 429 magnet. Bail before touching the DB if nothing's viral right now.
+  const pool = await fetchViralPool(themes);
+  if (pool.length === 0) return;
+
   const users = await query<{ id: string; settings: UserSettings }>(
     `SELECT id, settings FROM users WHERE telegram_id IS NOT NULL`,
   );
@@ -59,7 +66,7 @@ export async function handleViralBenchmark(): Promise<void> {
     try {
       const ent = await entitlementsFor(u.id);
       if (!ent.macroMatching) continue;
-      await viralBenchmarkForUser(u.id, themes, u.settings ?? {});
+      await viralBenchmarkForUser(u.id, pool, u.settings ?? {});
     } catch (err) {
       console.error(`viral benchmark failed for ${u.id}`, err);
     }
@@ -68,7 +75,7 @@ export async function handleViralBenchmark(): Promise<void> {
 
 export async function viralBenchmarkForUser(
   userId: string,
-  themes: string[],
+  pool: XTweet[],
   settings: UserSettings = {},
   opts: { skipGates?: boolean } = {},
 ): Promise<boolean> {
@@ -85,7 +92,7 @@ export async function viralBenchmarkForUser(
     if (inQuietHours(settings)) return false;
   }
 
-  const pick = await selectViralCandidate(userId, themes);
+  const pick = await selectFromPool(userId, pool);
   if (!pick) return false;
   const { tweet } = pick;
 

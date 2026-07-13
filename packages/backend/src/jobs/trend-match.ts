@@ -469,9 +469,14 @@ export async function composeAndDeliverTake(
     (embedded ? `\n\nif you want the exact words:\n\n${enforceStyle(embedded)}` : "");
   const sent = await sendTelegram(userId, message).catch(() => false);
   if (!sent) {
-    // Don't leave a phantom surfacing that eats the budget for a DM that never landed.
+    // A TRANSPORT failure is not a verdict on the trend. Drop the phantom
+    // surfacing (so it can't eat the budget), but DELETE the moment rather than
+    // reject it — a rejected moment permanently tombstones this trend for this
+    // user (the niche query excludes any trend with a moment), so a transient
+    // Telegram blip would kill an otherwise-perfect trend forever. Deleting lets
+    // a later run retry it.
     await query(`DELETE FROM surfacings WHERE id = $1`, [surfacing.id]);
-    await rejectMoment(input.momentId, "telegram send failed");
+    await query(`DELETE FROM moments WHERE id = $1`, [input.momentId]);
     return false;
   }
   return true;

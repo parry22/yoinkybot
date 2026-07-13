@@ -142,10 +142,16 @@ const schema = z.object({
   DODO_PRODUCT_PAID: z.string().optional(),
   DODO_PRODUCT_FOUNDING: z.string().optional(),
   // Off during testing → everyone gets full features. Set true to enforce plans.
+  // NOTE: a boot warning fires (index.ts) if this is false in production, so a
+  // deploy that forgets the flag can't silently give everyone the paid tier.
   PAYWALL_ENABLED: z
     .string()
     .default("false")
     .transform((v) => v === "true" || v === "1"),
+  // Free users get this many LIFETIME drafts before the paywall — so the core
+  // promise (a post in your voice) is felt before the ask, instead of the
+  // paywall landing on /draft before they've ever seen output.
+  FREE_DRAFT_ALLOWANCE: z.coerce.number().default(3),
 
   NODE_ENV: z.string().default("development"),
 });

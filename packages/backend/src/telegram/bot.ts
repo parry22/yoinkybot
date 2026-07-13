@@ -357,6 +357,10 @@ export function createBot(): Bot | undefined {
   });
 
   bot.on("message:text", async (ctx) => {
+    // Private DMs only. If the bot is added to a group, every message would
+    // otherwise spin up the full onboarding/chat brain against a shared chat id —
+    // wasted spend and cross-talk. The product is 1:1 by design.
+    if (ctx.chat?.type !== "private") return;
     const user = await requireUser(ctx);
     if (!user) return;
     const text = ctx.message.text.trim();

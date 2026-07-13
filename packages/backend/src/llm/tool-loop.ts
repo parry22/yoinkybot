@@ -100,7 +100,14 @@ export async function runToolLoop<S extends z.ZodTypeAny>(
         result = `tool failed: ${err instanceof Error ? err.message : String(err)}`;
       }
       steps.push({ tool: name, args, result });
-      console.log(`tool-loop [${req.eventType}] ${name}(${JSON.stringify(args).slice(0, 200)}) → ${result.slice(0, 160)}`);
+      // The tool RESULT can contain private memory content (search_memory), so
+      // it never goes to stdout unless LLM_DEBUG is on. The name + args are safe
+      // and enough to trace the loop's shape in normal logs.
+      if (process.env.LLM_DEBUG === "true" || process.env.LLM_DEBUG === "1") {
+        console.log(`tool-loop [${req.eventType}] ${name}(${JSON.stringify(args).slice(0, 200)}) → ${result.slice(0, 160)}`);
+      } else {
+        console.log(`tool-loop [${req.eventType}] ${name}(${JSON.stringify(args).slice(0, 200)}) → ${result.length} chars`);
+      }
       notes.push(`${name}(${JSON.stringify(args)}) → ${result.slice(0, NOTE_MAX_CHARS)}`);
       continue;
     }

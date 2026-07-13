@@ -58,6 +58,17 @@ async function main(): Promise<void> {
   await app.listen({ port: config.PORT, host: "0.0.0.0" });
   console.log(`yoinky backend on :${config.PORT}`);
 
+  // Loud, unmissable boot warning if a PRODUCTION deploy is running with the
+  // paywall off — that silently gives every user the full paid tier for free.
+  // The default is false (for dev/testing), so this is the guardrail against
+  // shipping prod with the flag forgotten.
+  if (config.NODE_ENV === "production" && !config.PAYWALL_ENABLED) {
+    console.warn(
+      "⚠️  PAYWALL_ENABLED is FALSE in production — every user currently gets the full paid tier for free. " +
+        "Set PAYWALL_ENABLED=true to enforce plans.",
+    );
+  }
+
   if (bot) {
     const publicIsHttps = config.PUBLIC_URL.startsWith("https://");
     if (publicIsHttps) {
