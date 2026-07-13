@@ -13,7 +13,11 @@ const MIN_GAP_MS = 36 * 60 * 60 * 1000;
  * flags are excluded — they're user-initiated (web), not proactive.
  * Progress reports are excluded — they have their own 14-day gate.
  */
-export const PROACTIVE_TYPES = ["resurface", "angle_offer", "trend_match", "trend_take", "reply_draft", "performance_alert", "nudge"];
+// trend_take is NOT here (2026-07-14): trends have their OWN cadence (own daily
+// band + a min-gap, in jobs/trend-match.ts). Folding them into the shared weekly
+// cap meant own-content resurfacings exhausted the budget and real trends — the
+// thing users actually ask for — got "weekly cap reached" and never fired.
+export const PROACTIVE_TYPES = ["resurface", "angle_offer", "trend_match", "reply_draft", "performance_alert", "nudge"];
 
 export interface CadenceDecision {
   ok: boolean;

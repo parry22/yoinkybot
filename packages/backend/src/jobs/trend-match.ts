@@ -14,10 +14,9 @@ import { currentVoiceProfile } from "../voice/profile.js";
 import { getProfile } from "../strategist/profile.js";
 import { activeGoals } from "../strategist/goals.js";
 import { entitlementsFor } from "../billing/entitlements.js";
-import { canDeliverProactive } from "../surfacing/cadence.js";
 import { casualize, enforceStyle } from "../prompts/style.js";
 import { sendTelegram } from "../telegram/bot.js";
-import type { UserSettings } from "../lib/time.js";
+import { inQuietHours, type UserSettings } from "../lib/time.js";
 
 /** Volume-verify at most this many niche-nearest candidates per user per run —
  *  no point paying for tweet volume on a topic that's nowhere near their niche.
@@ -57,6 +56,9 @@ export interface TrendCandidate {
   url: string | null;
   platform: string;
   distance: number;
+  /** Id of the user's active position nearest this trend (deterministic argmin).
+   *  Used as grounding context for the compose agent — NOT a hard collision gate. */
+  nearest_position_id: string | null;
 }
 
 /**
@@ -232,15 +234,25 @@ export async function trendMatchForUser(userId: string, settings: UserSettings =
   // observed_at to the source tweet's timestamp, so a moment 5 days stale can't
   // resurface here. 36h keeps it "today / yesterday" while surviving the gap
   // between fetch runs.
+  // source = 'twitterapi' ONLY: those are the distilled-TERM trends from
+  // discover-x ("Agentic AI"), which verify on X and can actually clear the buzz
+  // gate. The Apify fallback writes VERBATIM tweet text as the topic (buzz ~0.15,
+  // never clears), and because those often sit at a low niche distance they used
+  // to grab every buzz-verify slot and starve the real terms — nothing ever
+  // fired. Excluding them costs nothing (they can't fire) and unblocks the pool.
   const candidates = await query<TrendCandidate>(
     `SELECT t.id, t.topic, t.summary, t.url, t.platform,
             (SELECT min(t.embedding <=> p.embedding) FROM positions p
-             WHERE p.user_id = $1 AND p.status = 'active' AND p.embedding IS NOT NULL) AS distance
+             WHERE p.user_id = $1 AND p.status = 'active' AND p.embedding IS NOT NULL) AS distance,
+            (SELECT p.id FROM positions p
+             WHERE p.user_id = $1 AND p.status = 'active' AND p.embedding IS NOT NULL
+             ORDER BY t.embedding <=> p.embedding ASC LIMIT 1) AS nearest_position_id
      FROM trends t
      WHERE t.fetched_at > now() - interval '3 days'
        AND t.observed_at > now() - interval '36 hours'
        AND t.embedding IS NOT NULL
        AND t.platform = 'x'
+       AND t.source = 'twitterapi'
        AND NOT EXISTS (SELECT 1 FROM moments m WHERE m.user_id = $1 AND m.trend_id = t.id)
      ORDER BY distance ASC NULLS LAST
      LIMIT 12`,
@@ -249,12 +261,12 @@ export async function trendMatchForUser(userId: string, settings: UserSettings =
   const near = candidates.filter((c) => c.distance !== null && c.distance < config.NICHE_THRESHOLD);
   if (near.length === 0) return false;
 
-  const themes = await gatherThemes(userId);
-
   // Degraded path (no volume verification available): no buzz to rank by, so
   // take the nearest on-niche candidate that clears the position gate and hand
-  // it to the shared angle-offer flow (the pre-buzz behavior).
+  // it to the shared angle-offer flow (the pre-buzz behavior). Only this path
+  // still uses the per-trend position gate + themes.
   if (!verified) {
+    const themes = await gatherThemes(userId);
     for (const c of near) {
       const gate = await runPositionGate(userId, c, positions, themes);
       if (!gate) continue;
@@ -286,28 +298,31 @@ export async function trendMatchForUser(userId: string, settings: UserSettings =
   if (surviving.length === 0) return false;
   surviving.sort((a, b) => (verifications.get(b.id)?.buzz ?? 0) - (verifications.get(a.id)?.buzz ?? 0));
 
-  // Stage D + compose, per candidate in buzzScore order. Bounded by BOTH the
-  // per-run cap (MIN — one run serves a helping, not the whole day) and the
-  // remaining daily band (MAX − already sent today); the smaller wins. Each
-  // candidate gets a moment (anchors dedup + observability); one that fails the
-  // position gate is tombstoned 'rejected' with the reason.
+  // Compose per candidate in buzzScore order, bounded by BOTH the per-run cap
+  // (MIN) and the remaining daily band (MAX − sent today); the smaller wins.
+  //
+  // NO hard position-collision gate (2026-07-14). The old macro-match gate
+  // demanded a broad trend collide with a SPECIFIC stated position, which term-
+  // based trends ("Agentic AI") never do — so on-niche, high-buzz trends were
+  // rejected and NOTHING ever fired. The niche gate (embedding < threshold) plus
+  // the buzz gate already prove relevance + reality; that's enough to be worth a
+  // take. We attach the NEAREST position as grounding context and let the
+  // compose agent decide — it still declines (fires:false) when there's genuinely
+  // no angle. Same doctrine as the viral case study: code selects, model composes.
   const perRun = Math.min(remaining, Math.max(1, config.MIN_DAILY_TREND_SENDS));
   let sent = 0;
   for (const trend of surviving) {
     if (sent >= perRun) break;
     const verification = verifications.get(trend.id)!;
-    const gate = await runPositionGate(userId, trend, positions, themes);
-    const momentId = await createTrendMoment(userId, trend, gate?.position ?? null, gate?.whyNow ?? null, verification);
+    const position = positions.find((p) => p.id === trend.nearest_position_id) ?? positions[0]!;
+    const whyNow = `"${trend.topic}" is surging on X right now and sits squarely in your lane`;
+    const momentId = await createTrendMoment(userId, trend, position, whyNow, verification);
     if (!momentId) continue;
-    if (!gate) {
-      await rejectMoment(momentId, "no stated position collides with this trend");
-      continue;
-    }
     const delivered = await composeAndDeliverTake(userId, settings, {
       momentId,
       trend,
-      position: gate.position,
-      whyNow: gate.whyNow,
+      position,
+      whyNow,
       verification,
     });
     if (delivered) sent++;
@@ -417,13 +432,25 @@ export async function composeAndDeliverTake(
     return false;
   }
 
-  // Right time, not just right thing: quiet hours + the shared proactive budget.
-  // skipCadence is for manual/ops fires (an explicitly requested send isn't
-  // subject to the automated anti-spam spacing); the scheduled job never sets it.
+  // Trends get their OWN cadence, not the shared proactive weekly cap (2026-07-14).
+  // The shared cap was being exhausted by own-content resurfacings, so a real
+  // trend — the thing users actually ask for — got "weekly cap reached" and never
+  // fired. Trend volume is already governed by the daily band (MAX_DAILY_TREND_
+  // SENDS, checked in trendMatchForUser); here we only enforce quiet hours + a
+  // min-gap between trend sends so they space out. skipCadence bypasses for
+  // manual/ops fires.
   if (!opts.skipCadence) {
-    const cadence = await canDeliverProactive(userId, settings);
-    if (!cadence.ok) {
-      await rejectMoment(input.momentId, `held by cadence: ${cadence.reason}`);
+    if (inQuietHours(settings)) {
+      await rejectMoment(input.momentId, "held: quiet hours");
+      return false;
+    }
+    const recentTrend = await queryOne<{ n: string }>(
+      `SELECT count(*)::text n FROM surfacings
+       WHERE user_id = $1 AND type = 'trend_take' AND delivered_at > now() - interval '5 hours'`,
+      [userId],
+    );
+    if (Number(recentTrend?.n ?? 0) > 0) {
+      await rejectMoment(input.momentId, "held: another trend within 5h");
       return false;
     }
   }
