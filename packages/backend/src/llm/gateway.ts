@@ -198,6 +198,26 @@ export function extractJson(text: string): unknown {
 }
 
 /**
+ * GLM's structured output occasionally wraps a single JSON object in an array
+ * ([{...}]) or splits one object's fields across array elements
+ * ([{"reply":...},{"tool":...}]). Callers that expect ONE object should run
+ * res.parsed through this: an array of objects is shallow-merged back into a
+ * single object, and anything else is returned untouched. This is valid-but-
+ * wrong-shape JSON, so the recovery ladder above never catches it — without this
+ * a purely structural quirk throws a raw Zod "expected object, received array"
+ * and kills the whole turn (see telegram/conversation.ts).
+ */
+export function asObject(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    const objs = value.filter(
+      (v): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v),
+    );
+    if (objs.length) return Object.assign({}, ...objs);
+  }
+  return value;
+}
+
+/**
  * Last-resort salvage for TRUNCATED JSON (finish_reason "length", mid-string
  * cutoffs): close the open string and brackets and parse; if the tail is
  * unparseably broken, chop back to the previous comma/close-bracket and try

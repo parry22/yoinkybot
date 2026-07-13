@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractJson, salvageTruncatedJson } from "./gateway.js";
+import { extractJson, salvageTruncatedJson, asObject } from "./gateway.js";
 
 describe("extractJson", () => {
   it("parses clean JSON", () => {
@@ -69,5 +69,35 @@ describe("salvageTruncatedJson", () => {
       fires: true,
       reply: "go",
     });
+  });
+});
+
+describe("asObject", () => {
+  it("passes a plain object through untouched", () => {
+    expect(asObject({ reply: "hi", tool: null })).toEqual({ reply: "hi", tool: null });
+  });
+
+  it("unwraps a single-object array (GLM's [{...}] quirk)", () => {
+    expect(asObject([{ reply: "hi", tool: null }])).toEqual({ reply: "hi", tool: null });
+  });
+
+  it("merges fields split across array elements", () => {
+    expect(asObject([{ reply: "on it" }, { tool: { name: "draft" } }])).toEqual({
+      reply: "on it",
+      tool: { name: "draft" },
+    });
+  });
+
+  it("leaves a non-object array alone (caller's safeParse then fails cleanly)", () => {
+    expect(asObject(["a", "b"])).toEqual(["a", "b"]);
+  });
+
+  it("ignores nested arrays and nulls when merging", () => {
+    expect(asObject([{ a: 1 }, null, [1, 2], { b: 2 }])).toEqual({ a: 1, b: 2 });
+  });
+
+  it("returns primitives untouched", () => {
+    expect(asObject("plain")).toBe("plain");
+    expect(asObject(null)).toBe(null);
   });
 });

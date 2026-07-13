@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { query, queryOne } from "../db/pool.js";
 import { config } from "../config.js";
-import { llmCall } from "../llm/gateway.js";
+import { llmCall, asObject } from "../llm/gateway.js";
 import { converse } from "../prompts/converse.v3.js";
 import { parseChatTool, type ChatTool } from "./chat-tools.js";
 import { activePositions } from "../memory/positions.js";
@@ -208,7 +208,24 @@ export async function converseWithUser(
       json: true,
       maxTokens: 600,
     });
-    const parsed = replySchema.parse(res.parsed);
+    // GLM sometimes wraps the object in an array ([{...}]); coerce before parse.
+    const safe = replySchema.safeParse(asObject(res.parsed));
+    if (!safe.success) {
+      // Valid JSON, unusable shape. Don't crash the turn with a raw Zod dump —
+      // degrade to a soft nudge. Anything a tool already ran this turn has
+      // already reached the user; we just can't add a final beat.
+      console.error("converse: unusable model output", {
+        issues: safe.error.issues,
+        raw: JSON.stringify(res.parsed).slice(0, 300),
+      });
+      if (!userTurnSaved) await saveTurn(userId, "user", message);
+      return {
+        reply: toolNotes.length ? "" : "hit a glitch there, mind saying that again?",
+        capture,
+        offerAngles,
+      };
+    }
+    const parsed = safe.data;
     if (call === 0) {
       capture = parsed.capture;
       offerAngles = parsed.offer_angles;

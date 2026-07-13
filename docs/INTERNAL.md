@@ -65,6 +65,15 @@ directly.** As of 2026-07-10 this is deliberately simple:
   return the whole answer in `message.reasoning` with empty `content` —
   `callModel` now falls back to `reasoning` text, which used to surface as
   "no JSON found" on calls that had actually answered.
+  - `asObject(res.parsed)` (exported from `gateway.ts`, 2026-07-13): GLM also
+    emits valid-but-wrong-*shape* JSON — the single object wrapped in an array
+    (`[{...}]`) or split across array elements. That parses fine so the ladder
+    above never sees it, but a caller's `schema.parse` then threw a raw Zod
+    "expected object, received array" and killed the turn (hit live when a user
+    asked to change a draft mid-chat). `asObject` shallow-merges array-of-objects
+    back into one object; `conversation.ts` now runs it before a `safeParse` and
+    degrades to a soft nudge instead of the glitch line on any residual mismatch.
+    Other object-parsing call sites (draft/repurpose/angle) can adopt it too.
 - Cost metering: every call writes a row to `usage_events` (`src/usage/meter.ts`).
 - Hard per-call timeout via `fetchWithTimeout` (`LLM_PROVIDER_TIMEOUT_MS`, default 45s).
 - Per-user daily call cap (`LLM_DAILY_CALL_CAP`, default 400) bounds interactive
@@ -105,8 +114,8 @@ full prior implementation if it ever needs to come back.
 
 | Area | Path | What it does |
 |---|---|---|
-| Telegram bot | `src/telegram/` | grammY bot, command handlers, conversation state. Commands (deliberately lean): `start, help, connect, draft, repurpose, connectposting, peers, settings, upgrade`. `connectposting` (grant write access) was added 2026-07-12 with scheduling — see §3e. The scheduling engine is built and tested, but its user-facing surface (`/scheduled`, the `schedule_post` chat tool) is deliberately not wired in yet — see §3e. Everything else (check, search/ask, status, diagnosis refresh, voice, forget, plan, positions, clearing your account) is done in plain language via the agentic chat layer (see §3a). |
-| Strategist flow | `src/strategist/` | The a16z Personal Brand Strategist onboarding. Profile-first arc: profiling (Stages 1-6, 7 fields) → connect → gap analysis → three-month plan → proactive. `session-machine.ts` is the state machine; `state.ts` persists it; `profile.ts` owns the stated profile; `gap.ts` computes the stated-vs-actual gap. See §3b. |
+| Telegram bot | `src/telegram/` | grammY bot, command handlers, conversation state. Commands (deliberately lean): `start, help, connect, draft, repurpose, peers, settings, upgrade`. `/connectposting` was removed 2026-07-13 — `/connect` is the only connect command. The scheduling engine is built and tested, but its user-facing surface (`/scheduled`, the `schedule_post` chat tool) is deliberately not wired in yet — see §3e. Everything else (check, search/ask, status, diagnosis refresh, voice, forget, positions, clearing your account) is done in plain language via the agentic chat layer (see §3a). |
+| Strategist flow | `src/strategist/` | The a16z Personal Brand Strategist onboarding. Profile-first arc: profiling (Stages 1-6, 7 fields) → connect → **brand diagnosis (terminal free step)** → paywall/steady-state. The three-month plan was removed from the funnel 2026-07-13 (see §3b). `session-machine.ts` is the state machine; `state.ts` persists it; `profile.ts` owns the stated profile; `gap.ts` computes the stated-vs-actual gap. See §3b. |
 | Capture pipeline | `src/capture/` | Immutable capture of user input + imports (X via twitterapi.io→Apify, LinkedIn via Apify). Captures are never mutated. |
 | Memory core | `src/memory/` | Extraction → embed → link → search (RRF hybrid). `positions.ts` (stated positions), `confidence.ts`, `forget.ts` (hard delete), `classification.ts` (rhetorical mode/sincerity/motive taxonomy + gating helper), `corrections.ts` (user-correction mechanism + monthly recalibration). See §3d. |
 | Voice | `src/voice/` | Voice profile from a user's own corpus; used to ground drafting. |
@@ -142,7 +151,12 @@ and replay itself. `bot.init()` runs eagerly in `index.ts` because we call
 `telegram/turns.ts#runSerializedTurn`: one turn per user at a time; messages
 arriving mid-turn are merged (newline-joined) into a single follow-up turn, so a
 thought typed as three fragments gets one considered reply. The typing indicator
-is kept alive for the whole turn (`withTyping`, 4.5s heartbeat).
+is kept alive for the whole turn (`withTyping`, 4.5s heartbeat). The slow inline-
+button handlers (angle→draft, repurpose, make-angles, voice build) also run their
+work inside `withTyping` (2026-07-13): they `answerCallbackQuery` immediately to
+clear the button spinner with a toast, then the heartbeat keeps "typing…" alive
+for the full 15-30s LLM op — a one-shot `replyWithChatAction` only lasts ~5s and
+left dead air on every button that does model work.
 
 **Routing inside a turn** (`bot.ts#handleTextTurn`):
 1. Deterministic connect fast-path — plain-language "read my x @handle" scrapes
@@ -288,11 +302,47 @@ deterministic-reducer + paced-LLM engine as before.
 
 **The arc.** `profiling` (Stages 1-6 intake) → `connect_transition` (Stage 7,
 OAuth-first when the platform apps are configured — see §3f) →
-connect + ingest + diagnosis → `gap_analysis` (Stage 10) → `plan_build` (Stage 11,
-the three-month plan) → `active`. Phases live in `state.ts#SessionPhase`;
-`isProfilingPhase`/`isOnboardingPhase` gate routing. Durable milestones on
-`users.strategist_stage`: `new → profiling → profile_set → connected → diagnosed
-→ plan_active` (the CHECK was widened in `0013`; old values kept).
+connect + ingest + diagnosis → **the brand diagnosis reveal is the last free
+step.** Phases live in `state.ts#SessionPhase`; `isProfilingPhase`/
+`isOnboardingPhase` gate routing.
+
+**The diagnosis is the terminal free step (2026-07-13).** There is no longer a
+goals phase or a three-month plan in the onboarding funnel. `openGapSession`
+(profile-first) / `openSession` (cold arc) deliver the diagnosis reveal, then
+call `concludeAfterDiagnosis(userId)`, which clears the onboarding state and
+routes on entitlement: paid/whitelisted users go straight to `active` (steady-
+state chat, all features); everyone else is parked at the new
+`awaiting_upgrade` stage behind the paywall and shown the upgrade offer once.
+The old `gap_analysis`/`goals`/`plan_build` phase code in
+`session-machine.ts#runSessionTurn` + `openPlanSession`/`generateThreeMonthPlan`
+is retained but is no longer reachable by new users (legacy mid-flow users at
+deploy still resolve). Durable milestones on `users.strategist_stage`:
+`new → profiling → profile_set → connected → diagnosed → awaiting_upgrade →
+active` (the CHECK was widened in `0013`; old values incl. `plan_active` kept).
+
+**Post-diagnosis paywall / hard wall (2026-07-13).** Once a non-exempt user is at
+`awaiting_upgrade`, every further action returns the same preset upgrade offer
+with **no LLM or external-API call behind it** — they cannot chat, draft,
+repurpose, connect, send a voice note, or tap a content button until they
+upgrade. The single choke point is `bot.ts#upgradeWall(user)`: returns the offer
+(and blocks) at `awaiting_upgrade` unless `isPaidOrExempt`, in which case it
+lazily promotes the user to `active` and lets them through. Applied at the top of
+`handleTextTurn`, the voice-note handler, the LLM/API commands (`/draft`,
+`/repurpose`, `/connect`, `/peers`), and the content callback buttons (`ang`,
+`mkang`, `dxang`, `dxsyn`, `rpz`, `nudge:voice`). Exemption
+(`billing/entitlements.ts#isPaidOrExempt`): paywall off entirely → everyone
+exempt; else whitelisted (`whitelistIncludes`: `PAYWALL_WHITELIST` csv +
+`ADMIN_TELEGRAM_ID`, always exempt so the operator never upgrades themselves); else
+a real paid/founding plan. The offer copy/keyboard is one shared builder,
+`billing/upgrade-offer.ts#buildUpgradeOffer` (also used by `/upgrade` and the
+conclusion message), so benefits never drift. NOTE: `FREE_DRAFT_ALLOWANCE` is now
+superseded — the wall blocks drafting entirely before that allowance is ever
+consulted.
+
+**Commands (2026-07-13).** `/connectposting` was removed (command + `setMyCommands`
+entry); `/connect` is the only connect command. `/start` now leads with a single
+`CAPABILITIES` blurb (`bot.ts`, the one place to edit as features ship; `/help`
+renders from it too) before the profile opener.
 
 **The stated profile.** `strategist/profile.ts` owns it: the `brand_profiles`
 table (one row/user, migration `0013`), the ordered `PROFILE_FIELDS` the intake

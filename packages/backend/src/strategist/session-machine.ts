@@ -9,7 +9,9 @@ import { computeGap } from "./gap.js";
 import { reactionSignal as reactionSignalPrompt } from "../prompts/reaction-signal.v1.js";
 import { hybridSearch } from "../memory/search.js";
 import { query, queryOne } from "../db/pool.js";
-import { sendTelegramSequence } from "../telegram/bot.js";
+import { sendTelegram, sendTelegramSequence } from "../telegram/bot.js";
+import { isPaidOrExempt } from "../billing/entitlements.js";
+import { buildUpgradeOffer, WALL_PROMPT } from "../billing/upgrade-offer.js";
 import { saveTurn } from "../telegram/conversation.js";
 import { casualize } from "../prompts/style.js";
 import { currentDiagnosis, diagnosisById, type Diagnosis } from "./diagnosis.js";
@@ -748,6 +750,41 @@ export async function runSessionTurn(userId: string, message: string): Promise<S
   return { reply, capture: reduced.capture, offerAngles: reduced.offerAngles, offerSecondPlatform };
 }
 
+// ── Onboarding exit: diagnosis is the last free step ─────────────────────────
+
+const ONBOARDING_DONE_ACTIVE =
+  "that's your read. i'm all yours now, bring me a thought, a link, a voice note, and i'll find " +
+  "the post in it. or just tell me what you want to work on.";
+
+const ONBOARDING_DONE_WALL_INTRO =
+  "that's the read, and that's where the free version stops, the diagnosis is yours to keep.\n\n" +
+  "to actually build on it, drafting in your voice, riding the right moments, me in your corner " +
+  "day to day, unlock the full thing:";
+
+/**
+ * The single exit from onboarding, fired right after the diagnosis reveal lands.
+ * There is no three-month plan any more: the diagnosis is the last free step.
+ * Paid/whitelisted users drop straight into steady-state chat; everyone else is
+ * parked at the 'awaiting_upgrade' stage behind the paywall (enforced in the
+ * telegram message pipeline) and shown the upgrade offer once, here.
+ */
+async function concludeAfterDiagnosis(userId: string): Promise<void> {
+  const row = await queryOne<{ telegram_id: string | null }>(
+    `SELECT telegram_id FROM users WHERE id = $1`,
+    [userId],
+  );
+  await setState(userId, {}); // leave the onboarding arc — there's no plan phase to enter
+  if (await isPaidOrExempt({ id: userId, telegram_id: row?.telegram_id ?? null })) {
+    await setStage(userId, "active");
+    await sendTelegramSequence(userId, [ONBOARDING_DONE_ACTIVE]);
+    return;
+  }
+  await setStage(userId, "awaiting_upgrade");
+  const offer = await buildUpgradeOffer();
+  // sendTelegram (single) is not casualized, so the copy above is already lowercase.
+  await sendTelegram(userId, `${ONBOARDING_DONE_WALL_INTRO}\n\n${offer.text}`, undefined, offer.keyboard);
+}
+
 // ── The diagnosis reveal ───────────────────────────────────────────────────────
 
 const REVEAL_FALLBACK =
@@ -796,18 +833,13 @@ export async function openSession(userId: string, diagnosisId: string, dimension
   }
   if (messages.length === 0) messages = [REVEAL_FALLBACK];
 
-  // Every beat is delivered up front now, so the dialogue starts fully covered:
-  // the user's next turn is a reaction, and the machine can advance to goals.
-  await setState(userId, {
-    phase: "diagnosis_dialogue",
-    diagnosisId,
-    covered: [...DIAGNOSIS_BEATS],
-    turnsInPhase: 0,
-  });
+  // The diagnosis is the last free step (no goals/plan follow it any more).
   // Persist only the last message as the assistant turn so short chat history
-  // stays coherent without ballooning from the full multi-part reveal.
+  // stays coherent without ballooning from the full multi-part reveal, send the
+  // reveal, then conclude onboarding (paywall or straight to steady-state).
   await saveTurn(userId, "assistant", messages[messages.length - 1]!);
   await sendTelegramSequence(userId, messages);
+  await concludeAfterDiagnosis(userId);
 }
 
 const GAP_FALLBACK =
@@ -866,15 +898,11 @@ export async function openGapSession(
   }
   if (messages.length === 0) messages = [GAP_FALLBACK];
 
-  await setState(userId, {
-    phase: "gap_analysis",
-    diagnosisId,
-    covered: [...DIAGNOSIS_BEATS],
-    gapText: gap?.text, // reused by the three-month plan so we don't recompute
-    turnsInPhase: 0,
-  });
+  // The gap analysis is the brand diagnosis and the last free step — no
+  // three-month plan follows. Send it, then conclude onboarding.
   await saveTurn(userId, "assistant", messages[messages.length - 1]!);
   await sendTelegramSequence(userId, messages);
+  await concludeAfterDiagnosis(userId);
 }
 
 /**

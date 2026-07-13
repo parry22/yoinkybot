@@ -30,6 +30,43 @@ const PAID: Omit<Entitlements, "plan"> = {
   macroMatching: true,
 };
 
+/**
+ * Telegram ids that bypass the paywall: PAYWALL_WHITELIST (comma-separated) plus
+ * ADMIN_TELEGRAM_ID, which is always exempt so the operator never has to upgrade
+ * their own account to use the product.
+ */
+export function whitelistIncludes(
+  telegramId: string | null | undefined,
+  whitelistCsv: string | undefined,
+  adminId: string | undefined,
+): boolean {
+  if (!telegramId) return false;
+  const ids = new Set<string>();
+  for (const raw of (whitelistCsv ?? "").split(",")) {
+    const t = raw.trim();
+    if (t) ids.add(t);
+  }
+  if (adminId) ids.add(adminId.trim());
+  return ids.has(String(telegramId).trim());
+}
+
+export function isWhitelisted(telegramId: string | null | undefined): boolean {
+  return whitelistIncludes(telegramId, config.PAYWALL_WHITELIST, config.ADMIN_TELEGRAM_ID);
+}
+
+/**
+ * The single "is this user allowed past the post-diagnosis paywall" check.
+ * True when the paywall is off entirely (testing), the user is whitelisted, or
+ * they actually hold a paid/founding plan. Used by the upgrade wall so LLM/API
+ * work stays blocked for free users after their diagnosis lands.
+ */
+export async function isPaidOrExempt(user: { id: string; telegram_id: string | null }): Promise<boolean> {
+  if (!config.PAYWALL_ENABLED) return true;
+  if (isWhitelisted(user.telegram_id)) return true;
+  const ent = await entitlementsFor(user.id);
+  return ent.plan !== "free";
+}
+
 export async function entitlementsFor(userId: string): Promise<Entitlements> {
   // Paywall is off during testing (PAYWALL_ENABLED=false) — everyone gets the
   // full feature set. Flip the flag on to enforce plans; the logic below is ready.

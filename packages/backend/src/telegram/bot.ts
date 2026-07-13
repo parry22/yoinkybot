@@ -26,8 +26,9 @@ import {
   type ProfileField,
 } from "../strategist/profile.js";
 import { buildVoiceProfile } from "../voice/profile.js";
-import { entitlementsFor } from "../billing/entitlements.js";
-import { createCheckout, foundingSeatsLeft } from "../billing/dodo.js";
+import { entitlementsFor, isPaidOrExempt } from "../billing/entitlements.js";
+import { buildUpgradeOffer, WALL_PROMPT } from "../billing/upgrade-offer.js";
+import { createCheckout } from "../billing/dodo.js";
 import { resetUserData } from "../strategist/state.js";
 import { recordReplyOutcome } from "../engagement/service.js";
 import { parseRepurposeCommand, repurposeContent, recordRepurposeUse } from "../drafting/repurpose.js";
@@ -44,7 +45,6 @@ import {
   chatToolExecutor,
 } from "./actions.js";
 import { cancelScheduled } from "../scheduling/service.js";
-import { publishConfigured } from "../social/publish.js";
 import { track } from "../analytics/posthog.js";
 import { maybeSendConnectAuthOffer, handleAuthSkip, nudgeOtherPlatformTyped } from "./connect-auth.js";
 import { runSerializedTurn } from "./turns.js";
@@ -148,6 +148,18 @@ export function createBot(): Bot | undefined {
       await ctx.reply("you're all set up. send me a thought whenever, or /plan to see where we're headed.");
       return;
     }
+    // Parked at the paywall after their diagnosis: re-show the offer (or wave a
+    // paid/whitelisted user straight through if they've since upgraded).
+    if (stage === "awaiting_upgrade") {
+      if (await isPaidOrExempt(user)) {
+        await setStage(user.id, "active");
+        await ctx.reply("you're all set, everything's unlocked. send me a thought whenever.");
+      } else {
+        const offer = await buildUpgradeOffer();
+        await ctx.reply(`${WALL_PROMPT}\n\n${offer.text}`, { reply_markup: offer.keyboard });
+      }
+      return;
+    }
     const st = await getState(user.id);
     // Mid-intake with real progress → resume where they left off, don't wipe it.
     if (isProfilingPhase(st) && (st.profile?.captured?.length ?? 0) > 0) {
@@ -167,9 +179,12 @@ export function createBot(): Bot | undefined {
       }
       return;
     }
-    // Fresh start: profile-first, so the diagnosis lands as a stated-vs-actual gap.
+    // Fresh start: lead with what Yoinky can do (so they know what they're
+    // setting up), then profile-first intake so the diagnosis lands as a
+    // stated-vs-actual gap.
     await setStage(user.id, "profiling");
     await setState(user.id, { phase: "profiling", profile: {} });
+    await ctx.reply(CAPABILITIES);
     await ctx.reply(PROFILE_OPENER);
   });
 
@@ -177,6 +192,8 @@ export function createBot(): Bot | undefined {
   bot.command("connect", async (ctx) => {
     const user = await requireUser(ctx);
     if (!user) return;
+    const wall = await upgradeWall(user);
+    if (wall) return void (await ctx.reply(wall.text, { reply_markup: wall.keyboard }));
     const arg = ctx.match?.trim();
     if (!arg) {
       const st = await getState(user.id);
@@ -206,18 +223,19 @@ export function createBot(): Bot | undefined {
 
   bot.command("help", async (ctx) => {
     await ctx.reply(
-      "everything happens right here in the chat. mostly, just talk to me.\n\n" +
+      `${CAPABILITIES}\n\n` +
         "getting set up:\n" +
         "send /start and i'll walk you through a few questions, then read your real history.\n\n" +
         "the work (all of this works in plain words too):\n" +
         "/draft your idea  — i turn a thought into a post in your voice\n" +
         "/repurpose  — reshape a finished post for another platform, or pull scattered takes into one piece\n" +
+        "/connect  — link your X/LinkedIn so i can read your work\n" +
         "/peers  — watch a few peers, compare territory (never raw numbers)\n\n" +
         "housekeeping:\n" +
         "/settings  — quiet hours, timezone, how often i reach out\n" +
         "/upgrade  — unlock the paid work\n\n" +
         "or just say what you want: \"draft me a post about X\", \"does this contradict what i've said\", " +
-        "\"what have i said about pricing\", \"where am i at\", \"what's my plan\", \"what do i believe\", " +
+        "\"what have i said about pricing\", \"where am i at\", \"what do i believe\", " +
         "\"wipe everything and start over\". bring me a thought and i'll find the story in it.",
     );
   });
@@ -225,6 +243,8 @@ export function createBot(): Bot | undefined {
   bot.command("draft", async (ctx) => {
     const user = await requireUser(ctx);
     if (!user) return;
+    const wall = await upgradeWall(user);
+    if (wall) return void (await ctx.reply(wall.text, { reply_markup: wall.keyboard }));
     const arg = ctx.match?.trim();
     if (!arg) return void (await ctx.reply("tell me what to write: /draft <topic or angle>  (or /draft linkedin <topic>)"));
     // Optional leading platform token: "/draft linkedin <topic>" / "/draft x <topic>".
@@ -240,37 +260,6 @@ export function createBot(): Bot | undefined {
   // separate write-scope OAuth. Links point at our own /oauth/:p/start, which
   // mints fresh PKCE state at click time. The ?u=<id> is an internal UUID (not
   // guessable/enumerable); a signed token would be strictly better — see oauth.ts.
-  bot.command("connectposting", async (ctx) => {
-    const user = await requireUser(ctx);
-    if (!user) return;
-    const available = (["x", "linkedin"] as const).filter(publishConfigured);
-    if (available.length === 0) {
-      return void (await ctx.reply(
-        "posting isn't set up on my end yet — i can schedule posts, but publishing needs the platform apps configured first.",
-      ));
-    }
-    // Buttons, not raw URLs — a bare /oauth/... link with a UUID reads like
-    // phishing. Same look as the onboarding connect offer. Telegram refuses
-    // URL buttons on non-HTTPS/localhost instances, so fall back to plain
-    // links rather than going silent.
-    const kb = new InlineKeyboard();
-    for (const p of available) {
-      kb.url(`🔗 connect ${p === "x" ? "X" : "LinkedIn"}`, `${config.PUBLIC_URL}/oauth/${p}/start?u=${user.id}`).row();
-    }
-    const names = available.map((p) => (p === "x" ? "x" : "linkedin")).join(" or ");
-    const text =
-      `let's unlock posting — tap below, approve on ${names}, done. ` +
-      "takes ten seconds, and from then on i can actually publish for you when you say go.";
-    try {
-      await ctx.reply(text, { reply_markup: kb });
-    } catch {
-      const lines = available.map(
-        (p) => `${p === "x" ? "X" : "LinkedIn"}: ${config.PUBLIC_URL}/oauth/${p}/start?u=${user.id}`,
-      );
-      await ctx.reply(`${text}\n\n${lines.join("\n")}`);
-    }
-  });
-
   // Quiet hours, timezone, proactive frequency — how I behave around your life.
   bot.command("settings", async (ctx) => {
     const user = await requireUser(ctx);
@@ -284,6 +273,8 @@ export function createBot(): Bot | undefined {
   bot.command("peers", async (ctx) => {
     const user = await requireUser(ctx);
     if (!user) return;
+    const wall = await upgradeWall(user);
+    if (wall) return void (await ctx.reply(wall.text, { reply_markup: wall.keyboard }));
     const cmd = parsePeersCommand(ctx.match ?? "");
     if (!cmd) {
       await ctx.reply("usage:\n/peers  — see the watchlist\n/peers add @handle why them\n/peers remove @handle");
@@ -298,6 +289,8 @@ export function createBot(): Bot | undefined {
   bot.command("repurpose", async (ctx) => {
     const user = await requireUser(ctx);
     if (!user) return;
+    const wall = await upgradeWall(user);
+    if (wall) return void (await ctx.reply(wall.text, { reply_markup: wall.keyboard }));
     const parsed = parseRepurposeCommand(ctx.match ?? "");
     if (!parsed) {
       await ctx.reply(
@@ -326,26 +319,19 @@ export function createBot(): Bot | undefined {
   bot.command("upgrade", async (ctx) => {
     const user = await requireUser(ctx);
     if (!user) return;
-    const ent = await entitlementsFor(user.id);
-    if (ent.plan !== "free") return void (await ctx.reply(`you're on ${ent.plan}, you've got everything. 🙌`));
-    const kb = new InlineKeyboard();
-    // Only offer Founding if a founding product is actually configured — an
-    // unconfigured button just errors at checkout ("product id not configured").
-    if (config.DODO_PRODUCT_FOUNDING) {
-      const seats = await foundingSeatsLeft().catch(() => 0);
-      kb.text(seats > 0 ? `Founding (${seats} left, price locked)` : "Founding (full)", "bill:founding").row();
-    }
-    kb.text(`Go paid — ${config.PAID_PRICE_LABEL}`, "bill:paid");
-    await ctx.reply(
-      `unlock everything: consistency checks, drafting in your voice, voice profile, trend + viral spotlights.\n\n${config.PAID_PRICE_LABEL}, cancel anytime.`,
-      { reply_markup: kb },
-    );
+    if (await isPaidOrExempt(user)) return void (await ctx.reply("you're all set, everything's unlocked. 🙌"));
+    const offer = await buildUpgradeOffer();
+    await ctx.reply(offer.text, { reply_markup: offer.keyboard });
   });
 
   // Voice notes / audio → capture with the Telegram file URL; transcription is async.
   bot.on(["message:voice", "message:audio", "message:video_note"], async (ctx) => {
     const user = await requireUser(ctx);
     if (!user) return;
+    // A walled user's voice note would otherwise be transcribed + run through the
+    // chat brain (STT + LLM). Block it with the same preset offer, no API calls.
+    const wall = await upgradeWall(user);
+    if (wall) return void (await ctx.reply(wall.text, { reply_markup: wall.keyboard }));
     const fileId =
       ctx.message?.voice?.file_id ?? ctx.message?.audio?.file_id ?? ctx.message?.video_note?.file_id;
     if (!fileId) return;
@@ -518,26 +504,31 @@ export function createBot(): Bot | undefined {
     const ang = /^ang:([0-9a-f-]{36}):(\d)$/.exec(data);
     if (ang) {
       const [, surfacingId, slot] = ang as unknown as [string, string, string];
+      const wall = await upgradeWall(user);
+      if (wall) { await ctx.answerCallbackQuery(); await ctx.reply(wall.text, { reply_markup: wall.keyboard }); return; }
       await ctx.answerCallbackQuery({ text: "writing it…" });
-      await ctx.replyWithChatAction("typing");
-      // Resolve the angle by (surfacing, slot) — the button only carries the slot.
-      const angle = await queryOne<{ id: string }>(
-        `SELECT id FROM angles WHERE surfacing_id = $1 AND user_id = $2 AND slot = $3`,
-        [surfacingId, user.id, Number(slot)],
-      );
-      if (!angle) {
-        await ctx.reply("that angle expired, send the idea again and i'll re-offer.");
-        return;
-      }
-      const result = await draftFromAngle(user.id, surfacingId, angle.id);
-      if (!result.ok) {
-        await ctx.reply(result.note || "couldn't write that one.");
-        return;
-      }
-      // The draft is content for their feed — only the label and media nudge are casual.
-      const media = result.mediaSuggestion ? `\n\n📎 pair it with: ${result.mediaSuggestion}` : "";
-      await ctx.reply(`✍️ here you go:\n\n${result.draft}${media}`, {
-        reply_markup: new InlineKeyboard().text("🔥 love it", `angfb:${surfacingId}:fire`).text("💤 meh", `angfb:${surfacingId}:later`),
+      // Drafting runs an LLM call (15-30s); keep the typing indicator alive the
+      // whole time, not the ~5s a one-shot chat action lasts.
+      await withTyping(ctxChannel(ctx), async () => {
+        // Resolve the angle by (surfacing, slot) — the button only carries the slot.
+        const angle = await queryOne<{ id: string }>(
+          `SELECT id FROM angles WHERE surfacing_id = $1 AND user_id = $2 AND slot = $3`,
+          [surfacingId, user.id, Number(slot)],
+        );
+        if (!angle) {
+          await ctx.reply("that angle expired, send the idea again and i'll re-offer.");
+          return;
+        }
+        const result = await draftFromAngle(user.id, surfacingId, angle.id);
+        if (!result.ok) {
+          await ctx.reply(result.note || "couldn't write that one.");
+          return;
+        }
+        // The draft is content for their feed — only the label and media nudge are casual.
+        const media = result.mediaSuggestion ? `\n\n📎 pair it with: ${result.mediaSuggestion}` : "";
+        await ctx.reply(`✍️ here you go:\n\n${result.draft}${media}`, {
+          reply_markup: new InlineKeyboard().text("🔥 love it", `angfb:${surfacingId}:fire`).text("💤 meh", `angfb:${surfacingId}:later`),
+        });
       });
       return;
     }
@@ -546,9 +537,12 @@ export function createBot(): Bot | undefined {
     const mk = /^mkang:([0-9a-f-]{36})$/.exec(data);
     if (mk) {
       const [, momentId] = mk as unknown as [string, string];
+      const wall = await upgradeWall(user);
+      if (wall) { await ctx.answerCallbackQuery(); await ctx.reply(wall.text, { reply_markup: wall.keyboard }); return; }
       await ctx.answerCallbackQuery({ text: "on it, finding your angles…" });
-      await ctx.replyWithChatAction("typing");
-      const ok = await maybeOfferAngles({ momentId, userId: user.id }, undefined, { bypassCadence: true });
+      const ok = await withTyping(ctxChannel(ctx), () =>
+        maybeOfferAngles({ momentId, userId: user.id }, undefined, { bypassCadence: true }),
+      );
       if (!ok) await ctx.reply("couldn't spin that one up, try rephrasing the idea.");
       try {
         await ctx.editMessageReplyMarkup({ reply_markup: new InlineKeyboard().text("✨ angles below", "noop") });
@@ -613,6 +607,8 @@ export function createBot(): Bot | undefined {
     const dx = /^dxang:([0-9a-f-]{36}):(\d)$/.exec(data);
     if (dx) {
       const [, diagId, idxStr] = dx as unknown as [string, string, string];
+      const wall = await upgradeWall(user);
+      if (wall) { await ctx.answerCallbackQuery(); await ctx.reply(wall.text, { reply_markup: wall.keyboard }); return; }
       await ctx.answerCallbackQuery({ text: "on it, finding your angles…" });
       const dimensions = await diagnosisById(user.id, diagId);
       const pattern = dimensions?.unsaid_patterns[Number(idxStr)];
@@ -620,9 +616,10 @@ export function createBot(): Bot | undefined {
         await ctx.reply("that read's moved on, ask me for a fresh one.");
         return;
       }
-      await ctx.replyWithChatAction("typing");
-      const momentId = await createIdeaMoment(user.id, pattern.idea, `${pattern.idea}\n\n${pattern.evidence}`);
-      const ok = momentId && (await maybeOfferAngles({ momentId, userId: user.id }, undefined, { bypassCadence: true }));
+      const ok = await withTyping(ctxChannel(ctx), async () => {
+        const momentId = await createIdeaMoment(user.id, pattern.idea, `${pattern.idea}\n\n${pattern.evidence}`);
+        return momentId && (await maybeOfferAngles({ momentId, userId: user.id }, undefined, { bypassCadence: true }));
+      });
       if (!ok) await ctx.reply("couldn't spin that one up, try again in a moment.");
       return;
     }
@@ -631,6 +628,8 @@ export function createBot(): Bot | undefined {
     const rpz = /^rpz:(d|c):([0-9a-f-]{36}):(x|li)$/.exec(data);
     if (rpz) {
       const [, kind, id, targetRaw] = rpz as unknown as [string, "d" | "c", string, "x" | "li"];
+      const wall = await upgradeWall(user);
+      if (wall) { await ctx.answerCallbackQuery(); await ctx.reply(wall.text, { reply_markup: wall.keyboard }); return; }
       const target = targetRaw === "li" ? "linkedin" : "x";
       const source =
         kind === "d"
@@ -641,15 +640,16 @@ export function createBot(): Bot | undefined {
         return;
       }
       await ctx.answerCallbackQuery({ text: "reshaping it…" });
-      await ctx.replyWithChatAction("typing");
-      const result = await repurposeContent(user.id, {
-        mode: "cross_platform",
-        target,
-        sourceType: kind === "d" ? "draft" : "published_post",
-        sourceText: source.text,
-        sourceIds: [id],
+      await withTyping(ctxChannel(ctx), async () => {
+        const result = await repurposeContent(user.id, {
+          mode: "cross_platform",
+          target,
+          sourceType: kind === "d" ? "draft" : "published_post",
+          sourceText: source.text,
+          sourceIds: [id],
+        });
+        await deliverRepurposed(ctxChannel(ctx), result);
       });
-      await deliverRepurposed(ctxChannel(ctx), result);
       return;
     }
 
@@ -658,6 +658,8 @@ export function createBot(): Bot | undefined {
     const dxsyn = /^dxsyn:([0-9a-f-]{36}):(\d)$/.exec(data);
     if (dxsyn) {
       const [, diagId, idxStr] = dxsyn as unknown as [string, string, string];
+      const wall = await upgradeWall(user);
+      if (wall) { await ctx.answerCallbackQuery(); await ctx.reply(wall.text, { reply_markup: wall.keyboard }); return; }
       const dimensions = await diagnosisById(user.id, diagId);
       const pattern = dimensions?.unsaid_patterns[Number(idxStr)];
       if (!pattern) {
@@ -665,14 +667,15 @@ export function createBot(): Bot | undefined {
         return;
       }
       await ctx.answerCallbackQuery({ text: "pulling your fragments together…" });
-      await ctx.replyWithChatAction("typing");
-      const result = await repurposeContent(user.id, {
-        mode: "synthesis",
-        target: "linkedin",
-        sourceType: "memory_cluster",
-        theme: `${pattern.idea}. ${pattern.evidence}`,
+      await withTyping(ctxChannel(ctx), async () => {
+        const result = await repurposeContent(user.id, {
+          mode: "synthesis",
+          target: "linkedin",
+          sourceType: "memory_cluster",
+          theme: `${pattern.idea}. ${pattern.evidence}`,
+        });
+        await deliverRepurposed(ctxChannel(ctx), result);
       });
-      await deliverRepurposed(ctxChannel(ctx), result);
       return;
     }
 
@@ -725,14 +728,15 @@ export function createBot(): Bot | undefined {
     // Structural nudge: one-tap voice-profile build (offered when the user
     // crosses the 50-memory threshold without a profile).
     if (data === "nudge:voice") {
+      const wall = await upgradeWall(user);
+      if (wall) { await ctx.answerCallbackQuery(); await ctx.reply(wall.text, { reply_markup: wall.keyboard }); return; }
       await ctx.answerCallbackQuery({ text: "building it now…" });
       const ent = await entitlementsFor(user.id);
       if (!ent.voiceProfile) {
         await ctx.reply("voice profile's part of the paid tier. /upgrade and i'll build it the moment you're in.");
         return;
       }
-      await ctx.replyWithChatAction("typing");
-      const r = await buildVoiceProfile(user.id);
+      const r = await withTyping(ctxChannel(ctx), () => buildVoiceProfile(user.id));
       await ctx.reply(
         r.ok
           ? "done. i've got your voice now, and every draft from here sounds like you wrote it on a good day."
@@ -807,7 +811,6 @@ export function createBot(): Bot | undefined {
       { command: "connect", description: "Connect your X/LinkedIn so I can read your work" },
       { command: "draft", description: "Write a post from your thinking, in your voice" },
       { command: "repurpose", description: "Reshape finished content, or synthesize scattered takes" },
-      { command: "connectposting", description: "Let me publish to your X/LinkedIn for scheduled posts" },
       { command: "peers", description: "Watch a few peers — territory comparison, not a scoreboard" },
       { command: "settings", description: "Quiet hours, timezone, proactive frequency" },
       { command: "upgrade", description: "Unlock paid features" },
@@ -824,8 +827,49 @@ export function createBot(): Bot | undefined {
  * steady-state agentic conversation — with the typing indicator held for the
  * whole turn.
  */
+/**
+ * What Yoinky does, in one place. Shown on /start and by /help so the capability
+ * list is edited once as features ship, never drifting between the two.
+ */
+const CAPABILITIES =
+  "i'm yoinky, your personal-branding strategist that lives in this chat.\n\n" +
+  "what i do:\n" +
+  "• read your real X/LinkedIn history and diagnose your brand: what's working, what's not, the throughline you're underusing\n" +
+  "• draft posts in your actual voice, from your own thinking (text or voice notes)\n" +
+  "• catch trends and viral moments in your lane and hand you the angle\n" +
+  "• flag when a draft contradicts something you've already said\n" +
+  "• reshape finished posts across platforms, or pull scattered takes into one piece\n" +
+  "• resurface the right idea at the right time, on your schedule\n\n" +
+  "everything happens right here. mostly, just talk to me.";
+
+/**
+ * The post-diagnosis paywall gate. Returns the upgrade offer to show (and blocks
+ * the caller) when the user is parked at 'awaiting_upgrade' and isn't paid or
+ * whitelisted; returns null (proceed) otherwise. Lazily promotes a user who has
+ * since paid or been whitelisted to 'active' so they flow into steady-state. The
+ * one choke point that keeps LLM/API work blocked for free users after their
+ * diagnosis lands — the same preset message every time until they upgrade.
+ */
+async function upgradeWall(user: User): Promise<{ text: string; keyboard: InlineKeyboard } | null> {
+  if ((await getStage(user.id)) !== "awaiting_upgrade") return null;
+  if (await isPaidOrExempt(user)) {
+    await setStage(user.id, "active");
+    return null;
+  }
+  const offer = await buildUpgradeOffer();
+  return { text: `${WALL_PROMPT}\n\n${offer.text}`, keyboard: offer.keyboard };
+}
+
 async function handleTextTurn(user: User, text: string, ctx: Context): Promise<void> {
   const channel = ctxChannel(ctx);
+  // Post-diagnosis paywall: a free user gets the same preset offer on every
+  // message, with no LLM/API call behind it. Checked before withTyping so there's
+  // no typing flash on an instant canned reply.
+  const wall = await upgradeWall(user);
+  if (wall) {
+    await channel.say(wall.text, wall.keyboard);
+    return;
+  }
   await withTyping(channel, async () => {
     const [state, stage] = await Promise.all([getState(user.id), getStage(user.id)]);
 

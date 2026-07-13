@@ -151,6 +151,10 @@ const schema = z.object({
     .string()
     .default("false")
     .transform((v) => v === "true" || v === "1"),
+  // Comma-separated Telegram user ids that bypass the paywall entirely (founder +
+  // testers). ADMIN_TELEGRAM_ID is auto-exempted on top of this, so the operator
+  // never has to upgrade themselves. Empty = only ADMIN_TELEGRAM_ID is exempt.
+  PAYWALL_WHITELIST: z.string().optional(),
   // Free users get this many LIFETIME drafts before the paywall — so the core
   // promise (a post in your voice) is felt before the ask, instead of the
   // paywall landing on /draft before they've ever seen output.
