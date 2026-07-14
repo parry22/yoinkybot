@@ -126,6 +126,35 @@ export async function offerAuthConnect(userId: string, platform: Platform, opts:
 }
 
 /**
+ * Explicit reconnect: for the `/connect` command with no arg, used by an
+ * already-active user, not the automated onboarding hand-off. Unlike
+ * `maybeSendConnectAuthOffer`, this does NOT consult `isConnected` — an
+ * explicit tap of /connect is unambiguous intent to (re)connect, and the
+ * "already connected, don't re-offer" logic exists to avoid pestering someone
+ * mid-onboarding, not to hide the button from someone asking for it by name.
+ * This also covers the case a scrape-read (`status=ingested`) exists but the
+ * POSTING token has gone stale (e.g. the platform app's credentials were
+ * rotated) — `isConnected` would wrongly call that "already connected" and
+ * never show the button again. Offers every platform with app credentials
+ * configured, unconditionally; returns false only when none are configured.
+ */
+export async function offerReconnect(userId: string): Promise<boolean> {
+  const platforms = PLATFORM_ORDER.filter(authConnectAvailable);
+  if (platforms.length === 0) return false;
+  const kb = new InlineKeyboard();
+  for (const p of platforms) kb.url(`🔗 connect ${label(p)}`, authUrl(userId, p)).row();
+  const connectWord = platforms.map(label).join(" or ");
+  await sendOffer(
+    userId,
+    `connect ${connectWord} — tap below, approve, done. verifies it's you and unlocks me posting for you. ` +
+      `already connected? tapping again just refreshes it, no harm.`,
+    kb,
+    platforms.map((p) => `${label(p)}: ${authUrl(userId, p)}`),
+  );
+  return true;
+}
+
+/**
  * The connect_transition hook: right after the intake completes, lead with the
  * X auth offer if it's configured and nothing has been offered yet. Returns
  * whether an offer actually went out, so callers can fall back to the plain

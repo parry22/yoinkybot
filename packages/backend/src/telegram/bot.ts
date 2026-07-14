@@ -47,7 +47,7 @@ import {
 } from "./actions.js";
 import { cancelScheduled } from "../scheduling/service.js";
 import { track } from "../analytics/posthog.js";
-import { maybeSendConnectAuthOffer, handleAuthSkip, nudgeOtherPlatformTyped } from "./connect-auth.js";
+import { maybeSendConnectAuthOffer, handleAuthSkip, nudgeOtherPlatformTyped, offerReconnect } from "./connect-auth.js";
 import { runSerializedTurn } from "./turns.js";
 
 let bot: Bot | undefined;
@@ -200,9 +200,13 @@ export function createBot(): Bot | undefined {
       const st = await getState(user.id);
       await setState(user.id, { ...st, awaitingConnect: true });
       // OAuth-first when the platform apps are configured: real account auth
-      // (verified identity + posting unlocked) beats a typed handle. The offer
-      // message carries its own copy; the typed forms stay the fallback.
-      const offered = await maybeSendConnectAuthOffer(user.id, { force: true }).catch(() => false);
+      // (verified identity + posting unlocked) beats a typed handle. Uses
+      // offerReconnect, NOT maybeSendConnectAuthOffer — an explicit /connect tap
+      // must always show the button, even for a user whose read is already
+      // done (status='ingested') but whose posting token has gone stale (e.g.
+      // after rotating the platform app's credentials) — isConnected() would
+      // otherwise wrongly call that "already connected" and never re-offer.
+      const offered = await offerReconnect(user.id).catch(() => false);
       if (!offered) {
         await ctx.reply(
           "connect your public presence so i can read your work. " +
