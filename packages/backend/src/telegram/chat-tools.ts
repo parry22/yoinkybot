@@ -36,6 +36,14 @@ export const chatToolSchema = z.discriminatedUnion("name", [
     handle: z.string().min(1),
   }),
   z.object({ name: z.literal("forget"), query: z.string().min(1) }),
+  z.object({
+    name: z.literal("schedule_post"),
+    platform: z.enum(["x", "linkedin"]),
+    content: z.string().min(1),
+    // Resolved to an absolute ISO instant by the model, using the CURRENT TIME
+    // injected into its context — never a relative phrase like "tomorrow 9am".
+    when: z.string().min(1),
+  }),
   // User is correcting how a past post was read ("that was a joke", "that
   // wasn't sincere") — the model resolves WHICH field and the corrected value
   // from what they said; the executor resolves WHICH post via search.

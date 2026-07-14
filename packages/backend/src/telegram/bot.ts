@@ -43,6 +43,7 @@ import {
   deliverRepurposed,
   deliverTurnOutput,
   chatToolExecutor,
+  runShowScheduled,
 } from "./actions.js";
 import { cancelScheduled } from "../scheduling/service.js";
 import { track } from "../analytics/posthog.js";
@@ -230,13 +231,14 @@ export function createBot(): Bot | undefined {
         "/draft your idea  — i turn a thought into a post in your voice\n" +
         "/repurpose  — reshape a finished post for another platform, or pull scattered takes into one piece\n" +
         "/connect  — link your X/LinkedIn so i can read your work\n" +
+        "/scheduled  — see and cancel what's queued to publish\n" +
         "/peers  — watch a few peers, compare territory (never raw numbers)\n\n" +
         "housekeeping:\n" +
         "/settings  — quiet hours, timezone, how often i reach out\n" +
         "/upgrade  — unlock the paid work\n\n" +
-        "or just say what you want: \"draft me a post about X\", \"does this contradict what i've said\", " +
-        "\"what have i said about pricing\", \"where am i at\", \"what do i believe\", " +
-        "\"wipe everything and start over\". bring me a thought and i'll find the story in it.",
+        "or just say what you want: \"draft me a post about X\", \"post this friday at 6pm\", " +
+        "\"does this contradict what i've said\", \"what have i said about pricing\", \"where am i at\", " +
+        "\"what do i believe\", \"wipe everything and start over\". bring me a thought and i'll find the story in it.",
     );
   });
 
@@ -314,6 +316,15 @@ export function createBot(): Bot | undefined {
       });
       await deliverRepurposed(ctxChannel(ctx), result);
     });
+  });
+
+  // See what's queued to publish, and cancel any of it. Scheduling itself is
+  // done in plain language ("post this to linkedin tomorrow 9am"), per the
+  // lean-commands convention — this command is the "show me the queue" surface.
+  bot.command("scheduled", async (ctx) => {
+    const user = await requireUser(ctx);
+    if (!user) return;
+    await withTyping(ctxChannel(ctx), () => runShowScheduled(user, ctxChannel(ctx)));
   });
 
   bot.command("upgrade", async (ctx) => {
@@ -814,6 +825,7 @@ export function createBot(): Bot | undefined {
       { command: "connect", description: "Connect your X/LinkedIn so I can read your work" },
       { command: "draft", description: "Write a post from your thinking, in your voice" },
       { command: "repurpose", description: "Reshape finished content, or synthesize scattered takes" },
+      { command: "scheduled", description: "See and cancel posts you've scheduled" },
       { command: "peers", description: "Watch a few peers — territory comparison, not a scoreboard" },
       { command: "settings", description: "Quiet hours, timezone, proactive frequency" },
       { command: "upgrade", description: "Unlock paid features" },

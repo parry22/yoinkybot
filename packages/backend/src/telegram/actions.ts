@@ -19,7 +19,9 @@ import { saveTurn } from "./conversation.js";
 import { recordCorrection, encodeCorrection } from "../memory/corrections.js";
 import { track } from "../analytics/posthog.js";
 import { schedulePost, listScheduled } from "../scheduling/service.js";
+import { bestTimeAdvisory } from "../scheduling/best-time.js";
 import { publishConfigured, resolveWriteAuth } from "../social/publish.js";
+import type { UserSettings } from "../lib/time.js";
 import type { ChatTool } from "./chat-tools.js";
 
 /** ISO instant → compact, unambiguous UTC label for confirmations and lists. */
@@ -65,9 +67,13 @@ export async function runSchedulePost(
   when: string,
   channel: Channel,
 ): Promise<string> {
-  const res = await schedulePost(user.id, { platform, content, scheduledFor: new Date(when) });
+  const scheduledFor = new Date(when);
+  const res = await schedulePost(user.id, { platform, content, scheduledFor });
   if (!res.ok) {
-    const msg = `couldn't schedule that — ${res.reason}. give me a clear time like "tomorrow 9am" or "friday 6pm".`;
+    // "give me a clear time" only makes sense for a time-parse failure — a link
+    // rejection or empty-content reason already says exactly what's wrong.
+    const hint = Number.isNaN(scheduledFor.getTime()) ? ` give me a clear time like "tomorrow 9am" or "friday 6pm".` : "";
+    const msg = `couldn't schedule that — ${res.reason}.${hint}`;
     await channel.say(msg);
     return msg;
   }
@@ -76,7 +82,13 @@ export async function runSchedulePost(
   const warn = canPost
     ? ""
     : `\n\nheads up: your ${label} isn't connected for posting yet, so connect it before then or this won't actually go out.`;
-  const msg = `📅 scheduled for ${label} at ${whenLabel(new Date(when).toISOString())}.${warn}\n\n/scheduled to see or cancel.`;
+  const timing = await bestTimeAdvisory(user.id, user.settings as UserSettings, scheduledFor.getTime()).catch(
+    () => "",
+  );
+  const msg =
+    `📅 scheduled for ${label} at ${whenLabel(scheduledFor.toISOString())}.${warn}` +
+    (timing ? `\n\n${timing}` : "") +
+    `\n\n/scheduled to see or cancel.`;
   await channel.say(msg);
   return msg;
 }
@@ -333,6 +345,9 @@ export async function executeChatTool(user: User, tool: ChatTool, channel: Chann
 
     case "connect_account":
       return connectAccount(user, tool.platform, tool.handle, channel);
+
+    case "schedule_post":
+      return runSchedulePost(user, tool.platform, tool.content, tool.when, channel);
 
     case "forget": {
       const matches = await hybridSearch(user.id, tool.query, 3);

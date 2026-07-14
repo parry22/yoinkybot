@@ -3,6 +3,21 @@ import { query, queryOne } from "../db/pool.js";
 import type { Platform } from "../lib/types.js";
 
 /**
+ * A link ANYWHERE in a scheduled post's body is refused outright — not stripped,
+ * not warned-and-allowed. Both platforms' algorithms suppress reach on posts
+ * that route traffic off-platform (the same reach doctrine already baked into
+ * REACH_PRINCIPLES for generated drafts — see prompts/style.ts — but a scheduled
+ * post can also be raw pasted text that never went through drafting, so it needs
+ * its own hard gate here). Matches http(s):// URLs and bare www./domain-style
+ * links; a stray "e.g." or a version number like "5.2" won't false-positive.
+ */
+const LINK_RE = /(https?:\/\/|www\.)\S+|\b[a-z0-9-]+\.(?:com|io|co|net|org|xyz|app|dev|ai|me|so)\b\S*/i;
+
+export function containsLink(text: string): boolean {
+  return LINK_RE.test(text);
+}
+
+/**
  * The scheduling layer. Queuing a post inserts a row and hands pg-boss a job
  * with startAfter = the target time (pg-boss accepts an absolute Date), so the
  * scheduler is the queue we already run — no cron polling. The job re-reads
@@ -32,6 +47,12 @@ export async function schedulePost(
 ): Promise<ScheduleResult> {
   const content = input.content.trim();
   if (!content) return { ok: false, reason: "nothing to post" };
+  if (containsLink(content)) {
+    return {
+      ok: false,
+      reason: "links aren't allowed in scheduled posts — they tank reach on both platforms. drop the link and post it as the first reply once this goes out",
+    };
+  }
   const when = input.scheduledFor;
   if (Number.isNaN(when.getTime())) return { ok: false, reason: "couldn't read that time" };
   // A small grace window absorbs clock skew / "post it now" phrasing.
