@@ -128,10 +128,12 @@ export async function ingestMentionsForUser(userId: string, handle: string): Pro
   return stored;
 }
 
-/** Has this user silenced alerts about mentions/comments on their own posts? */
+/** Are alerts about comments/mentions on the user's own posts silenced? OFF by
+ *  DEFAULT for every user (they're noise most people don't want) — only delivered
+ *  when a user explicitly opts in with `/settings mentions on`. */
 async function mentionAlertsSilenced(userId: string): Promise<boolean> {
   const row = await queryOne<{ settings: UserSettings }>(`SELECT settings FROM users WHERE id = $1`, [userId]);
-  return row?.settings?.mention_alerts === false;
+  return row?.settings?.mention_alerts !== true;
 }
 
 async function maybeReputationAlert(

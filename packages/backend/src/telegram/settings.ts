@@ -64,7 +64,7 @@ export async function applySettings(userId: string, cmd: SettingsCommand): Promi
         `Quiet hours: ${s.quiet_hours ? `${s.quiet_hours.start}-${s.quiet_hours.end} (${s.quiet_hours.tz ?? s.timezone ?? "UTC"})` : "off — I could message you at any hour"}`,
         `Timezone: ${s.timezone ?? "not set (assuming UTC)"}`,
         `Proactive frequency: ${s.resurface_per_week ?? "plan default"} per week`,
-        `Mention/comment alerts: ${s.mention_alerts === false ? "off" : "on"}`,
+        `Mention/comment alerts: ${s.mention_alerts === true ? "on" : "off (default)"}`,
       ];
       return `${lines.join("\n")}\n\n${SETTINGS_USAGE}`;
     }
