@@ -17,26 +17,29 @@ export async function handleTrendFetch(): Promise<void> {
   if (themes.length === 0) return;
   console.log(`trend fetch: searching for [${themes.join(", ")}]`);
 
-  // Primary: same-day X trend CLUSTERS via twitterapi (searchable term topics +
-  // a driving source tweet + verified live volume — see discover-x.ts). The
-  // macro-moment feature is X-only, and this is the source that actually fires.
-  // Fall back to the provider registry (Apify verbatim-tweet trends) only when
-  // twitterapi isn't configured — that path can't clear the buzz gate, but it
-  // keeps the table populated for the degraded angle-offer flow.
-  let trends = twitterapiConfigured()
-    ? await discoverXTrends(themes, 12).catch((err) => {
-        console.error("trend fetch: X cluster discovery failed", err);
-        return [];
-      })
-    : [];
-  let provider = "twitterapi";
-  if (trends.length === 0) {
+  // twitterapi is the ONLY source the macro-moment feature actually uses:
+  // discover-x produces searchable-TERM topics + a driving source tweet + verified
+  // volume. The Apify provider produces VERBATIM tweet-text topics that can never
+  // clear the buzz gate (buzz ~0.15) AND are now filtered out of the candidate
+  // query (source='twitterapi' only) — so fetching them was pure wasted spend and
+  // table pollution. When twitterapi is configured we use ONLY discover-x; an
+  // empty run just means the next tick retries (the 3-day table window covers the
+  // gap). The Apify registry is the fallback ONLY on instances with no twitterapi.
+  let trends;
+  let provider;
+  if (twitterapiConfigured()) {
+    trends = await discoverXTrends(themes, 12).catch((err) => {
+      console.error("trend fetch: X cluster discovery failed", err);
+      return [];
+    });
+    provider = "twitterapi";
+  } else {
     const fallback = await fetchTrendsWithFallback({ themes, limit: 24 });
     trends = fallback.trends;
     provider = fallback.provider ?? "none";
   }
   if (trends.length === 0) {
-    console.warn("trend fetch: no provider produced trends");
+    console.warn(`trend fetch: no trends produced (provider=${provider})`);
     return;
   }
 
