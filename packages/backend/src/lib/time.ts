@@ -8,6 +8,9 @@ export interface UserSettings {
   quiet_hours?: QuietHours;
   resurface_per_week?: number;
   timezone?: string;
+  /** Deliver alerts about mentions/comments on the user's own posts (reputation
+   *  alerts + reply-draft offers). Default on; set false to silence them. */
+  mention_alerts?: boolean;
 }
 
 /** Minutes since local midnight in the given timezone. */

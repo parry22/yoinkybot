@@ -10,6 +10,7 @@ import { activePositions } from "../memory/positions.js";
 import { draftReplyWithAgent } from "./reply-agent.js";
 import { createCapture } from "../capture/service.js";
 import { sendTelegram } from "../telegram/bot.js";
+import type { UserSettings } from "../lib/time.js";
 import {
   reachScore,
   relationshipStrength,
@@ -127,10 +128,17 @@ export async function ingestMentionsForUser(userId: string, handle: string): Pro
   return stored;
 }
 
+/** Has this user silenced alerts about mentions/comments on their own posts? */
+async function mentionAlertsSilenced(userId: string): Promise<boolean> {
+  const row = await queryOne<{ settings: UserSettings }>(`SELECT settings FROM users WHERE id = $1`, [userId]);
+  return row?.settings?.mention_alerts === false;
+}
+
 async function maybeReputationAlert(
   userId: string,
   m: { author: string; reach: number; content: string; url: string | null; mentionId: string },
 ): Promise<void> {
+  if (await mentionAlertsSilenced(userId)) return; // user opted out of comment/mention alerts
   // Reputation alerts are the one message allowed to override the shared weekly
   // delivery budget — but that override must itself be bounded, or a bad news
   // cycle turns into up to seven surprise DMs a week. At most one a day AND at
@@ -171,6 +179,7 @@ async function maybeReputationAlert(
  * clear the bar simply wait for a future slot — a queue, never a batch.
  */
 export async function maybeOfferReplyDraft(userId: string): Promise<boolean> {
+  if (await mentionAlertsSilenced(userId)) return false; // user opted out of reply-draft offers on their posts
   const outcomes = await query<{ score: number; status: "sent" | "skipped" }>(
     `SELECT reply_worthy_score AS score, reply_status AS status FROM mentions
      WHERE user_id = $1 AND reply_status IN ('sent','skipped')

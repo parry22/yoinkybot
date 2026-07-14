@@ -12,7 +12,8 @@ export type SettingsCommand =
   | { kind: "quiet"; start: string; end: string }
   | { kind: "quiet_off" }
   | { kind: "timezone"; tz: string }
-  | { kind: "frequency"; perWeek: number };
+  | { kind: "frequency"; perWeek: number }
+  | { kind: "mentions"; on: boolean };
 
 export function validTimezone(tz: string): boolean {
   try {
@@ -39,6 +40,9 @@ export function parseSettingsCommand(arg: string): SettingsCommand | null {
     const n = Number(freq[1]);
     if (n >= 0 && n <= 7) return { kind: "frequency", perWeek: n };
   }
+
+  const mentions = t.match(/^mentions?\s+(on|off)$/i);
+  if (mentions?.[1]) return { kind: "mentions", on: mentions[1].toLowerCase() === "on" };
   return null;
 }
 
@@ -47,7 +51,8 @@ export const SETTINGS_USAGE =
   "/settings quiet 22:00-08:00  — no proactive messages in that window\n" +
   "/settings quiet off\n" +
   "/settings timezone Asia/Kolkata  — so quiet hours mean YOUR hours\n" +
-  "/settings frequency 2  — max proactive messages per week (0-7)";
+  "/settings frequency 2  — max proactive messages per week (0-7)\n" +
+  "/settings mentions off  — stop alerts about comments/mentions on your posts";
 
 export async function applySettings(userId: string, cmd: SettingsCommand): Promise<string> {
   const row = await queryOne<{ settings: UserSettings }>(`SELECT settings FROM users WHERE id = $1`, [userId]);
@@ -59,6 +64,7 @@ export async function applySettings(userId: string, cmd: SettingsCommand): Promi
         `Quiet hours: ${s.quiet_hours ? `${s.quiet_hours.start}-${s.quiet_hours.end} (${s.quiet_hours.tz ?? s.timezone ?? "UTC"})` : "off — I could message you at any hour"}`,
         `Timezone: ${s.timezone ?? "not set (assuming UTC)"}`,
         `Proactive frequency: ${s.resurface_per_week ?? "plan default"} per week`,
+        `Mention/comment alerts: ${s.mention_alerts === false ? "off" : "on"}`,
       ];
       return `${lines.join("\n")}\n\n${SETTINGS_USAGE}`;
     }
@@ -75,6 +81,9 @@ export async function applySettings(userId: string, cmd: SettingsCommand): Promi
     case "frequency":
       s.resurface_per_week = cmd.perWeek;
       break;
+    case "mentions":
+      s.mention_alerts = cmd.on;
+      break;
   }
   await query(`UPDATE users SET settings = $2 WHERE id = $1`, [userId, JSON.stringify(s)]);
 
@@ -89,6 +98,10 @@ export async function applySettings(userId: string, cmd: SettingsCommand): Promi
       return cmd.perWeek === 0
         ? "Proactive messages off. I'll only speak when you talk to me (reports still come)."
         : `Capped at ${cmd.perWeek} proactive message${cmd.perWeek === 1 ? "" : "s"} a week.`;
+    case "mentions":
+      return cmd.on
+        ? "Mention alerts on — I'll flag notable comments on your posts and offer replies."
+        : "Mention alerts off — I won't surface comments/mentions on your posts anymore.";
     default:
       return "";
   }
