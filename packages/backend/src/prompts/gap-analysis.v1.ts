@@ -48,7 +48,7 @@ EVERY MESSAGE:
   brackets (a number, a date, a short quote).
 - Optionally one closing implication line. Skip if the bullets already land it.
 
-HARD LIMITS: max 500 characters per message, max 4 bullets, no sentence over ~20 words, never two
+HARD LIMITS: max 350 characters per message, max 3 bullets, no sentence over ~20 words, never two
 prose sentences in a row without a break.
 
 DELIVER AS SEPARATE MESSAGES, IN THIS ORDER (adjust to which findings are actually sharpest):
@@ -65,7 +65,7 @@ DELIVER AS SEPARATE MESSAGES, IN THIS ORDER (adjust to which findings are actual
 6. A short close: state the starting point plainly (their real audience size + cadence as the
    baseline), then PAUSE and invite reaction. Ask what landed or didn't. Do NOT jump to the plan.
 
-Aim for 6-8 messages total. Only deliver what the evidence supports; skip or shorten thin sections.
+Aim for 3-4 short messages total. Only deliver what the evidence supports; skip or shorten thin sections.
 State findings as fact backed by the evidence, never "it seems like."
 ${CHAT_STYLE_RULES}
 

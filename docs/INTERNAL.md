@@ -31,8 +31,12 @@ strategist flow ◄────────────────────�
 drafting (angles, draft, repurpose) ──► Telegram reply
 ```
 
-HTTP surface is deliberately tiny: `/health` plus webhooks (`/webhooks/telegram`,
-`/webhooks/dodo`). No session auth, no web UI. Identity is the Telegram user id.
+The backend's own HTTP surface is deliberately tiny: `/health` plus webhooks
+(`/webhooks/telegram`, `/webhooks/dodo`) and the write-OAuth routes. The
+user-facing web UI is a **separate Next.js app** (`packages/web`) that imports
+backend domain functions in-process — see §8. Identity is the internal
+`users.id` (uuid); a user row can be keyed by `telegram_id` (bot) and/or `email`
+(web magic-link), and the two converge on one row.
 
 Entry point: `src/index.ts` (Fastify + bot bootstrap, migrations on boot).
 
@@ -378,6 +382,25 @@ On a match, the current field is captured as `unresolved` and the intake
 advances on the first try, regardless of whether the model's own JSON emission
 got it right. Distinct from `push_field` (which is for vague-but-attempted
 answers): an explicit skip is honored immediately, no push.
+
+**Skip buttons + skip-all (2026-07-17).** Every intake question now ships with a
+two-button inline keyboard — `onboardingSkipKeyboard()` in `telegram/actions.ts`
+— shown under the `/start` opener, each resumed question, and every profiling
+turn (`deliverTurnOutput`'s `onboardingSkip` option, gated on the phase still
+being `profiling`). **skip this step** (`obskip:step`) re-drives the turn with
+the text "skip this question", reusing `detectSkipIntent` so exactly one path
+handles both taps and typed skips. **skip onboarding** (`obskip:all`) calls
+`session-machine.ts#skipAllIntake`, which marks every uncaptured field
+`unresolved`, runs `finalizeProfile`, sets stage `profile_set`, and jumps to
+`connect_transition` — same end state as answering every question, so the
+diagnosis still runs (off a thinner stated profile). Both handlers live in the
+`callback_query:data` router in `bot.ts` and run inside `runSerializedTurn`.
+
+**Reveals trimmed for length (2026-07-17).** The diagnosis and gap reveals were
+long: `diagnosis-reveal.v1` / `gap-analysis.v1` now target 3–4 messages (was
+5–8), cap 350 chars (was 500) and 3 bullets (was 4) per message, and the
+`openSession` / `openGapSession` LLM calls dropped from 2200/2500 to 1500
+`maxTokens`.
 
 **Array fields can double-encode (fixed 2026-07-11).** The model sometimes
 emits an array-valued field (`inspiration_creators`, `tone_selections`,
@@ -801,7 +824,7 @@ autocapture. Every event is captured explicitly in backend code.
   connect → activate → monetize.
 - **Flush:** `posthog-node` batches (flushAt 20 / flushInterval 10s) and
   `index.ts` calls `shutdownAnalytics()` on SIGTERM/SIGINT so events buffered
-  right before a Render redeploy aren't lost. `/health` reports
+  right before a redeploy aren't lost. `/health` reports
   `analytics: true|false`.
 - **Erasure on wipe (2026-07-13):** `deletePerson(userId)` calls PostHog's async
   `persons/bulk_delete/` (person + all their events), so `clear_everything` /
@@ -866,9 +889,108 @@ doctrine: **code selects the tweet, the model only explains and suggests.**
 
 ---
 
+## 3i. The web app (`packages/web`) (2026-07-17)
+
+Yoinky is now **web-first**; Telegram is the add-on that keeps every feature and
+carries the proactive reach-outs. The web app is a Next.js 16 / React 19 app.
+
+**Integration model — in-process, not a second API.** `packages/web` imports
+domain functions from **`@yoink/backend/web`** (the barrel at
+`packages/backend/src/web.ts`) and calls them directly inside Next route
+handlers and server components, sharing the same Postgres pool. There is no
+separate HTTP API tier to keep in sync. The `@yoink/backend` `exports` map points
+that subpath at **compiled `dist/web.js`** for runtime (types resolve from
+`src/web.ts`) — Turbopack won't rewrite the backend's `.js`→`.ts` import
+specifiers, so the web depends on a built backend. `packages/web` runs
+`pnpm --filter @yoink/backend build` on `predev`/`prebuild`; editing backend
+code during web dev needs a rebuild.
+
+**What the barrel exposes** (keep this the only web surface): auth
+(`userForSession`, `createSession`, `findOrCreateUserByEmail`,
+`createLoginToken`, `consumeLoginToken`), the web-flavored brain
+(`runWebChatTurn`, `initWebOnboarding`, `runWebOnboardingTurn`,
+`skipOnboardingStep`, `skipOnboardingAll` — all in `src/web/chat.ts`, which wraps
+the same `converseWithUser`/`runSessionTurn`/`deliverTurnOutput` the bot uses but
+swaps in a *collecting* `Channel` so a turn's messages come back as an array),
+plus read models (`getStage`, `getState`, `getProfile`, `currentDiagnosis`,
+`getPlan`, `activePositions`, `loadChatHistory`).
+
+**Auth — Google OAuth + email magic-link.** Two paths, both landing on
+`findOrCreateUserByEmail` + `createSession` (reusing the `sessions` table from
+`0001`) and an httpOnly `yoink_session` cookie:
+- **Google** (primary CTA): `GET /api/auth/google/start` → redirects to Google's
+  consent screen with a CSRF `state` (stored in a `g_state` cookie);
+  `GET /api/auth/google/callback` verifies state, exchanges the code at
+  `oauth2.googleapis.com/token`, reads the email from `userinfo`, and signs in.
+  Needs `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`; unset → the button routes to
+  `/login?error=google_unconfigured`. Redirect URI: `${origin}/api/auth/google/callback`.
+- **Magic-link**: `POST /api/auth/request` mints a single-use, 30-minute token
+  (`login_tokens`, migration `0020`) and emails a link (Resend if
+  `RESEND_API_KEY`, else the link is logged **and** returned inline in dev).
+  `GET /api/auth/verify` consumes it and signs in.
+
+`src/proxy.ts` (Next 16's renamed middleware) gates `/app/*` on cookie presence;
+server components validate the token via `getSessionUser` (`src/lib/session.ts`).
+
+**Env.** The web runs backend code in-process, so it needs the backend's env
+(`DATABASE_URL`, `OPENROUTER_API_KEY`, embeddings keys, …). `packages/web/.env.local`
+is a **symlink to `packages/backend/.env`** — one source of truth; web-only keys
+(`GOOGLE_*`, `RESEND_API_KEY`, `MAIL_FROM`) live there too. Dev port is **3002**
+(backend stays 3001; :3000 was already taken on the dev machine).
+
+**Screens** (`src/app/app/*`, real `/app` segment — not a route group): `/app`
+chat workspace, `/app/compose` (draft composer — X/LinkedIn toggle → `/api/draft`
+→ `runWebDraft`→`runDraft`, respects the paywall/allowance and the voice-profile
+gate; lists persisted drafts), `/app/onboarding` (intake with the same skip-step /
+skip-onboarding buttons as the bot, driven by `/api/onboarding`), `/app/diagnosis`,
+`/app/plan`, `/app/beliefs`, `/app/settings` (account + **connect X/LinkedIn** via
+`/api/connect`→`runWebConnect`→`connectAccount`, which enqueues the ingest+diagnose
+job — needs the backend worker running — plus the Telegram add-on note). `/login`
+is public; `/` redirects. Web brain/connect wrappers use a **collecting Channel**
+(`src/web/channel.ts`) so bot logic returns messages as arrays.
+
+**Design.** Ported from the WeaveOS reference (Geist, warm off-white canvas,
+hairline `0.5px` strokes, `20px` radii, sidebar + workspace). The reference's
+only accent was glossy black; per the brief it's recolored to a single **pink**
+token — `--accent` / `--accent-2` in `globals.css` (swap those two to rebrand).
+A dark theme was added (the original was light-only); the sidebar sun/moon
+toggle stamps `data-theme` and persists to `localStorage`.
+
+**Deferred (reachable via chat today, no dedicated screen yet):** OAuth-button
+connect (the web uses the typed-handle/URL path; X/LinkedIn write-OAuth buttons
+still live only in the bot), repurpose, mentions inbox, scheduling, trends, viral
+case study, peers. Proactive delivery still goes out over Telegram, not in-app.
+
+**Hosting — Vercel (`app.meetyoinky.com`).** The web app runs on Vercel (project
+`yoinky-web`), separate from the Telegram backend on Railway (`bot.meetyoinky.com`).
+Both share the **same Neon Postgres** (`DATABASE_URL`), so a user session/profile
+is identical across web and bot. The web's env vars are mirrored onto the Vercel
+project (production/preview/development) — set them there, not just in
+`packages/backend/.env` (which only feeds local dev and the Railway bot).
+
+The tricky part is the **pnpm monorepo build**. Vercel's Next.js framework
+detection reads the *Root Directory*'s `package.json` for `next`; the repo root
+has no `next`, and there's no CLI flag to set Root Directory. The working config
+is a **repo-root `vercel.json` using a legacy `builds` entry** that points the
+`@vercel/next` builder straight at the sub-package:
+
+```json
+{ "builds": [ { "src": "packages/web/package.json", "use": "@vercel/next" } ] }
+```
+
+This uploads the whole repo, installs the full pnpm workspace (so
+`workspace:@yoink/backend` resolves), and builds `packages/web` — `prebuild`
+compiles the backend to `dist/` first, exactly like local. `vercel.json` is
+committed; `.vercel/` is gitignored. Deploy with `vercel deploy --prod` from the
+repo root (link lives at the root, not `packages/web`). Google OAuth derives its
+redirect from the request origin, so the authorized redirect URI in Google Cloud
+must include `https://app.meetyoinky.com/api/auth/google/callback`.
+
+---
+
 ## 4. Data model
 
-Schema is a linear migration chain in `src/db/migrations/` (`0001`…`0019`),
+Schema is a linear migration chain in `src/db/migrations/` (`0001`…`0020`),
 applied on boot and via `pnpm db:migrate` (`src/db/migrate.ts`). pgvector is
 required for embedding columns.
 
@@ -940,10 +1062,10 @@ deletion — set them in the deploy dashboard only.
   not just the HTTP server. See DEPLOY.md troubleshooting.
 - **Cost & abuse:** `usage_events` is the source of truth for per-user spend; the
   daily call cap (`LLM_DAILY_CALL_CAP`) bounds interactive spam.
-- **Keep-alive:** `.github/workflows/keepalive.yml` pings `/health` every 10
-  minutes. This existed specifically to fight Render free-tier spin-down; on
-  Railway Hobby (always-on) it's no longer load-bearing — harmless to leave,
-  safe to delete if you want one less moving part.
+- **Keep-alive:** removed 2026-07-17. `.github/workflows/keepalive.yml` pinged
+  `/health` every 10 minutes solely to fight Render free-tier spin-down;
+  Railway Hobby is always-on, and Render itself is now decommissioned (see
+  DEPLOY.md), so the workflow was deleted rather than left dead.
 
 ---
 

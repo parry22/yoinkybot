@@ -9,6 +9,9 @@ const schema = z.object({
 
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   TELEGRAM_WEBHOOK_SECRET: z.string().optional(),
+  // Public t.me link to the bot — the web app's top-bar "Telegram" button points
+  // here so users can jump straight into the bot. Override per deployment.
+  TELEGRAM_BOT_URL: z.string().default("https://t.me/yoinkyybot"),
   // Operational alerts DM this Telegram user id via the bot (throttled). Optional.
   ADMIN_TELEGRAM_ID: z.string().optional(),
 

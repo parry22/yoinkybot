@@ -15,7 +15,7 @@ import { maybeOfferAngles, createIdeaMoment } from "../jobs/offer-angles.js";
 import { otherUnconnectedPlatform } from "../strategist/connect.js";
 import { diagnosisById } from "../strategist/diagnosis.js";
 import { getStage, getState, setState, setStage, isOnboardingPhase, isProfilingPhase } from "../strategist/state.js";
-import { runSessionTurn } from "../strategist/session-machine.js";
+import { runSessionTurn, skipAllIntake } from "../strategist/session-machine.js";
 import { FALLBACK_QUESTION } from "../prompts/strategist-session.v2.js";
 import {
   PROFILE_FIELDS,
@@ -42,6 +42,7 @@ import {
   runDraft,
   deliverRepurposed,
   deliverTurnOutput,
+  onboardingSkipKeyboard,
   chatToolExecutor,
   runShowScheduled,
 } from "./actions.js";
@@ -166,7 +167,9 @@ export function createBot(): Bot | undefined {
     if (isProfilingPhase(st) && (st.profile?.captured?.length ?? 0) > 0) {
       const next = nextIntakeField(st.profile?.captured);
       if (next) {
-        await ctx.reply(`picking up where we left off. ${FALLBACK_QUESTION[next as ProfileField]}`);
+        await ctx.reply(`picking up where we left off. ${FALLBACK_QUESTION[next as ProfileField]}`, {
+          reply_markup: onboardingSkipKeyboard(),
+        });
         return;
       }
       // At the connect hand-off: re-send the auth buttons (OAuth-first), since
@@ -186,7 +189,7 @@ export function createBot(): Bot | undefined {
     await setStage(user.id, "profiling");
     await setState(user.id, { phase: "profiling", profile: {} });
     await ctx.reply(CAPABILITIES);
-    await ctx.reply(PROFILE_OPENER);
+    await ctx.reply(PROFILE_OPENER, { reply_markup: onboardingSkipKeyboard() });
   });
 
   // Connect a public account so the strategist can ingest your history + diagnose.
@@ -449,6 +452,44 @@ export function createBot(): Bot | undefined {
       if (p === "x" || p === "linkedin") {
         await handleAuthSkip(user.id, p).catch((err) => console.error("connect auth skip failed", err));
       }
+      return;
+    }
+
+    // Onboarding escape hatches, shown under every intake question.
+    // "skip this step": advance past the current question. Reuses the same
+    // deterministic skip path as typing "skip", so the next question (with its
+    // own buttons) comes right back.
+    if (data === "obskip:step") {
+      await ctx.answerCallbackQuery({ text: "skipping this one" });
+      try {
+        await ctx.editMessageReplyMarkup();
+      } catch {
+        // question message too old to edit — the skip still runs below
+      }
+      await runSerializedTurn(user.id, "skip this question", ctx, async (_merged, c) => {
+        await handleTextTurn(user, "skip this question", c);
+      });
+      return;
+    }
+    // "skip onboarding": mark every remaining question unresolved, finalize the
+    // thinner profile, and jump straight to the connect hand-off (the diagnosis
+    // still runs off whatever was stated).
+    if (data === "obskip:all") {
+      await ctx.answerCallbackQuery({ text: "skipping the questions" });
+      try {
+        await ctx.editMessageReplyMarkup();
+      } catch {
+        // too old to edit — the skip still runs below
+      }
+      await runSerializedTurn(user.id, "skip onboarding", ctx, async (_merged, c) => {
+        await skipAllIntake(user.id);
+        await c.reply(
+          "no problem — we'll skip the rest of the questions. let's connect your account so i can read your actual work and diagnose from there.",
+        );
+        await maybeSendConnectAuthOffer(user.id, { force: true }).catch((err) =>
+          console.error("connect auth offer after skip failed", err),
+        );
+      });
       return;
     }
 
@@ -924,7 +965,11 @@ async function handleTextTurn(user: User, text: string, ctx: Context): Promise<v
     if (isOnboardingPhase(state) || (await getStage(user.id)) === "profiling") {
       try {
         const r = await runSessionTurn(user.id, text);
-        await deliverTurnOutput(user, text, r, channel);
+        // Still working through the intake questions? Keep the skip buttons under
+        // each one. Once we're past the questionnaire (connect hand-off, reveals),
+        // there's no per-step to skip, so drop them.
+        const stillProfiling = (await getState(user.id)).phase === "profiling";
+        await deliverTurnOutput(user, text, r, channel, { onboardingSkip: stillProfiling });
         await maybeSendToneMenu(user.id, ctx);
         // The intake just completed → the connect hand-off leads with the OAuth
         // buttons (X first, LinkedIn once X resolves). One-shot: no-ops unless

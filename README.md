@@ -14,13 +14,73 @@ said?"), and grounded drafting.
 
 > Payments: **DodoPayments** (merchant of record) — one integration for India + international.
 
-Yoinky is **Telegram-native — there is no web dashboard.** Everything happens in the chat:
-connect your accounts, get diagnosed, build a plan, and ship content.
+Yoinky is now **web-first, with Telegram as a first-class add-on.** The web app
+(`packages/web`, Next.js) is the main workspace — chat, onboarding, and the
+diagnosis/plan/beliefs surfaces. **Telegram keeps every feature** and remains the
+channel for proactive reach-outs (trend moments, consistency flags, daily reads),
+which is where it's most useful. Both share one Postgres and one `users` row.
 
 ## Latest updates
 
 <!-- Keep newest-first. Update this whenever a change ships that a reader of the repo should know about. -->
 
+- **2026-07-17 — Web app is Vercel-deployable (app.meetyoinky.com).** The web
+  ships as its own Vercel deploy over the same Neon DB as the Railway backend
+  (Vercel = UI + API + job-enqueue; Railway keeps the bot + pg-boss workers +
+  cron). Setup is pinned in `packages/web/vercel.json` (Root Directory
+  `packages/web`, `buildCommand: pnpm build`, which compiles the backend `dist`
+  first) — full runbook + env/DNS/Google-redirect steps in `DEPLOY.md`. Also
+  fixed a latent bug: the web process never called `startBoss()`, so any enqueue
+  (connect, schedule) threw "pg-boss not started" — added `ensureBoss()`
+  (send-only, lazy) and call it from the web wrappers.
+- **2026-07-17 — Render decommissioned.** It was kept suspended (not deleted)
+  as an instant DNS-flip rollback after the 2026-07-12 move to Railway; Railway
+  has now proven stable, so the standby was torn down and the Render-only
+  keep-alive workflow (`.github/workflows/keepalive.yml`) was deleted along
+  with it. See `DEPLOY.md`.
+- **2026-07-17 — Web app: Google sign-in + Compose + Connect.** Google OAuth is
+  live alongside email magic-link (both resolve to one user row). Two more
+  screens extend the loop into the web: **Compose** (`/app/compose`) writes a
+  post in your voice via the same `runDraft` path (paywall/allowance + voice-
+  profile gates respected), and **Connect** (in Settings) starts an X/LinkedIn
+  read via the typed-handle path — the ingest+diagnose job is processed by the
+  backend worker, so run `pnpm dev` alongside `pnpm dev:web`. All wrappers reuse
+  the bot logic through a collecting Channel (`src/web/channel.ts`).
+- **2026-07-17 — SaaS web app (foundation + core slice).** Yoinky is going
+  web-first: a new `packages/web` Next.js app (16, React 19) is the main
+  workspace, with Telegram retained as the add-on for proactive reach-outs. It
+  reuses the backend **in-process** — `packages/web` imports domain functions
+  from `@yoink/backend/web` (a new barrel export) and shares the same Postgres,
+  so there's no second API tier to keep in sync. Auth is **Google OAuth**
+  (primary) **and email magic-link** — both resolve to `findOrCreateUserByEmail`
+  + a session cookie (reuses the existing `sessions` table; new `login_tokens` in
+  migration `0020`; dev logs/returns the magic link when no mailer is set). The
+  web reads the backend's env via a `packages/web/.env.local` → `../backend/.env`
+  symlink, and runs on **:3002** (backend stays :3001).
+  The design is ported from the WeaveOS reference (Geist, warm off-white canvas,
+  hairline strokes, 20px radii) with the one requested change — the glossy black
+  primary action recolored to a single **pink** accent token (`--accent`) — plus
+  a dark theme the original lacked. Shipped screens: chat workspace, onboarding
+  intake (with the same skip-step / skip-onboarding buttons as the bot),
+  diagnosis, plan/roadmap, beliefs, and settings. Deferred to follow-ups: the
+  in-web OAuth connect UI, and dedicated screens for drafting, repurpose,
+  mentions, scheduling, trends, viral case study, and peers (all reachable today
+  via chat). Note: the backend now builds to `dist` (the web imports compiled
+  output; types still resolve from source) — `packages/web` runs
+  `pnpm --filter @yoink/backend build` on `predev`/`prebuild`.
+- **2026-07-17 — Onboarding is shorter and skippable.** Two changes to the
+  intake so it never feels like a wall of text or a forced questionnaire. (1)
+  The paced diagnosis and gap-analysis reveals are tighter: 3–4 short messages
+  instead of 5–8, a 350-char (was 500) per-message cap, max 3 bullets (was 4),
+  and lower LLM token budgets — the reveals land faster without losing the
+  evidence. (2) Every intake question now carries a two-button escape hatch:
+  **skip this step** (advances past just that question, reusing the same
+  deterministic skip path as typing "skip") and **skip onboarding** (marks the
+  remaining questions unresolved, finalizes the thinner profile, and jumps
+  straight to the connect hand-off — the diagnosis still runs off whatever was
+  stated). Buttons show under the `/start` opener, every resumed question, and
+  each intake turn; they drop away once you're past the questionnaire. Handled
+  by `obskip:step` / `obskip:all` callbacks and `skipAllIntake()`.
 - **2026-07-13 — Daily viral case study.** Once a day, Yoinky shows you one
   tweet in your niche that just blew up (100k–10M views) and breaks down *why* it
   worked — from real numbers, not folklore: its breakout ratio (views ÷ the
@@ -293,7 +353,11 @@ connect your accounts, get diagnosed, build a plan, and ship content.
 packages/backend   Fastify monolith: strategist flow (connect/diagnose/goals/plan/proactive),
                    capture pipeline, moment gate, angle engine, trends (Apify default,
                    Brave/Tavily fallback), memory core, voice/consistency/drafting,
-                   DodoPayments billing, the grammY Telegram bot, pg-boss jobs
+                   DodoPayments billing, the grammY Telegram bot, pg-boss jobs.
+                   Exposes domain functions to the web app via `@yoink/backend/web` (src/web.ts).
+packages/web       Next.js SaaS web app (web-first workspace). Email magic-link auth, chat,
+                   onboarding, diagnosis/plan/beliefs/settings. Imports @yoink/backend in-process,
+                   shares the same Postgres. Runs on :3002 (`pnpm dev:web`); backend stays on :3001.
 docs/INTERNAL.md   Full internal team guide: architecture, subsystems, ops, conventions
 docs/PHASES.md     Original build phases (historical)
 DEPLOY.md          Railway deploy runbook

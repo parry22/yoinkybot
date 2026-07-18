@@ -438,6 +438,17 @@ export function chatToolExecutor(user: User, channel: Channel) {
 }
 
 /**
+ * The two-button escape hatch shown under every onboarding intake question:
+ * skip just this question, or skip the questionnaire entirely. Handled by the
+ * `obskip:` callbacks in bot.ts.
+ */
+export function onboardingSkipKeyboard(): InlineKeyboard {
+  return new InlineKeyboard()
+    .text("⏭ skip this step", "obskip:step")
+    .text("✕ skip onboarding", "obskip:all");
+}
+
+/**
  * Shared tail for every conversational entry point (typed text, voice-note
  * transcript, the paced session): file a genuine thought, send the reply,
  * offer angles, then execute the tool the brain called — and persist what the
@@ -448,7 +459,7 @@ export async function deliverTurnOutput(
   text: string,
   result: TurnOutput,
   channel: Channel,
-  opts: { alreadyCaptured?: boolean } = {},
+  opts: { alreadyCaptured?: boolean; onboardingSkip?: boolean } = {},
 ): Promise<void> {
   if (result.capture && !opts.alreadyCaptured) {
     await createCapture({ userId: user.id, source: "telegram_text", rawText: text });
@@ -458,6 +469,9 @@ export async function deliverTurnOutput(
     const momentId = await createIdeaMoment(user.id, text, text);
     if (momentId) keyboard = new InlineKeyboard().text("✍️ turn this into angles", `mkang:${momentId}`);
   }
+  // Every intake question carries an escape hatch: skip just this one, or bail on
+  // the whole questionnaire. Only when nothing else has claimed the keyboard.
+  if (!keyboard && !result.tool && opts.onboardingSkip) keyboard = onboardingSkipKeyboard();
   if (result.reply) await channel.say(result.reply, keyboard);
 
   if (result.tool) {

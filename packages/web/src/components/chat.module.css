@@ -1,0 +1,251 @@
+.root {
+  --content-width: min(760px, 92%);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.header {
+  padding: clamp(20px, 2.6vh, 30px) 40px 0;
+}
+
+.greeting {
+  font-size: 28px;
+  font-weight: 450;
+  line-height: 1.15;
+  color: var(--ink-700);
+}
+
+.greeting span {
+  color: var(--ink-900);
+}
+
+.sub {
+  color: var(--ink-500);
+  font-size: 13px;
+  margin-top: 5px;
+}
+
+.banner {
+  margin: 14px 40px 0;
+  padding: 12px 16px;
+  border: 0.5px solid var(--accent-border);
+  background: var(--accent-soft);
+  border-radius: 14px;
+  color: var(--ink-900);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.bannerLink {
+  color: var(--accent);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px 40px;
+  min-height: 0;
+}
+
+.thread {
+  width: var(--content-width);
+  margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.msg {
+  max-width: 82%;
+  padding: 11px 15px;
+  border-radius: 16px;
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.msgUser {
+  align-self: flex-end;
+  background: linear-gradient(180deg, var(--accent) 0%, var(--accent-2) 100%);
+  color: #fff;
+  border-bottom-right-radius: 6px;
+}
+
+.msgBot {
+  align-self: flex-start;
+  background: var(--surface);
+  border: 0.5px solid var(--stroke);
+  color: var(--ink-900);
+  border-bottom-left-radius: 6px;
+}
+
+.typing {
+  align-self: flex-start;
+  display: inline-flex;
+  gap: 4px;
+  padding: 14px 16px;
+}
+
+.typing i {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--ink-500);
+  animation: blink 1.2s infinite both;
+}
+
+.typing i:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.typing i:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes blink {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+
+/* Empty state — suggestion cards */
+.empty {
+  width: var(--content-width);
+  margin: 8px auto 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.suggest {
+  text-align: left;
+  border: 0.5px solid var(--stroke);
+  background: var(--surface);
+  border-radius: 16px;
+  padding: 16px;
+  cursor: pointer;
+  transition: border-color 120ms ease, transform 120ms ease;
+}
+
+.suggest:hover {
+  border-color: var(--accent-border);
+  transform: translateY(-1px);
+}
+
+.suggestTitle {
+  font-size: 14px;
+  font-weight: 470;
+  color: var(--ink-900);
+}
+
+.suggestSub {
+  font-size: 13px;
+  color: var(--ink-700);
+  margin-top: 3px;
+  line-height: 1.3;
+}
+
+.composerWrap {
+  padding: 0 40px clamp(16px, 2.2vh, 26px);
+}
+
+.composer {
+  width: var(--content-width);
+  margin-inline: auto;
+  border: 0.5px solid var(--stroke);
+  background: var(--surface);
+  border-radius: 20px;
+  padding: 14px 14px 12px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.composer:focus-within {
+  border-color: var(--accent-border);
+}
+
+.input {
+  border: none;
+  background: transparent;
+  resize: none;
+  outline: none;
+  color: var(--ink-900);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.45;
+  min-height: 24px;
+  max-height: 160px;
+}
+
+.input::placeholder {
+  color: var(--ink-500);
+}
+
+.composerFooter {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.hint {
+  color: var(--ink-500);
+  font-size: 12px;
+}
+
+.send {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  background: linear-gradient(180deg, var(--accent) 0%, var(--accent-2) 100%);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow:
+    inset 0 3px 2px rgba(255, 255, 255, 0.28),
+    inset 0 4px 2px rgba(255, 255, 255, 0.25);
+  transition: filter 120ms ease;
+}
+
+.send:hover {
+  filter: brightness(1.05);
+}
+
+.send:disabled {
+  opacity: 0.5;
+  cursor: default;
+  filter: none;
+}
+
+@media (max-width: 1000px) {
+  .root {
+    --content-width: 100%;
+  }
+  .header,
+  .scroll,
+  .composerWrap {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+  .banner {
+    margin-left: 18px;
+    margin-right: 18px;
+  }
+  .empty {
+    grid-template-columns: 1fr;
+  }
+}

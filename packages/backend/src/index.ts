@@ -109,7 +109,7 @@ async function main(): Promise<void> {
   }
 }
 
-// Render sends SIGTERM before a redeploy/spin-down. Flush any buffered
+// The platform sends SIGTERM before a redeploy. Flush any buffered
 // analytics events so the ones captured in the last few seconds aren't lost;
 // then exit and let the platform restart us.
 for (const sig of ["SIGTERM", "SIGINT"] as const) {

@@ -1,0 +1,66 @@
+.account {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 0.5px solid var(--stroke);
+}
+
+.account:first-child {
+  border-top: none;
+}
+
+.accountLeft {
+  min-width: 0;
+}
+
+.accountHandle {
+  font-size: 14px;
+  color: var(--ink-900);
+}
+
+.accountPlatform {
+  font-size: 12px;
+  color: var(--ink-500);
+  margin-top: 2px;
+}
+
+.statusPill {
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 0.5px solid var(--stroke);
+  color: var(--ink-600);
+  white-space: nowrap;
+}
+
+.statusIngested {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.form {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+  align-items: center;
+}
+
+.form .field {
+  flex: 1;
+}
+
+.rowLabel {
+  font-size: 12px;
+  color: var(--ink-500);
+  margin: 14px 0 4px;
+}
+
+.msg {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--ink-700);
+  line-height: 1.5;
+}

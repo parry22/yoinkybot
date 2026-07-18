@@ -1,0 +1,36 @@
+.skipRow {
+  width: var(--content-width, min(760px, 92%));
+  margin: 10px auto 0;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.completeCard {
+  width: var(--content-width, min(760px, 92%));
+  margin: 8px auto 0;
+  padding: 22px;
+  border: 0.5px solid var(--accent-border);
+  background: var(--accent-soft);
+  border-radius: 18px;
+}
+
+.completeTitle {
+  font-size: 16px;
+  font-weight: 470;
+  color: var(--ink-900);
+}
+
+.completeBody {
+  margin-top: 8px;
+  color: var(--ink-700);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.completeActions {
+  margin-top: 16px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}

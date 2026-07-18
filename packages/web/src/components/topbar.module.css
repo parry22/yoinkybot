@@ -1,0 +1,36 @@
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 56px;
+  flex: 0 0 auto;
+  padding: 0 clamp(16px, 3vw, 28px);
+  border-bottom: 0.5px solid var(--stroke);
+  background: var(--chat-bg);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.telegram {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 15px;
+  border: 0.5px solid var(--stroke);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink-700);
+  font-size: 13px;
+  font-weight: 450;
+  text-decoration: none;
+  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+
+.telegram:hover {
+  color: var(--accent);
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}

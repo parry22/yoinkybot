@@ -16,3 +16,4 @@ coverage/
 
 # Local Claude Code tooling state (contains local permission history — never share)
 .claude/
+.vercel

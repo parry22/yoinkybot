@@ -1,0 +1,120 @@
+.toggle {
+  display: inline-flex;
+  padding: 3px;
+  gap: 3px;
+  border: 0.5px solid var(--stroke);
+  border-radius: 999px;
+  background: var(--surface);
+  margin-bottom: 14px;
+}
+
+.toggleBtn {
+  border: none;
+  background: transparent;
+  color: var(--ink-700);
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 16px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.toggleBtnActive {
+  background: linear-gradient(180deg, var(--accent) 0%, var(--accent-2) 100%);
+  color: #fff;
+}
+
+.composer {
+  border: 0.5px solid var(--stroke);
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
+}
+
+.composer:focus-within {
+  border-color: var(--accent-border);
+}
+
+.input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  resize: vertical;
+  outline: none;
+  color: var(--ink-900);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.5;
+  min-height: 72px;
+}
+
+.input::placeholder {
+  color: var(--ink-500);
+}
+
+.composerFooter {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 12px;
+}
+
+.hint {
+  color: var(--ink-500);
+  font-size: 12px;
+}
+
+.result {
+  margin-top: 16px;
+}
+
+.draftCard {
+  border: 0.5px solid var(--stroke);
+  background: var(--surface);
+  border-radius: var(--radius-md);
+  padding: 16px 18px;
+  margin-bottom: 12px;
+}
+
+.draftTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.draftBody {
+  color: var(--ink-900);
+  font-size: 14px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.copyBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0.5px solid var(--stroke);
+  background: transparent;
+  color: var(--ink-600);
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.copyBtn:hover {
+  color: var(--ink-900);
+  border-color: var(--accent-border);
+}
+
+.sectionLabel {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-500);
+  margin: 26px 0 12px;
+}

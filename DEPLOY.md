@@ -1,17 +1,18 @@
-# Deploying Yoinky (Railway + Neon)
+# Deploying Yoinky (Railway backend + Vercel web + Neon)
 
-**Current production, verified 2026-07-12:**
+**Current production:**
 
 | | |
 |---|---|
-| Compute | Railway, project `yoinky`, service `backend`, **Hobby plan** (Railway's free trial cannot run an always-on process or attach a custom domain — see "Why not Render / why Hobby" below) |
-| Database | **Neon** (`ep-cool-poetry-....us-east-1.aws.neon.tech`) — managed Postgres with pgvector, external to Railway. Unchanged across the whole Render→Railway move; nothing about the DB migrated |
-| Domain | `bot.meetyoinky.com` → Railway, via CNAME + a Railway-issued TXT ownership record (see step 4) |
-| Prior host | Render (`yoinkybot`, free plan) — **suspended, not deleted**, kept as an instant DNS-flip rollback |
+| Backend compute | Railway, project `yoinky`, service `backend`, **Hobby plan** — runs the Fastify server, the Telegram bot, and **all pg-boss job workers + cron**. This is the always-on piece. |
+| Web compute | **Vercel** — `packages/web` (Next.js) at `app.meetyoinky.com`. Serverless: UI + API routes only. It calls backend domain functions in-process and enqueues jobs, but does **not** run workers/cron/bot — those stay on Railway. See "Web app (Vercel)" below. |
+| Database | **Neon** (`ep-cool-poetry-....us-east-1.aws.neon.tech`) — managed Postgres with pgvector. **Shared by both** Railway and Vercel; point Vercel's `DATABASE_URL` at this same instance. |
+| Domains | `bot.meetyoinky.com` → Railway (webhook + health); `app.meetyoinky.com` → Vercel (web app) |
+| Prior host | Render (`yoinkybot`) — **decommissioned 2026-07-17** |
 
-One service, one external database. Railway has no VPC/security-group concept —
-every service gets a private network address automatically, and a public HTTPS
-URL is one command/click away.
+The backend and web are two deploys over one database. Jobs enqueued from the
+web (e.g. connecting an account) are processed by Railway's workers; results land
+in Postgres (which the web reads) and go out as Telegram DMs.
 
 ## 1. Create the project + service
 
@@ -50,8 +51,8 @@ to change compute only and leave the database exactly where it is:
 ## 3. Configure the backend service — copy the full env, don't retype it
 
 The fastest, least error-prone way to populate ~25 env vars on a fresh service
-is to copy them from wherever they're currently live (Render, or your local
-`.env`), value-for-value, rather than retyping from memory:
+is to copy them from wherever they're currently live (your local `.env`),
+value-for-value, rather than retyping from memory:
 
 ```bash
 # One var at a time, piped through stdin so the value never lands in shell
@@ -188,13 +189,104 @@ both limits** — this is the plan actually in use.
 - **Backups:** Neon is a managed service — check its dashboard for your plan's
   point-in-time-recovery / backup retention window rather than assuming a
   specific policy here.
-- **Keep-alive workflow:** `.github/workflows/keepalive.yml` pings `/health`
-  every 10 minutes — it existed specifically to fight Render free-tier
-  spin-down. On Railway Hobby (always-on, no spin-down) it's no longer load-
-  bearing; harmless to leave running, safe to delete if you want one less
-  moving part.
-- **Rollback:** Render is suspended, not deleted. To roll back: resume it from
-  the Render dashboard (service → the Resume action), then point the `bot`
-  CNAME back at Render's `.onrender.com` target. No app or DB changes needed
-  either direction — the cutover is DNS-only because both hosts point at the
-  same Neon database.
+- **Keep-alive workflow:** removed 2026-07-17 (`.github/workflows/keepalive.yml`
+  pinged `/health` every 10 minutes solely to fight Render free-tier
+  spin-down). Railway Hobby is always-on, so it had been dead weight since the
+  move and is gone now that Render itself is decommissioned.
+- **Render:** decommissioned 2026-07-17 — it was kept suspended (not deleted)
+  as an instant DNS-flip rollback while Railway proved itself; that period is
+  over, so the standby service was torn down. Rolling back now would mean
+  recreating the Render service from scratch, not just resuming it.
+
+---
+
+# Web app (Vercel) — app.meetyoinky.com
+
+The `packages/web` Next.js app deploys to Vercel as a **separate deploy from the
+Railway backend, over the same Neon database.** Vercel is serverless — it serves
+the UI and API routes and can enqueue jobs, but it does **not** run the pg-boss
+workers, cron, or the Telegram bot. Keep Railway running for those; otherwise
+connect/ingest/diagnose, scheduled posts, and trends never get processed.
+
+> **Already provisioned (2026-07-17):** Vercel project `yoinky-web`
+> (`parry22s-projects`), Root Directory `packages/web`, framework Next.js,
+> deployment protection `all_except_custom_domains` (so `app.meetyoinky.com`
+> is public while the raw `*.vercel.app` URLs are SSO-gated). Domain
+> `app.meetyoinky.com` is attached + verified. **Remaining to go live:**
+> (a) DNS `app` CNAME at Namecheap, (b) env vars incl. the Neon `DATABASE_URL`,
+> (c) the Google redirect URI, (d) `vercel deploy --prod` to pick up the env.
+> Env helper: `bash packages/web/scripts/push-env-to-vercel.sh`.
+
+## 1. Create the Vercel project
+
+Import the Git repo in Vercel (or `vercel link` from `packages/web`), then set:
+
+- **Root Directory:** `packages/web`  ← the single most important setting.
+- **Framework:** Next.js (auto-detected).
+- **Build/Install:** pinned by `packages/web/vercel.json` —
+  `buildCommand: pnpm build` (which runs `pnpm --filter @yoink/backend build &&
+  next build`, so the backend `dist/` the web imports is compiled first) and
+  `installCommand: pnpm install --frozen-lockfile` (installs the whole pnpm
+  workspace so `@yoink/backend` links).
+
+Why not the old root `vercel.json` `builds` config: it bypassed the package
+build script and never compiled the backend `dist`, so `@yoink/backend/web`
+(which resolves to `dist/web.js`) was missing. Removed 2026-07-17.
+
+## 2. Environment variables (Vercel → Project → Settings → Environment Variables)
+
+The web runs backend code in-process, so it needs the **same env the backend
+needs** — the simplest correct move is to copy the Railway backend's env into
+Vercel (Production, and Preview if you want preview deploys to work). Minimum:
+
+| Var | Value |
+|---|---|
+| `DATABASE_URL` | the **Neon** URL — the same instance Railway uses (not a new DB) |
+| `OPENROUTER_API_KEY` | required for any chat/draft/diagnosis |
+| `QWEN_API_KEY` (or `OPENAI_API_KEY`) | embeddings |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google sign-in |
+| `TWITTERAPI_IO_KEY`, `APIFY_TOKEN` | connect/ingest (X + LinkedIn) |
+| `RESEND_API_KEY`, `MAIL_FROM` | optional — magic-link email (unset = link logged, no email) |
+
+`NODE_ENV=production` is set by Vercel automatically (so session cookies are
+`Secure`). No `.env.local` symlink is used in prod — that's a local-dev-only
+convenience; Vercel injects `process.env` directly.
+
+## 3. Domain + DNS
+
+- Vercel → Project → Domains → add `app.meetyoinky.com`.
+- At the DNS provider (Namecheap, same as `bot`), add a **CNAME**:
+  `app` → `cname.vercel-dns.com`. Vercel issues the TLS cert automatically.
+- The apex/`bot` records are untouched — `bot.meetyoinky.com` stays on Railway.
+
+## 4. Google OAuth redirect URI (required before Google sign-in works in prod)
+
+In Google Cloud Console → the OAuth client → **Authorized redirect URIs**, add:
+
+```
+https://app.meetyoinky.com/api/auth/google/callback
+```
+
+(and `https://app.meetyoinky.com` under Authorized JavaScript origins). Keep the
+`http://localhost:3002/...` entry for local dev. The app derives the redirect
+URI from the request origin, so no code/env change is needed — only the Console
+whitelist.
+
+## 5. Deploy + verify
+
+Push to the connected branch (or `vercel --prod`). After it's live:
+
+- `https://app.meetyoinky.com/login` renders → email + "Continue with Google".
+- Sign in (Google or email) → lands on `/app`.
+- Connecting an account from Settings enqueues an ingest job — confirm the
+  **Railway** backend logs show it being processed (the web can't process it).
+
+## Notes / limits
+
+- **Function duration:** LLM turns (chat/draft) can run many seconds; routes set
+  `maxDuration` (Vercel's default max is 300s across plans, so these are fine).
+- **Single-writer assumptions live on Railway, not Vercel** — the web only does
+  request/response work + job enqueues, so Vercel's autoscaling is safe. Do not
+  move workers/cron to Vercel.
+- **Rollback:** Vercel keeps every deployment; promote a previous one from the
+  dashboard. DNS stays pointed at Vercel throughout.

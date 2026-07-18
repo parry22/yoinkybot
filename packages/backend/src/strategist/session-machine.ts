@@ -392,6 +392,34 @@ export function applyProfileActions(
   return { nextState, effects, capture, offerAngles };
 }
 
+/**
+ * "Skip onboarding" escape hatch. Marks every still-uncaptured intake field
+ * unresolved, finalizes the (thinner) profile, and jumps straight to the connect
+ * hand-off. Same end state as answering — or skipping — every question one by
+ * one, so the diagnosis still runs; it just works off whatever was stated.
+ */
+export async function skipAllIntake(userId: string): Promise<void> {
+  const state = await getState(userId);
+  const cursor = state.profile ?? {};
+  const captured = new Set(cursor.captured ?? []);
+  const unresolved = new Set(cursor.unresolved ?? []);
+  for (const f of PROFILE_FIELDS) {
+    if (captured.has(f)) continue;
+    captured.add(f);
+    unresolved.add(f);
+    await upsertProfileField(userId, f, "", { unresolved: true }).catch(() => {});
+  }
+  await finalizeProfile(userId).catch(() => {});
+  await setStage(userId, "profile_set");
+  await setState(userId, {
+    ...state,
+    phase: "connect_transition",
+    awaitingConnect: true,
+    turnsInPhase: 0,
+    profile: { ...cursor, captured: [...captured], unresolved: [...unresolved] },
+  });
+}
+
 // ── Orchestrator ─────────────────────────────────────────────────────────────
 
 export interface SessionResult {
@@ -822,7 +850,7 @@ export async function openSession(userId: string, diagnosisId: string, dimension
         memoryCount: Number(countRow?.n ?? samples.length),
       }),
       json: true,
-      maxTokens: 2200,
+      maxTokens: 1500,
     });
     const parsed = (res.parsed ?? {}) as { messages?: unknown };
     if (Array.isArray(parsed.messages)) {
@@ -887,7 +915,7 @@ export async function openGapSession(
         memoryCount: Number(countRow?.n ?? samples.length),
       }),
       json: true,
-      maxTokens: 2500,
+      maxTokens: 1500,
     });
     const parsed = (res.parsed ?? {}) as { messages?: unknown };
     if (Array.isArray(parsed.messages)) {

@@ -46,6 +46,33 @@ export async function userForSession(token: string): Promise<User | undefined> {
   ) as Promise<User | undefined>;
 }
 
+// --- Email magic-link login --------------------------------------------------
+
+/** Mint a single-use, 30-minute login token for an email address. Returns the
+ *  raw token to embed in the magic link; only its hash is stored. */
+export async function createLoginToken(email: string): Promise<string> {
+  const token = newToken("login");
+  await query(
+    `INSERT INTO login_tokens (token_hash, email, expires_at)
+     VALUES ($1, $2, now() + interval '30 minutes')`,
+    [hashToken(token), email.trim().toLowerCase()],
+  );
+  return token;
+}
+
+/** Consume a login token (single use) and return the matching user, creating one
+ *  by email on first sign-in. Undefined if the token is unknown/expired/used. */
+export async function consumeLoginToken(token: string): Promise<User | undefined> {
+  const row = await queryOne<{ email: string }>(
+    `UPDATE login_tokens SET used_at = now()
+     WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now()
+     RETURNING email`,
+    [hashToken(token)],
+  );
+  if (!row) return undefined;
+  return findOrCreateUserByEmail(row.email);
+}
+
 // --- Telegram deep-link linking ----------------------------------------------
 
 export async function createTelegramLinkToken(userId: string): Promise<string> {

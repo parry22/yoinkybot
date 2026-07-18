@@ -159,8 +159,8 @@ export async function registerWorkers(boss: PgBoss): Promise<void> {
 }
 
 /**
- * On a host that spins the process down when idle (Render free tier), a
- * missed cron minute is just gone — pg-boss's schedule() doesn't backfill it,
+ * On a host that spins the process down when idle (the old Render free tier),
+ * a missed cron minute is just gone — pg-boss's schedule() doesn't backfill it,
  * it only fires while the process happens to be alive at the right time. This
  * bit hard in production (2026-07-12): trend.fetch crashed once on 2026-07-08,
  * and with the app redeploying/restarting far more often than its 8h interval

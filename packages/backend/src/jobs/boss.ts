@@ -70,6 +70,22 @@ export function getBoss(): PgBoss {
   return boss;
 }
 
+let ensurePromise: Promise<PgBoss> | undefined;
+
+/**
+ * Lazily start pg-boss so a process that only ENQUEUES jobs can do so — namely
+ * the web app (`packages/web`), which runs domain code in-process but never
+ * calls `startBoss()` (that's the backend server's job). Idempotent and
+ * concurrency-safe; it starts the same engine `startBoss()` does (queues get
+ * created), but the caller registers no workers/crons, so nothing here consumes
+ * jobs — the backend worker still does that. No-op if already started.
+ */
+export async function ensureBoss(): Promise<PgBoss> {
+  if (boss) return boss;
+  if (!ensurePromise) ensurePromise = startBoss();
+  return ensurePromise;
+}
+
 export async function startBoss(): Promise<PgBoss> {
   boss = new PgBoss({ connectionString: config.DATABASE_URL, schema: "pgboss" });
   boss.on("error", (err) => console.error("pg-boss error", err));
