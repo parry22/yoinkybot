@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
+import { getSessionUser } from "@/lib/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,6 +9,14 @@ const GOOGLE_STATE_COOKIE = "g_state";
 
 export async function GET(req: Request) {
   const origin = new URL(req.url).origin;
+
+  // Marketing-site CTAs link straight here to skip the /login page — but an
+  // already-signed-in visitor shouldn't be forced through Google re-auth.
+  const existingUser = await getSessionUser();
+  if (existingUser) {
+    return NextResponse.redirect(new URL("/app", origin));
+  }
+
   const clientId = process.env.GOOGLE_CLIENT_ID;
   if (!clientId) {
     return NextResponse.redirect(new URL("/login?error=google_unconfigured", origin));
