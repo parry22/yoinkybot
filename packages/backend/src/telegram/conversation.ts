@@ -12,6 +12,7 @@ import { activeGoals } from "../strategist/goals.js";
 import { getStage } from "../strategist/state.js";
 import { getProfile, profileSummaryForPrompt } from "../strategist/profile.js";
 import { casualize } from "../prompts/style.js";
+import { moderateText, MODERATION_MESSAGE } from "../moderation/filter.js";
 
 const HISTORY_TURNS = 10;
 
@@ -132,6 +133,13 @@ export async function converseWithUser(
   message: string,
   opts: ConverseOpts = {},
 ): Promise<ConversationResult> {
+  // Content gate before anything else: explicit/abusive input is pushed back and
+  // never persisted, embedded, or fed to the model. Covers Telegram, web chat,
+  // and voice transcripts, since all three converge here.
+  if (!moderateText(message).ok) {
+    return { reply: casualize(MODERATION_MESSAGE), capture: false, offerAngles: false };
+  }
+
   const [history, positions, relevant, profile, moments, pending, counts, relationship] = await Promise.all([
     loadHistory(userId),
     activePositions(userId),

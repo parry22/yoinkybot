@@ -20,6 +20,7 @@ import { handleTrendMatch } from "./trend-match.js";
 import { handleViralBenchmark } from "./viral-benchmark.js";
 import { handleBuyerRadar } from "./buyer-radar.js";
 import { handleBuyerRecalibration } from "../buyer/calibration.js";
+import { handleInspirationSeed } from "./inspiration-seed.js";
 import { handleIngestProfile } from "../strategist/connect.js";
 import { handleDiagnose } from "../strategist/diagnosis.js";
 import { handleProgressReport } from "../strategist/progress.js";
@@ -81,6 +82,10 @@ export async function registerWorkers(boss: PgBoss): Promise<void> {
   await boss.work(QUEUES.viralBenchmark, logged(QUEUES.viralBenchmark, () => handleViralBenchmark()));
   await boss.work(QUEUES.buyerRadar, logged(QUEUES.buyerRadar, () => handleBuyerRadar()));
   await boss.work(QUEUES.buyerRecalibrate, logged(QUEUES.buyerRecalibrate, () => handleBuyerRecalibration()));
+  await boss.work<{ userId: string }>(
+    QUEUES.inspirationSeed,
+    logged(QUEUES.inspirationSeed, (d: { userId: string }) => handleInspirationSeed(d.userId)),
+  );
   await boss.work<IngestProfileJob>(
     QUEUES.ingestProfile,
     logged(QUEUES.ingestProfile, (d: IngestProfileJob) => handleIngestProfile(d)),

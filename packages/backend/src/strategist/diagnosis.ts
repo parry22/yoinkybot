@@ -188,6 +188,13 @@ export async function runDiagnosis(
     await buildVoiceProfile(userId).catch((err) => console.error("post-diagnosis voice build failed", err));
   }
 
+  // Niche is now known — seed the web Inspiration feed (Trends & Virals) in the
+  // background so a freshly-connected user lands on real, on-niche examples
+  // instead of an empty screen. Best-effort; the scheduled jobs backfill anyway.
+  await getBoss()
+    .send(QUEUES.inspirationSeed, { userId })
+    .catch((err) => console.error("inspiration seed enqueue failed", err));
+
   // Do NOT dump the analysis. Open the paced session. If they completed the
   // Stage 1-7 profile first (the default arc), deliver the stated-vs-actual GAP
   // analysis; if they took the connect-first escape hatch (no profile yet),

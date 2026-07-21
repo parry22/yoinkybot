@@ -77,9 +77,13 @@ export async function viralBenchmarkForUser(
   userId: string,
   pool: XTweet[],
   settings: UserSettings = {},
-  opts: { skipGates?: boolean } = {},
+  opts: { skipGates?: boolean; seed?: boolean } = {},
 ): Promise<boolean> {
-  if (!opts.skipGates) {
+  // seed mode: web-only pre-population (no Telegram). Persist the surfacing with
+  // channel 'web' and skip the send-and-delete tail so a Telegram-less web user
+  // gets inspiration to look at right after connecting.
+  const seed = opts.seed === true;
+  if (!opts.skipGates && !seed) {
     // Own once-a-day budget — NOT the shared proactive cadence cap. This is a
     // different kind of value (an external reference example), so it gets its
     // own slot rather than competing with resurfacing/trend_take.
@@ -167,7 +171,7 @@ export async function viralBenchmarkForUser(
 
   const surfacing = await queryOne<{ id: string }>(
     `INSERT INTO surfacings (user_id, memory_ids, type, payload, channel)
-     VALUES ($1, '{}', 'viral_benchmark', $2, 'telegram') RETURNING id`,
+     VALUES ($1, '{}', 'viral_benchmark', $2, $3) RETURNING id`,
     [
       userId,
       JSON.stringify({
@@ -181,18 +185,21 @@ export async function viralBenchmarkForUser(
         source_note: output.source_note || null,
         cited_memory_ids: output.cited_memory_ids,
       }),
+      seed ? "web" : "telegram",
     ],
   );
   if (!surfacing) return false;
 
-  const sent = await sendTelegram(userId, message, undefined, viralReactionKeyboard(surfacing.id)).catch(() => false);
-  if (!sent) {
-    await query(`DELETE FROM surfacings WHERE id = $1`, [surfacing.id]);
-    return false;
+  if (!seed) {
+    const sent = await sendTelegram(userId, message, undefined, viralReactionKeyboard(surfacing.id)).catch(() => false);
+    if (!sent) {
+      await query(`DELETE FROM surfacings WHERE id = $1`, [surfacing.id]);
+      return false;
+    }
   }
 
-  // Ledger only on a real send — it's both the dedup source and the daily gate,
-  // so a failed delivery must not block tomorrow's retry.
+  // Ledger for dedup + the daily gate. In seed mode there's no send, but we still
+  // record it so the scheduled job never re-surfaces the same tweet.
   await query(
     `INSERT INTO viral_benchmarks (user_id, tweet_id, author_handle, view_count, url, surfacing_id)
      VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (user_id, tweet_id) DO NOTHING`,

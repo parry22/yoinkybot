@@ -1233,6 +1233,44 @@ proactive path.
 
 ---
 
+## 3k. Content moderation + web polish (2026-07-22)
+
+**Moderation gate (`moderation/filter.ts`).** Deterministic (doctrine: code
+decides), no LLM: a word-boundary-matched lexicon of explicit sexual + abusive
+slur terms over a lightly normalized copy of the text. `moderateText` returns
+`{ok, category}`; `assertClean` throws `ModerationError`. Conservative by design
+(unambiguous explicit/abusive only, not mild profanity, and boundaries dodge the
+Scunthorpe problem). Enforced at every user-text choke point: `converseWithUser`
+(Telegram + web chat + voice transcript, inline pushback), `runDraft` (draft
+topic), `saveBuyerIcp` (ICP fields), `submitProfileForm` (profile fields), and
+`createWebScheduledPost` (scheduled content). `ModerationError` → 400 at the web
+boundary. One consistent casual-voice pushback message; offending input is never
+persisted, embedded, or fed to a model.
+
+**Crisper voice.** `CASUAL_VOICE` + `CHAT_STYLE_RULES` (prompts/style.ts) now
+carry a hard brevity rule (default one to two lines, ~350 chars, lead-then-stop).
+Every Yoinky-voice prompt embeds these, so it applies to proactive + journey chatter uniformly.
+
+**Scheduled calendar.** `/app/scheduled` now defaults to a month calendar
+(`components/scheduled-calendar.tsx`) reading `listScheduled`, placing pending
+posts as day chips and nudging "add a post" on empty future days. A new
+`web/scheduled.ts#createWebScheduledPost` (content-gated, `ensureBoss` + the
+existing `schedulePost`) behind `POST /api/schedule` lets a web user write and
+queue a post for a chosen day — the first manual web scheduling path (previously
+Telegram/agent-only).
+
+**Seeded Inspiration.** At the tail of `runDiagnosis` (first moment the niche
+exists) an `inspiration.seed` job (`jobs/inspiration-seed.ts`) runs the existing
+`trendMatchForUser` and `viralBenchmarkForUser` in a new **seed mode**: both take
+a `seed` opt that persists the surfacing with `channel = 'web'` and skips the
+Telegram send-and-delete tail (a web-only user has no DM to deliver to, and that
+tail would otherwise roll back the insert). This pre-populates the web Trends &
+Virals tabs with real, on-niche examples. Viral seeding gates on
+`TWITTERAPI_IO_KEY` (paid pool) and derives its themes from the user's own
+niche/pillars; trend seeding depends on the fleet `trends` table and no-ops if empty.
+
+---
+
 ## 4. Data model
 
 Schema is a linear migration chain in `src/db/migrations/` (`0001`…`0023`),

@@ -193,7 +193,12 @@ async function createTrendMoment(
   return moment?.id ?? null;
 }
 
-export async function trendMatchForUser(userId: string, settings: UserSettings = {}): Promise<boolean> {
+export async function trendMatchForUser(
+  userId: string,
+  settings: UserSettings = {},
+  opts: { seed?: boolean } = {},
+): Promise<boolean> {
+  const seed = opts.seed === true;
   const verified = twitterapiConfigured();
 
   // Explicit daily-band check. MAX is the hard ceiling: bail here before any LLM
@@ -318,13 +323,12 @@ export async function trendMatchForUser(userId: string, settings: UserSettings =
     const whyNow = `"${trend.topic}" is surging on X right now and sits squarely in your lane`;
     const momentId = await createTrendMoment(userId, trend, position, whyNow, verification);
     if (!momentId) continue;
-    const delivered = await composeAndDeliverTake(userId, settings, {
-      momentId,
-      trend,
-      position,
-      whyNow,
-      verification,
-    });
+    const delivered = await composeAndDeliverTake(
+      userId,
+      settings,
+      { momentId, trend, position, whyNow, verification },
+      { seed },
+    );
     if (delivered) sent++;
   }
   return sent > 0;
@@ -357,9 +361,12 @@ export async function composeAndDeliverTake(
     whyNow: string;
     verification: VolumeVerification;
   },
-  opts: { skipCadence?: boolean } = {},
+  opts: { skipCadence?: boolean; seed?: boolean } = {},
 ): Promise<boolean> {
   const { trend, position, verification } = input;
+  // seed mode: web-only pre-population — persist with channel 'web' and skip the
+  // Telegram send-and-delete tail (a web user has no Telegram to deliver to).
+  const seed = opts.seed === true;
 
   const executors: Record<string, (args: Record<string, unknown>) => Promise<string>> = {
     get_top_tweets: async (args) => {
@@ -439,7 +446,7 @@ export async function composeAndDeliverTake(
   // SENDS, checked in trendMatchForUser); here we only enforce quiet hours + a
   // min-gap between trend sends so they space out. skipCadence bypasses for
   // manual/ops fires.
-  if (!opts.skipCadence) {
+  if (!opts.skipCadence && !seed) {
     if (inQuietHours(settings)) {
       await rejectMoment(input.momentId, "held: quiet hours");
       return false;
@@ -457,7 +464,7 @@ export async function composeAndDeliverTake(
 
   const surfacing = await queryOne<{ id: string }>(
     `INSERT INTO surfacings (user_id, memory_ids, type, payload, channel)
-     VALUES ($1, '{}', 'trend_take', $2, 'telegram') RETURNING id`,
+     VALUES ($1, '{}', 'trend_take', $2, $3) RETURNING id`,
     [
       userId,
       JSON.stringify({
@@ -471,9 +478,13 @@ export async function composeAndDeliverTake(
         source_note: output.source_note || null,
         agent_steps: steps.map((s) => ({ tool: s.tool, args: s.args })),
       }),
+      seed ? "web" : "telegram",
     ],
   );
   if (!surfacing) return false;
+
+  // Seed mode stops here: the row is what the web Inspiration feed reads; no DM.
+  if (seed) return true;
 
   // Distinct delivery treatment: no 🔥/💤/🗑 resurfacing card — this should read
   // as "this is different" before they even open it. The wrapper is Yoinky

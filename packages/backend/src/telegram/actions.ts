@@ -23,6 +23,7 @@ import { bestTimeAdvisory } from "../scheduling/best-time.js";
 import { publishConfigured, resolveWriteAuth } from "../social/publish.js";
 import type { UserSettings } from "../lib/time.js";
 import type { ChatTool } from "./chat-tools.js";
+import { moderateText, MODERATION_MESSAGE } from "../moderation/filter.js";
 
 /** ISO instant → compact, unambiguous UTC label for confirmations and lists. */
 function whenLabel(iso: string): string {
@@ -144,6 +145,12 @@ export async function runDraft(
   platform: "x" | "linkedin",
   channel: Channel,
 ): Promise<string> {
+  // Content gate: never draft from explicit/abusive input (it would also poison
+  // the voice/memory pipeline downstream).
+  if (!moderateText(topic).ok) {
+    await channel.say(MODERATION_MESSAGE);
+    return MODERATION_MESSAGE;
+  }
   const ent = await entitlementsFor(user.id);
   if (!ent.drafting) {
     // Free users get a few LIFETIME drafts before the wall, so they taste the

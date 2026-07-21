@@ -15,6 +15,7 @@ import {
   finalizeProfile,
 } from "../strategist/profile.js";
 import { getState, setState, getStage, setStage } from "../strategist/state.js";
+import { assertClean } from "../moderation/filter.js";
 
 export type ProfileFormFields = Partial<Record<ProfileField, string | string[]>>;
 
@@ -54,6 +55,8 @@ export async function submitProfileForm(
     if (!PROFILE_FIELDS.includes(key)) continue;
     const value = fields[key];
     if (value === undefined || !filled(value)) continue;
+    // Content gate on free-text profile input (throws ModerationError → 400).
+    for (const s of Array.isArray(value) ? value : [value]) assertClean(s);
     if (key === "content_pillars") {
       await confirmPillars(userId, toCsvArray(value));
     } else {

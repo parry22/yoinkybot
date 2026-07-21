@@ -101,5 +101,9 @@ export { loadChatHistory, type ChatHistoryEntry } from "./web/chat-history.js";
 
 // Scheduled posts (read model for the Scheduled screen)
 export { listScheduled, type ScheduledPost } from "./scheduling/service.js";
+export { createWebScheduledPost } from "./web/scheduled.js";
+
+// Content moderation (shared gate; ModerationError → 400 at the web boundary)
+export { moderateText, assertClean, ModerationError, MODERATION_MESSAGE } from "./moderation/filter.js";
 
 export { config } from "./config.js";

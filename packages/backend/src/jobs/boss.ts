@@ -25,6 +25,7 @@ export const QUEUES = {
   agentTick: "agent.tick",
   buyerRadar: "buyer.radar",
   buyerRecalibrate: "buyer.recalibrate",
+  inspirationSeed: "inspiration.seed",
 } as const;
 
 export interface TranscribeJob {
@@ -103,6 +104,7 @@ export async function startBoss(): Promise<PgBoss> {
     QUEUES.mentionsFetch,
     QUEUES.peerIngest,
     QUEUES.buyerRadar,
+    QUEUES.inspirationSeed,
   ];
   for (const q of Object.values(QUEUES)) {
     // Per-item ingest jobs (extract/embed/transcribe/…) DO retry — a retry there

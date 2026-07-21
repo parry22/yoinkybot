@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/session";
-import { saveBuyerIcp } from "@yoink/backend/web";
+import { saveBuyerIcp, ModerationError } from "@yoink/backend/web";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,12 +20,17 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
-  const view = await saveBuyerIcp(user.id, {
-    product_oneliner: toStr(body.productOneliner),
-    buyer_description: toStr(body.buyerDescription),
-    pain_signals: toArray(body.painSignals),
-    competitor_terms: toArray(body.competitorTerms),
-    exclusions: toArray(body.exclusions),
-  });
-  return NextResponse.json(view);
+  try {
+    const view = await saveBuyerIcp(user.id, {
+      product_oneliner: toStr(body.productOneliner),
+      buyer_description: toStr(body.buyerDescription),
+      pain_signals: toArray(body.painSignals),
+      competitor_terms: toArray(body.competitorTerms),
+      exclusions: toArray(body.exclusions),
+    });
+    return NextResponse.json(view);
+  } catch (err) {
+    if (err instanceof ModerationError) return NextResponse.json({ error: err.reason }, { status: 400 });
+    throw err;
+  }
 }

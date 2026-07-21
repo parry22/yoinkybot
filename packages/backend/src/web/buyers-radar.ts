@@ -9,6 +9,7 @@ import { query, queryOne } from "../db/pool.js";
 import { getIcp, saveIcp, prefillIcp, icpComplete, type IcpInput, type IcpPrefill } from "../buyer/icp.js";
 import { scanForUser, monthlySurfacedCount, type ScanStatus } from "../buyer/scan.js";
 import { recalibrateUser } from "../buyer/calibration.js";
+import { assertClean } from "../moderation/filter.js";
 
 export interface BuyerSignalView {
   id: string;
@@ -131,6 +132,13 @@ export async function buyerIcpPrefill(userId: string): Promise<IcpPrefill> {
 }
 
 export async function saveBuyerIcp(userId: string, input: IcpInput): Promise<BuyerIcpView> {
+  // Content gate on every free-text ICP field (throws ModerationError → 400).
+  for (const field of [input.product_oneliner, input.buyer_description]) {
+    if (field) assertClean(field);
+  }
+  for (const list of [input.pain_signals, input.competitor_terms, input.exclusions]) {
+    for (const item of list ?? []) assertClean(item);
+  }
   const icp = await saveIcp(userId, input);
   return {
     productOneliner: icp.product_oneliner ?? "",

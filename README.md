@@ -24,6 +24,21 @@ which is where it's most useful. Both share one Postgres and one `users` row.
 
 <!-- Keep newest-first. Update this whenever a change ships that a reader of the repo should know about. -->
 
+- **2026-07-22 — Content moderation, crisper voice, calendar scheduling, seeded Inspiration.**
+  (1) **Moderation gate** (`moderation/filter.ts`): a deterministic lexicon (explicit/abusive,
+  word-boundary matched, no LLM) rejects pornographic or abusive user text with one consistent
+  "against platform guidelines" pushback, wired into every user-text choke point, `converseWithUser`
+  (Telegram + web chat + voice), draft topics, Buyer Radar ICP, profile form, and scheduled posts.
+  (2) **Crisper Yoinky voice**: the shared voice constants (`CASUAL_VOICE`, `CHAT_STYLE_RULES`) now
+  enforce short, skimmable messages, which propagates to all proactive + journey chatter.
+  (3) **Scheduled = calendar**: `/app/scheduled` defaults to a month calendar (posts as day chips,
+  empty days nudge "add a post"); a new `/api/schedule` route + `createWebScheduledPost` lets you
+  write and queue a post for a chosen day from the web (previously scheduling was Telegram/agent only).
+  (4) **Seeded Inspiration**: after diagnosis (once the niche is known) a one-off `inspiration.seed`
+  job pre-populates the Trends & Virals tabs via the existing matchers run in seed mode (channel
+  `web`, no Telegram delivery), so a freshly-connected user sees real, on-niche examples instead of
+  an empty screen.
+
 - **2026-07-22 — Buyer Radar shipped (real backend, web delivery).** Finds people
   on X expressing purchase intent for what the user sells, scores it
   deterministically, gates it semantically against their domain, and drafts an
