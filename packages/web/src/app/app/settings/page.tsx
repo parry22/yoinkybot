@@ -1,30 +1,19 @@
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/session";
-import { getStage, listConnectedAccounts } from "@yoink/backend/web";
-import { ConnectAccounts } from "@/components/connect-accounts";
+import { listConnectedAccounts } from "@yoink/backend/web";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { TelegramConnectButton } from "@/components/telegram-connect";
+import { XConnectRow } from "@/components/connect-accounts";
 import styles from "@/components/panel.module.css";
 
 export const dynamic = "force-dynamic";
-
-const STAGE_LABEL: Record<string, string> = {
-  new: "Not started",
-  profiling: "Answering intake",
-  profile_set: "Profile set",
-  connected: "Account connected",
-  diagnosed: "Diagnosed",
-  awaiting_upgrade: "Awaiting upgrade",
-  active: "Active",
-  plan_active: "Active",
-};
 
 export default async function SettingsPage() {
   const user = await getSessionUser();
   if (!user) redirect("/login");
 
-  const [stage, accounts] = await Promise.all([
-    getStage(user.id).catch(() => "new"),
-    listConnectedAccounts(user.id).catch(() => []),
-  ]);
+  const accounts = await listConnectedAccounts(user.id).catch(() => []);
+  const x = accounts.find((a) => a.platform === "x") ?? null;
 
   return (
     <div className={styles.page}>
@@ -38,43 +27,35 @@ export default async function SettingsPage() {
 
         <div className={styles.section}>
           <div className={styles.sectionLabel}>Account</div>
-          <div className={styles.sectionBody}>{user.email ?? "—"}</div>
-          <div className={styles.beliefMeta} style={{ marginTop: 12 }}>
-            <span className="pill">Onboarding: {STAGE_LABEL[stage] ?? stage}</span>
-            <span className="pill">{user.telegram_id ? "Telegram linked" : "Telegram not linked"}</span>
-          </div>
+          <div className={styles.sectionBody}>{user.email ?? (x ? x.handle : "your account")}</div>
         </div>
 
         <div className={styles.section}>
-          <div className={styles.sectionLabel}>Connected accounts</div>
-          <div className={styles.sectionBody} style={{ marginBottom: 4 }}>
-            Connect your public presence so Yoinky can read your history and diagnose. Ingestion runs in the
-            background — the backend worker (<code>pnpm dev</code>) must be running for a read to finish, and
-            the result lands here and in your Telegram DMs.
+          <div className={styles.sectionLabel}>Connected X</div>
+          <div className={styles.sectionBody} style={{ marginBottom: 12 }}>
+            Yoinky reads your X to learn your voice and personalize everything. Reconnect any time to refresh the read.
           </div>
-          <ConnectAccounts
-            initial={accounts.map((a) => ({
-              platform: a.platform,
-              handle: a.handle,
-              status: a.status,
-              post_count: a.post_count,
-              last_ingested_at: a.last_ingested_at,
-            }))}
+          <XConnectRow
+            account={
+              x
+                ? { handle: x.handle, status: x.status, post_count: x.post_count }
+                : null
+            }
           />
         </div>
 
         <div className={styles.section}>
           <div className={styles.sectionLabel}>Telegram add-on</div>
-          <div className={styles.sectionBody}>
-            The web app is your main workspace. Telegram keeps every feature and sends the proactive
-            nudges — trend moments, consistency flags, and daily reads — straight to your DMs. Open the bot and send{" "}
-            <strong>/start</strong> to link it to this account.
+          <div className={styles.sectionBody} style={{ marginBottom: 12 }}>
+            Telegram is your capture and proactive-nudge line: drop thoughts on the go, and get trend moments,
+            consistency flags, and daily reads in your DMs.
           </div>
+          <TelegramConnectButton linked={Boolean(user.telegram_id)} />
         </div>
 
         <div className={styles.section}>
           <div className={styles.sectionLabel}>Appearance</div>
-          <div className={styles.sectionBody}>Use the sun/moon toggle in the sidebar to switch light and dark.</div>
+          <ThemeToggle />
         </div>
 
         <form action="/api/auth/logout" method="post">

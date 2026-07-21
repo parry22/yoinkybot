@@ -278,7 +278,7 @@ interface XIdentity {
 async function fetchXIdentity(accessToken: string): Promise<XIdentity | null> {
   try {
     const res = await fetch(
-      "https://api.twitter.com/2/users/me?user.fields=description,public_metrics,verified",
+      "https://api.x.com/2/users/me?user.fields=description,public_metrics,verified",
       { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(15_000) },
     );
     const body = (await res.json().catch(() => ({}))) as {

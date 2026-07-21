@@ -1,7 +1,7 @@
 import { config } from "../../config.js";
 import { runApifyActor, str, num } from "../../lib/apify.js";
 import type { ImportedPost } from "./x.js";
-import { pullXProfileViaTwitterApiIo } from "./twitterapi-io.js";
+import { pullXProfileViaTwitterApiIo, MAX_OWN_TWEETS } from "./twitterapi-io.js";
 
 export interface ProfilePull {
   posts: ImportedPost[];
@@ -60,7 +60,8 @@ export function parseXItems(items: unknown[], handle: string): { posts: Imported
 }
 
 /** Pull a user's public X history via kaitoeasyapi/twitter-x-data-tweet-scraper (from:handle). */
-async function pullXProfileViaApify(handle: string, maxPosts = 200): Promise<ProfilePull> {
+async function pullXProfileViaApify(handle: string, maxPosts = MAX_OWN_TWEETS): Promise<ProfilePull> {
+  maxPosts = Math.min(maxPosts, MAX_OWN_TWEETS);
   const h = normalizeXHandle(handle);
   const items = await runApifyActor(config.APIFY_X_PROFILE_ACTOR, {
     from: h,
@@ -80,9 +81,10 @@ async function pullXProfileViaApify(handle: string, maxPosts = 200): Promise<Pro
  */
 export async function pullXProfile(
   handle: string,
-  maxPosts = 200,
+  maxPosts = MAX_OWN_TWEETS,
   window?: { sinceDays: number; minPosts: number },
 ): Promise<ProfilePull> {
+  maxPosts = Math.min(maxPosts, MAX_OWN_TWEETS);
   if (config.TWITTERAPI_IO_KEY) return pullXProfileViaTwitterApiIo(normalizeXHandle(handle), maxPosts, window);
   return pullXProfileViaApify(handle, maxPosts);
 }

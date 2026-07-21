@@ -6,11 +6,10 @@ import { Copy01Icon, CheckmarkCircle02Icon } from "@hugeicons/core-free-icons";
 import panel from "./panel.module.css";
 import styles from "./compose.module.css";
 
-type Platform = "x" | "linkedin";
 type Draft = { id: string; content: string; platform: string; created_at?: string };
 
 export function Compose({ initialDrafts }: { initialDrafts: Draft[] }) {
-  const [platform, setPlatform] = useState<Platform>("x");
+  const platform = "x" as const;
   const [topic, setTopic] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -40,7 +39,7 @@ export function Compose({ initialDrafts }: { initialDrafts: Draft[] }) {
         setTopic("");
       }
     } catch {
-      setError("Network error — try again.");
+      setError("Network error - try again.");
     } finally {
       setBusy(false);
     }
@@ -56,30 +55,15 @@ export function Compose({ initialDrafts }: { initialDrafts: Draft[] }) {
           </div>
         </div>
 
-        <div className={styles.toggle}>
-          <button
-            className={`${styles.toggleBtn} ${platform === "x" ? styles.toggleBtnActive : ""}`}
-            onClick={() => setPlatform("x")}
-          >
-            X
-          </button>
-          <button
-            className={`${styles.toggleBtn} ${platform === "linkedin" ? styles.toggleBtnActive : ""}`}
-            onClick={() => setPlatform("linkedin")}
-          >
-            LinkedIn
-          </button>
-        </div>
-
         <div className={styles.composer}>
           <textarea
             className={styles.input}
-            placeholder={`What's the post about? e.g. "the lesson from shipping ${platform === "x" ? "the redesign" : "our Q3 launch"}"`}
+            placeholder='What&apos;s the post about? e.g. "the lesson from shipping the redesign"'
             value={topic}
             onChange={(e) => setTopic(e.target.value)}
           />
           <div className={styles.composerFooter}>
-            <span className={styles.hint}>{error || `Writing for ${platform === "x" ? "X" : "LinkedIn"}`}</span>
+            <span className={styles.hint}>{error || "Writing for X"}</span>
             <button className="btnPrimary" disabled={busy || !topic.trim()} onClick={write}>
               {busy ? "Writing…" : "Write it"}
             </button>
@@ -107,7 +91,7 @@ function DraftCard({ draft }: { draft: Draft }) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
-      /* clipboard blocked — no-op */
+      /* clipboard blocked - no-op */
     }
   }
   return (

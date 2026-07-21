@@ -23,7 +23,7 @@ export default async function BeliefsPage() {
         <div className={styles.head}>
           <div>
             <div className={styles.title}>Beliefs</div>
-            <div className={styles.subtitle}>The positions Yoinky has watched you stake — strongest first.</div>
+            <div className={styles.subtitle}>The positions Yoinky has watched you stake - strongest first.</div>
           </div>
         </div>
 
@@ -32,7 +32,7 @@ export default async function BeliefsPage() {
             <div className={styles.emptyTitle}>No positions yet.</div>
             <p>
               Once you&apos;ve dropped a few takes (or connected an account), Yoinky surfaces the beliefs you keep
-              returning to. <Link href="/app" style={{ color: "var(--accent)" }}>Start in chat →</Link>
+              returning to. <Link href="/app/compose" style={{ color: "var(--accent)" }}>Start in Compose →</Link>
             </p>
           </div>
         ) : (

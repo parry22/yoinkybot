@@ -10,7 +10,7 @@ const GOOGLE_STATE_COOKIE = "g_state";
 export async function GET(req: Request) {
   const origin = new URL(req.url).origin;
 
-  // Marketing-site CTAs link straight here to skip the /login page — but an
+  // Marketing-site CTAs link straight here to skip the /login page - but an
   // already-signed-in visitor shouldn't be forced through Google re-auth.
   const existingUser = await getSessionUser();
   if (existingUser) {

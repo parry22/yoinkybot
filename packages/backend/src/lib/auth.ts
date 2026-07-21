@@ -93,6 +93,10 @@ export async function consumeTelegramLinkToken(token: string, telegramId: number
     [token],
   );
   if (!row) return undefined;
+  // Detach this telegram id from any OTHER account first (a re-link, or a stray
+  // legacy telegram-only row) so the UNIQUE(telegram_id) constraint can't block
+  // attaching it to the intended web account.
+  await query(`UPDATE users SET telegram_id = NULL WHERE telegram_id = $1 AND id <> $2`, [telegramId, row.user_id]);
   return (await queryOne(`UPDATE users SET telegram_id = $1 WHERE id = $2 RETURNING *`, [
     telegramId,
     row.user_id,
@@ -120,6 +124,26 @@ export async function findOrCreateUserByTelegram(telegramId: number): Promise<Us
 export async function findUserIdByTelegramId(telegramId: number): Promise<string | null> {
   const row = await queryOne<{ id: string }>(`SELECT id FROM users WHERE telegram_id = $1`, [telegramId]);
   return row?.id ?? null;
+}
+
+/** Read-only: the full user row for a Telegram id, or null. The Telegram bot is
+ *  now auth-gated — a user must have linked this telegram_id to a web account,
+ *  so the bot looks up (never creates) and turns unlinked visitors away. */
+export async function findUserByTelegramId(telegramId: number): Promise<User | null> {
+  const row = (await queryOne(`SELECT * FROM users WHERE telegram_id = $1`, [telegramId])) as User | undefined;
+  return row ?? null;
+}
+
+/** Find or create a user by their X account id — the "Sign in with X" identity. */
+export async function findOrCreateUserByXId(xUserId: string): Promise<User> {
+  const existing = (await queryOne(`SELECT * FROM users WHERE x_user_id = $1`, [xUserId])) as User | undefined;
+  if (existing) return existing;
+  const created = (await queryOne(`INSERT INTO users (x_user_id) VALUES ($1) RETURNING *`, [
+    xUserId,
+  ])) as unknown as User;
+  identify(created.id, { source: "x", created_at: created.created_at });
+  track(created.id, "user_signed_up", { source: "x" });
+  return created;
 }
 
 export async function findOrCreateUserByEmail(email: string): Promise<User> {

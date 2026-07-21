@@ -18,6 +18,8 @@ import { alertAdmin } from "../lib/alerts.js";
 import { handleTrendFetch } from "./trend-fetch.js";
 import { handleTrendMatch } from "./trend-match.js";
 import { handleViralBenchmark } from "./viral-benchmark.js";
+import { handleBuyerRadar } from "./buyer-radar.js";
+import { handleBuyerRecalibration } from "../buyer/calibration.js";
 import { handleIngestProfile } from "../strategist/connect.js";
 import { handleDiagnose } from "../strategist/diagnosis.js";
 import { handleProgressReport } from "../strategist/progress.js";
@@ -28,6 +30,7 @@ import { handlePerformancePulse } from "../strategist/performance.js";
 import { handleCampaignDetect } from "./campaign-detect.js";
 import { handleMonthlyRecalibration } from "../memory/corrections.js";
 import { handleScheduledPost } from "./scheduled-post.js";
+import { handleAgentTick } from "../web/agent.js";
 import type { IngestProfileJob, DiagnoseJob, CampaignDetectJob, ScheduledPostJob } from "./boss.js";
 
 /**
@@ -76,6 +79,8 @@ export async function registerWorkers(boss: PgBoss): Promise<void> {
   await boss.work(QUEUES.trendFetch, logged(QUEUES.trendFetch, () => handleTrendFetch()));
   await boss.work(QUEUES.trendMatch, logged(QUEUES.trendMatch, () => handleTrendMatch()));
   await boss.work(QUEUES.viralBenchmark, logged(QUEUES.viralBenchmark, () => handleViralBenchmark()));
+  await boss.work(QUEUES.buyerRadar, logged(QUEUES.buyerRadar, () => handleBuyerRadar()));
+  await boss.work(QUEUES.buyerRecalibrate, logged(QUEUES.buyerRecalibrate, () => handleBuyerRecalibration()));
   await boss.work<IngestProfileJob>(
     QUEUES.ingestProfile,
     logged(QUEUES.ingestProfile, (d: IngestProfileJob) => handleIngestProfile(d)),
@@ -106,6 +111,10 @@ export async function registerWorkers(boss: PgBoss): Promise<void> {
     logged(QUEUES.scheduledPost, (d: ScheduledPostJob) => handleScheduledPost(d)),
   );
 
+  // Web "agent mode": once/day, for each user who's opted in, run the full
+  // topic→draft→schedule loop. The handler enforces a per-user ~daily gap.
+  await boss.work(QUEUES.agentTick, logged(QUEUES.agentTick, () => handleAgentTick()));
+
   // Proactive engine tick: hourly; cadence/quiet-hour gates live in the handler.
   // This single tick now also offers to turn the resurfaced idea into angles
   // (see resurface.ts) — the old separate hourly angle-offer sweep scanned for
@@ -128,6 +137,13 @@ export async function registerWorkers(boss: PgBoss): Promise<void> {
   // whoever the earlier one skipped; the once-a-day gate prevents duplicates and
   // skips the paid search for anyone already delivered today.
   await boss.schedule(QUEUES.viralBenchmark, "0 3,11,19 * * *"); // 08:30/16:30/00:30 IST — global spread
+  // Buyer Radar: DARK by default (handleBuyerRadar no-ops unless BUYER_RADAR_PROACTIVE).
+  // Modest once-daily cadence when enabled — search is per-user (O(users)) and paid,
+  // unlike the shared trend/viral pool. scanForUser enforces the monthly budget.
+  await boss.schedule(QUEUES.buyerRadar, "0 6 * * *"); // 11:30 IST daily
+  // Buyer Radar recalibration: monthly re-derive of per-user gates from verdicts
+  // (the inline not_a_fit/skipped path is the responsive one; this is the backstop).
+  await boss.schedule(QUEUES.buyerRecalibrate, "0 7 1 * *");
   // Public mentions ingest (classification + scoring only — the hourly
   // proactive tick decides delivery, replies get priority in that slot).
   await boss.schedule(QUEUES.mentionsFetch, "15 */6 * * *");
@@ -143,6 +159,9 @@ export async function registerWorkers(boss: PgBoss): Promise<void> {
   // Classification calibration: monthly, 1st of the month — correction-only
   // (see memory/corrections.ts), no external research integration.
   await boss.schedule(QUEUES.classificationRecalibrate, "0 6 1 * *");
+  // Agent mode: daily tick; the handler runs a cycle only for opted-in users
+  // that are due (per-user ~daily gap), so it's safe to over-fire.
+  await boss.schedule(QUEUES.agentTick, "0 6 * * *");
 
   // Retired schedules — pg-boss persists these in its own table independent of
   // the code, so removing a boss.schedule() call above does nothing on an

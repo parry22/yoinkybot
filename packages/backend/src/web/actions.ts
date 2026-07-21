@@ -1,28 +1,13 @@
 /**
- * Web wrappers for the "connect" and "ship" parts of the loop — same bot logic
- * (entitlements, allowance, persistence, async ingest jobs), collected into a
- * JSON-friendly shape. NOTE: connecting enqueues a pg-boss ingest+diagnose job,
- * which is processed by the BACKEND worker process (`pnpm dev`), not the web —
- * both must run for a connect to complete.
+ * Web wrappers for the "ship" part of the loop - same bot logic (entitlements,
+ * allowance, persistence), collected into a JSON-friendly shape. Connecting an
+ * account is handled by the OAuth flow (routes/oauth.ts) directly, not here -
+ * see `web/oauth-connect.ts` for the web-facing helper.
  */
 import type { User } from "../lib/auth.js";
-import { connectAccount, runDraft } from "../telegram/actions.js";
+import { runDraft } from "../telegram/actions.js";
 import { query } from "../db/pool.js";
-import { ensureBoss } from "../jobs/boss.js";
 import { collectingChannel } from "./channel.js";
-
-/** Start a scrape+diagnose for a public account (X @handle or LinkedIn URL). */
-export async function runWebConnect(
-  user: User,
-  platform: "x" | "linkedin",
-  handle: string,
-): Promise<{ messages: string[] }> {
-  // Connecting enqueues an ingest job; the web process must start pg-boss to send.
-  await ensureBoss();
-  const { channel, messages } = collectingChannel();
-  await connectAccount(user, platform, handle, channel);
-  return { messages };
-}
 
 /** Generate + persist a draft in the user's voice. Respects the paywall/allowance. */
 export async function runWebDraft(

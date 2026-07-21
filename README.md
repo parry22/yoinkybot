@@ -24,6 +24,135 @@ which is where it's most useful. Both share one Postgres and one `users` row.
 
 <!-- Keep newest-first. Update this whenever a change ships that a reader of the repo should know about. -->
 
+- **2026-07-22 — Buyer Radar shipped (real backend, web delivery).** Finds people
+  on X expressing purchase intent for what the user sells, scores it
+  deterministically, gates it semantically against their domain, and drafts an
+  approval-only reply in their voice, ideally anchored to their own prior take
+  (`search_memory`, the moat). It **never auto-sends**, and code, not the model,
+  decides who is a buyer. New: a distinct ICP profile (`icp_profiles`), a pure
+  intent scorer with a follower reachability band and a crowding penalty (the
+  inverse of buzz), a pgvector niche gate, and a bounded composition agent
+  (`buyer/*`, `buyer-queries.v1` + `buyer-outreach.v1`, migration `0022`).
+  Delivery is the web `/app/buyers-radar` page (ICP intake, "Scan now", per-signal
+  reply with copy/open/skip/not-a-fit); every scan is budget-gated before any paid
+  twitterapi.io call. The proactive recurring path (`jobs/buyer-radar.ts`) ships
+  DARK (`BUYER_RADAR_PROACTIVE=false`) — pull-only at launch. See INTERNAL §3j.
+
+- **2026-07-21 — Web auth = Google or X; mandatory Connect-X; Agent split into
+  Compose + Automation; X 404 fixed.** (1) **Login** now offers exactly two
+  options: Continue with Google or Continue with X. X sign-in is a full web-side
+  OAuth flow (`/api/auth/x/*`, PKCE, keyed by a new `users.x_user_id`, migration
+  `0021`) that both authenticates and connects X. Email magic-link is retired
+  from the login UI. (2) **Mandatory Connect-X gate**: the app layout shows a
+  non-dismissible popup until X is connected; right after connecting it shows a
+  "reading your account" animation (polls `/api/connect-status`) while the
+  history ingest runs. (3) **X OAuth 404 fixed**: X migrated off `twitter.com`,
+  so the authorize/token/API hosts moved to `x.com`/`api.x.com` (was 404ing on
+  the old consent URL). (4) **Agent is a section, not a page**: sidebar group
+  "Agent" → **Compose** (as before) + **Automation** (new full page for the
+  autopilot: find topics, draft, schedule on your behalf). `/app` redirects to
+  `/app/compose`; the standalone chat page is gone. (5) Settings trimmed: the
+  onboarding-status pill and the "Your info" question editor are removed (the
+  agent now draws those out conversationally, confirming from your X where it's
+  clear, per an updated `converse.v3`); the Telegram button reads **Go to
+  Telegram**. (6) **Every em dash purged** from the web app. **Note for you:**
+  the web X OAuth needs its callback registered in the X Developer Portal:
+  `https://app.meetyoinky.com/api/auth/x/callback` (+ `http://localhost:3002/...`
+  for dev), and the consent-screen name comes from that same X app (rename it to
+  Yoinky there). Set `WEB_APP_URL` on Vercel + Railway too.
+- **2026-07-20 — Telegram is now auth- and subscription-gated; no onboarding
+  there.** Big behavioral shift: the bot no longer runs the profile intake or
+  auto-creates a user row for anyone who DMs it. Onboarding happens only on the
+  web now. New Telegram flow: (1) **auth-gate** — a Telegram chat must be linked
+  to a web account (sign in on the web with Google/email → Settings → Connect
+  Telegram, which deep-links `/start <token>`). An unlinked visitor gets a short
+  "sign in on the web first" message and nothing else — no stray account is
+  created. (2) **subscription-gate** — `upgradeWall` now fires on
+  `!isPaidOrExempt` for *every* gated command/message (not just the old
+  post-diagnosis parking spot); it's a no-op while `PAYWALL_ENABLED=false`
+  (testing) and a real gate once the paywall is on. (3) After auth, the bot
+  sends **one short capabilities message** (what Telegram is for: drop
+  thoughts, draft, proactive nudges) — deeper setup is pointed at the web app.
+  The profiling kickoff was removed from `/start` and `handleTextTurn`; the
+  wipe-everything flow no longer restarts a Telegram intake. Also fixed a
+  latent bug: linking could hit the `UNIQUE(telegram_id)` constraint if a stray
+  row already held that id — `consumeTelegramLinkToken` now detaches it first.
+  Also: the web "Finish setup" button/banner were removed (onboarding is now the
+  gamified popup at `/app/onboarding`, no persistent nag). **Note for you:** the
+  X OAuth *consent screen* app name ("...wants to connect") comes from the X
+  Developer Portal app registered under `X_CLIENT_ID` — rename that app to
+  "Yoinky" there; it isn't set in code.
+- **2026-07-20 — Settings: Connect X is now OAuth, not a typed handle.** The
+  Settings "Connect X" button links to the backend's existing
+  `/oauth/x/start?u=<userId>&redirect=<returnPath>` route — the same PKCE flow
+  the Telegram bot's own connect button uses — instead of asking for a typed
+  `@handle`. For X, OAuth is strictly better: after verifying identity via
+  `GET /2/users/me`, `afterOAuthConnected` automatically kicks the same
+  history-read job the typed-handle path used, so one authorize click now does
+  what used to take a click + typing a handle. New `WEB_APP_URL` config (an
+  allowlisted return origin) lets the OAuth callback redirect the browser back
+  to `/app/settings?connected=x` instead of the bot-flavored static page — only
+  ever honored when it matches `WEB_APP_URL` exactly (open-redirect guard).
+  **Caught a real architectural bug before shipping:** my first pass had the
+  web app call `buildAuthUrl` in-process (skipping the `/start` redirect hop
+  "for efficiency") — but the PKCE `pending` state in `routes/oauth.ts` is an
+  in-memory `Map`, and `/start` (which writes it) and `/callback` (which reads
+  it) must run in the *same OS process* for that state to be visible. Since the
+  web (Vercel) and backend (Railway) are separate deployments in production,
+  that would've populated a `pending` entry only the web process could see,
+  and every connect attempt would silently 404/expire on the backend's
+  `/callback`. Fixed by making the button a real HTTP link to the backend's own
+  `/oauth/x/start` (mirroring the bot's own `authUrl` helper exactly) so both
+  legs run on the backend. The typed-handle path (`/api/connect`, `runWebConnect`)
+  was dead-code-removed once OAuth replaced it in the UI.
+- **2026-07-20 — Web app restructure: Agent absorbs Chat, gamified onboarding
+  popup, Inspiration + Buyers Radar, editable profile, X-only.** A batch of UI
+  changes: (1) **LinkedIn removed from the web app** (Compose, Connect) — the
+  Telegram bot's LinkedIn support is untouched, this is web-only for now.
+  (2) **Dark/light toggle moved to Settings** (was in the sidebar); Settings also
+  gained a **Connect Telegram** button (deep-links via the existing
+  `createTelegramLinkToken` + bot `/start` flow — new `/api/telegram/link`).
+  (3) **Chat merged into Agent** — `/app` (the old standalone chat page) now
+  redirects to `/app/agent`, which is chat plus an agent-mode status bar and a
+  queue/best-posts modal. (4) **Inspiration** (`/app/inspiration`) — Trends and
+  Virals tabs reading the `surfacings` ledger the proactive jobs already
+  populate (new `listTrendInspiration`/`listViralInspiration`). (5) **Buyers
+  Radar** (`/app/buyers-radar`) — UI-only preview (blurred mock results, no
+  backend) for a planned "find people publicly asking for your service on X"
+  feature. (6) **Settings: editable stated profile** — niche, goal, audience,
+  tone, inspirations, content pillars, camera comfort, via a new
+  `submitProfileForm`/`/api/profile`. (7) **Onboarding is now a 3-screen
+  gamified popup wizard** (dropdowns for goal/tone/camera comfort, a
+  segment-per-field progress bar, skip-this-section / skip-onboarding) instead
+  of a conversational chat flow — writes `brand_profiles` fields directly
+  (`web/onboarding-form.ts`), no LLM round trip. The old conversational web
+  onboarding path (`initWebOnboarding`, `runWebOnboardingTurn`, `/api/onboarding`)
+  was dead-code-removed; Telegram's onboarding is unaffected.
+  **Two real bugs surfaced and fixed while building this:** `strategist/profile.ts`'s
+  `normalize()` wrote a literal `""` instead of SQL `NULL` for skipped scalar
+  fields, which violates the CHECK constraints on `primary_goal`/`camera_comfort`
+  (etc.) — this silently no-op'd on the Telegram skip path (swallowed by a
+  `.catch(() => {})`) but 500'd loudly here; fixed at the source (`scalar || null`),
+  which fixes both paths. And the completion check only counted fields with a
+  truthy value, so a legitimately-*skipped* field (real value `NULL`) could
+  never count as "done" — `profileCompletionFields` now also honors the
+  `unresolved[]` ledger, matching the Telegram intake's own definition of captured.
+- **2026-07-17 — Agent mode, X analytics, 100-tweet cap, tighter messages.**
+  Four changes: (1) **Web agent mode** (`/app/agent`) — an opt-in auto loop that
+  once a day picks a topic from your unlock backlog, drafts it in your voice, and
+  *schedules* it (cancellable in the queue before it fires); a daily
+  `agentTick` cron runs a cycle for each opted-in user, plus a "Run one cycle
+  now" button. (2) **Web analytics** (`/app/analytics`) — loads instantly from
+  stored post metrics: impressions/likes/replies/RT/quotes/**bookmarks**, median
+  engagement rate, an **engagement-weighted best-time heatmap**, top posts, and
+  **on-demand reply-level performance** (impressions + engagement rate on your
+  own replies — the native-analytics blind spot). It's honest about what X
+  simply doesn't expose (profile clicks, per-post follower attribution,
+  revenue/RPM are listed as unavailable, never faked). (3) **100-tweet scrape
+  cap** — every pull of a user's own tweets is hard-clamped to 100
+  (`MAX_OWN_TWEETS`). (4) **Shorter Telegram breakdowns** — tightened the shared
+  `CASUAL_VOICE` brevity rule plus the progress-report, trend-take, and
+  viral-case-study prompts so no message is a wall of text.
 - **2026-07-17 — Web app is Vercel-deployable (app.meetyoinky.com).** The web
   ships as its own Vercel deploy over the same Neon DB as the Railway backend
   (Vercel = UI + API + job-enqueue; Railway keeps the bot + pg-boss workers +

@@ -151,11 +151,67 @@ async function fetchTweets(
 }
 
 /** Pull a user's public X history via twitterapi.io — richer than the Apify actor. */
+/** Hard ceiling on how many of a user's own tweets we ever scrape in one pull. */
+export const MAX_OWN_TWEETS = 100;
+
+/** A timeline tweet (post OR reply) with its raw public metrics, for analytics. */
+export interface TimelineTweet {
+  id: string;
+  url: string | null;
+  text: string;
+  createdAt: string;
+  isReply: boolean;
+  likeCount: number;
+  replyCount: number;
+  retweetCount: number;
+  quoteCount: number;
+  viewCount: number;
+  bookmarkCount: number;
+}
+
+/**
+ * Pull a user's recent timeline — posts AND replies — each with its public
+ * counters (impressions/likes/replies/RT/quotes/bookmarks). Unlike the profile
+ * pull (which drops replies for voice work), this keeps them so analytics can
+ * show reply-level performance. Retweets are dropped (they carry the original's
+ * metrics, not the user's). Capped at 100; rate-limited, so callers should treat
+ * it as slow/on-demand.
+ */
+export async function pullXTimelineWithMetrics(
+  handle: string,
+  maxPosts = MAX_OWN_TWEETS,
+): Promise<{ tweets: TimelineTweet[]; followers?: number }> {
+  maxPosts = Math.min(maxPosts, MAX_OWN_TWEETS);
+  const userName = handle.replace(/^@/, "").trim();
+  const raw = await fetchTweets(userName, maxPosts);
+  let followers: number | undefined;
+  const tweets: TimelineTweet[] = [];
+  for (const t of raw) {
+    if (!t.text || t.retweeted_tweet) continue;
+    followers ??= t.author?.followers;
+    tweets.push({
+      id: t.id ?? "",
+      url: t.url ?? null,
+      text: t.text,
+      createdAt: t.createdAt ?? "",
+      isReply: Boolean(t.isReply),
+      likeCount: t.likeCount ?? 0,
+      replyCount: t.replyCount ?? 0,
+      retweetCount: t.retweetCount ?? 0,
+      quoteCount: t.quoteCount ?? 0,
+      viewCount: t.viewCount ?? 0,
+      bookmarkCount: t.bookmarkCount ?? 0,
+    });
+  }
+  return { tweets, followers };
+}
+
 export async function pullXProfileViaTwitterApiIo(
   handle: string,
-  maxPosts = 200,
+  maxPosts = MAX_OWN_TWEETS,
   opts?: { sinceDays: number; minPosts: number },
 ): Promise<ProfilePull> {
+  maxPosts = Math.min(maxPosts, MAX_OWN_TWEETS);
   const raw = await fetchTweets(handle, maxPosts, opts);
   const { posts, bio, followers } = parseTwitterApiIoTweets(raw);
   return { posts, meta: { bio, followers, handle } };

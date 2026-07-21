@@ -3,7 +3,7 @@ import { config } from "../config.js";
 import { query, queryOne } from "../db/pool.js";
 import {
   consumeTelegramLinkToken,
-  findOrCreateUserByTelegram,
+  findUserByTelegramId,
   type User,
 } from "../lib/auth.js";
 import { createCapture } from "../capture/service.js";
@@ -123,73 +123,41 @@ export function createBot(): Bot | undefined {
   // or edited-message updates — only real new messages count as "chat history").
   bot.use(async (ctx, next) => {
     const msg = ctx.update.message;
+    // Read-only: the bot is auth-gated now, so an unlinked Telegram id has no
+    // user row and we log/track nothing for it (the handlers turn it away). We
+    // never create a row here — that used to be silent account creation.
     if (msg && ctx.chat?.type === "private") {
-      const user = await findOrCreateUserByTelegram(msg.from.id);
-      await recordMessage(user.id, msg.chat.id, msg.message_id);
-      // Core engagement signal. Kind only — never the message content.
-      const kind = "voice" in msg ? "voice" : "command" in msg || msg.text?.startsWith("/") ? "command" : "text";
-      track(user.id, "message_received", { kind });
+      const user = await findUserByTelegramId(msg.from.id);
+      if (user) {
+        await recordMessage(user.id, msg.chat.id, msg.message_id);
+        // Core engagement signal. Kind only — never the message content.
+        const kind = "voice" in msg ? "voice" : "command" in msg || msg.text?.startsWith("/") ? "command" : "text";
+        track(user.id, "message_received", { kind });
+      }
     }
     await next();
   });
 
   bot.command("start", async (ctx) => {
+    // A deep-link token means the user tapped "Connect Telegram" in the web app
+    // — link this chat to their web account, then welcome them.
     const payload = ctx.match?.trim();
     if (payload) {
       const linked = await consumeTelegramLinkToken(payload, ctx.from!.id);
       if (linked) {
-        await ctx.reply("linked to your yoink account. send me a thought, voice or text, and it's captured.");
+        await sendTelegramWelcome(ctx, linked);
         return;
       }
+      // Token bad/expired → fall through to the not-linked prompt below.
     }
-    const user = await findOrCreateUserByTelegram(ctx.from!.id);
-    const stage = await getStage(user.id);
-    // Only a genuinely finished user is "set up" — everyone else (new, or partway
-    // through onboarding) should be in the intake, not told they're done.
-    if (stage === "active" || stage === "plan_active") {
-      await ctx.reply("you're all set up. send me a thought whenever, or /plan to see where we're headed.");
+    // Auth gate: the bot is now web-account-gated. No onboarding here — that all
+    // happens on the web. An unlinked visitor is told to sign in there first.
+    const user = await findUserByTelegramId(ctx.from!.id);
+    if (!user) {
+      await ctx.reply(NOT_LINKED_MSG);
       return;
     }
-    // Parked at the paywall after their diagnosis: re-show the offer (or wave a
-    // paid/whitelisted user straight through if they've since upgraded).
-    if (stage === "awaiting_upgrade") {
-      if (await isPaidOrExempt(user)) {
-        await setStage(user.id, "active");
-        await ctx.reply("you're all set, everything's unlocked. send me a thought whenever.");
-      } else {
-        const offer = await buildUpgradeOffer();
-        await ctx.reply(`${WALL_PROMPT}\n\n${offer.text}`, { reply_markup: offer.keyboard });
-      }
-      return;
-    }
-    const st = await getState(user.id);
-    // Mid-intake with real progress → resume where they left off, don't wipe it.
-    if (isProfilingPhase(st) && (st.profile?.captured?.length ?? 0) > 0) {
-      const next = nextIntakeField(st.profile?.captured);
-      if (next) {
-        await ctx.reply(`picking up where we left off. ${FALLBACK_QUESTION[next as ProfileField]}`, {
-          reply_markup: onboardingSkipKeyboard(),
-        });
-        return;
-      }
-      // At the connect hand-off: re-send the auth buttons (OAuth-first), since
-      // /start on resume means they lost the earlier message or stalled on it.
-      // The offer copy carries the full ask; plain handle ask is the fallback.
-      const offered = await maybeSendConnectAuthOffer(user.id, { force: true }).catch(() => false);
-      if (!offered) {
-        await ctx.reply(
-          "we're almost there. drop your X handle (like @yourname) or your LinkedIn profile URL and I'll read your history.",
-        );
-      }
-      return;
-    }
-    // Fresh start: lead with what Yoinky can do (so they know what they're
-    // setting up), then profile-first intake so the diagnosis lands as a
-    // stated-vs-actual gap.
-    await setStage(user.id, "profiling");
-    await setState(user.id, { phase: "profiling", profile: {} });
-    await ctx.reply(CAPABILITIES);
-    await ctx.reply(PROFILE_OPENER, { reply_markup: onboardingSkipKeyboard() });
+    await sendTelegramWelcome(ctx, user);
   });
 
   // Connect a public account so the strategist can ingest your history + diagnose.
@@ -232,20 +200,17 @@ export function createBot(): Bot | undefined {
   bot.command("help", async (ctx) => {
     await ctx.reply(
       `${CAPABILITIES}\n\n` +
-        "getting set up:\n" +
-        "send /start and i'll walk you through a few questions, then read your real history.\n\n" +
         "the work (all of this works in plain words too):\n" +
         "/draft your idea  — i turn a thought into a post in your voice\n" +
         "/repurpose  — reshape a finished post for another platform, or pull scattered takes into one piece\n" +
-        "/connect  — link your X/LinkedIn so i can read your work\n" +
         "/scheduled  — see and cancel what's queued to publish\n" +
         "/peers  — watch a few peers, compare territory (never raw numbers)\n\n" +
         "housekeeping:\n" +
         "/settings  — quiet hours, timezone, how often i reach out\n" +
         "/upgrade  — unlock the paid work\n\n" +
+        "the deeper setup — connecting X, your diagnosis, your plan, analytics — lives in the web app.\n\n" +
         "or just say what you want: \"draft me a post about X\", \"post this friday at 6pm\", " +
-        "\"does this contradict what i've said\", \"what have i said about pricing\", \"where am i at\", " +
-        "\"what do i believe\", \"wipe everything and start over\". bring me a thought and i'll find the story in it.",
+        "\"does this contradict what i've said\", \"what have i said about pricing\". bring me a thought and i'll find the story in it.",
     );
   });
 
@@ -504,12 +469,11 @@ export function createBot(): Bot | undefined {
           console.error("clear: message deletion sweep failed", err),
         );
         await resetUserData(user.id);
-        // Restart the profile-first onboarding from scratch (same as /start), so
-        // wiping everything lands them back at question one rather than a dead
-        // "connect an account" prompt. The fresh message gets tracked like everything else.
-        await setStage(user.id, "profiling");
-        await setState(user.id, { phase: "profiling", profile: {} });
-        await ctx.reply(`done. clean slate.\n\n${PROFILE_OPENER}`);
+        // Onboarding lives on the web now — no profile intake to restart here.
+        await ctx.reply(
+          "done. clean slate — everything's wiped.\n\n" +
+            `to set up fresh, head to ${config.WEB_APP_URL}. here, just drop me a thought whenever.`,
+        );
         return;
       }
       await ctx.editMessageText("cancelled. nothing was deleted.");
@@ -892,111 +856,84 @@ export function createBot(): Bot | undefined {
  * list is edited once as features ship, never drifting between the two.
  */
 const CAPABILITIES =
-  "i'm yoinky, your personal-branding strategist that lives in this chat.\n\n" +
-  "what i do:\n" +
-  "• read your real X/LinkedIn history and diagnose your brand: what's working, what's not, the throughline you're underusing\n" +
-  "• draft posts in your actual voice, from your own thinking (text or voice notes)\n" +
-  "• catch trends and viral moments in your lane and hand you the angle\n" +
-  "• flag when a draft contradicts something you've already said\n" +
-  "• reshape finished posts across platforms, or pull scattered takes into one piece\n" +
-  "• resurface the right idea at the right time, on your schedule\n\n" +
-  "everything happens right here. mostly, just talk to me.";
+  "i'm yoinky, your personal-branding strategist. here in Telegram i'm your day-to-day capture + reach line:\n\n" +
+  "• drop a thought anytime, voice or text — i file it and can turn it into a post in your voice\n" +
+  "• ask me to draft, or reshape a finished post for another platform\n" +
+  "• i'll ping you when a trend or viral moment in your lane is worth jumping on\n" +
+  "• i'll flag when a draft contradicts something you've already said\n" +
+  "• i resurface the right idea at the right time, on your schedule\n\n" +
+  "the deeper setup — connecting X, your diagnosis, your plan, analytics — lives in the web app. here, mostly just talk to me.";
+
+// Sent right after a Telegram user is authenticated (linked + subscribed). Kept
+// short on purpose — no onboarding, just "here's what this chat is for."
+const TELEGRAM_WELCOME =
+  "you're in ✅\n\n" + CAPABILITIES;
+
+// Shown to anyone who opens the bot without a linked web account. The bot is
+// web-account-gated now: sign in on the web (Google/email), then link Telegram.
+const NOT_LINKED_MSG =
+  "hey — you'll need to sign in first.\n\n" +
+  `1. open ${config.WEB_APP_URL} and sign in with your google account\n` +
+  "2. go to Settings → Connect Telegram\n\n" +
+  "that links this chat to your account, and i'll pick things up right here.";
+
+/** Auth + subscription welcome, sent after linking or on /start for a linked user. */
+async function sendTelegramWelcome(ctx: Context, user: User): Promise<void> {
+  if (await isPaidOrExempt(user)) {
+    await ctx.reply(TELEGRAM_WELCOME);
+    return;
+  }
+  const offer = await buildUpgradeOffer();
+  await ctx.reply(
+    `you're signed in ✅ — one thing left: a subscription unlocks everything here.\n\n${offer.text}`,
+    { reply_markup: offer.keyboard },
+  );
+}
 
 /**
- * The post-diagnosis paywall gate. Returns the upgrade offer to show (and blocks
- * the caller) when the user is parked at 'awaiting_upgrade' and isn't paid or
- * whitelisted; returns null (proceed) otherwise. Lazily promotes a user who has
- * since paid or been whitelisted to 'active' so they flow into steady-state. The
- * one choke point that keeps LLM/API work blocked for free users after their
- * diagnosis lands — the same preset message every time until they upgrade.
+ * Subscription gate. Returns the upgrade offer (and blocks the caller) when the
+ * user isn't paid, whitelisted, or in the paywall-off testing mode; returns null
+ * (proceed) otherwise. `isPaidOrExempt` returns true for everyone while
+ * PAYWALL_ENABLED is false, so this is a no-op in testing and a real gate once
+ * the paywall is turned on. Name kept for its many existing call sites.
  */
 async function upgradeWall(user: User): Promise<{ text: string; keyboard: InlineKeyboard } | null> {
-  if ((await getStage(user.id)) !== "awaiting_upgrade") return null;
-  if (await isPaidOrExempt(user)) {
-    await setStage(user.id, "active");
-    return null;
-  }
+  if (await isPaidOrExempt(user)) return null;
   const offer = await buildUpgradeOffer();
   return { text: `${WALL_PROMPT}\n\n${offer.text}`, keyboard: offer.keyboard };
 }
 
 async function handleTextTurn(user: User, text: string, ctx: Context): Promise<void> {
   const channel = ctxChannel(ctx);
-  // Post-diagnosis paywall: a free user gets the same preset offer on every
-  // message, with no LLM/API call behind it. Checked before withTyping so there's
-  // no typing flash on an instant canned reply.
+  // Subscription gate: an unsubscribed user gets the same preset offer on every
+  // message, no LLM/API call behind it. Checked before withTyping so there's no
+  // typing flash on an instant canned reply. (No-op while the paywall is off.)
   const wall = await upgradeWall(user);
   if (wall) {
     await channel.say(wall.text, wall.keyboard);
     return;
   }
   await withTyping(channel, async () => {
-    const [state, stage] = await Promise.all([getState(user.id), getStage(user.id)]);
+    const state = await getState(user.id);
 
-    // "diagnose my x: @handle" typed in plain language must actually SCRAPE that
-    // profile, not get answered from whatever's already in memory. But only when
-    // it's plausibly THEIR account: an ownership cue ("my", "I'm"), or a user we
-    // haven't read yet. "check out @naval on x" from an active user is
-    // conversation about someone else — the chat brain handles it (and can still
-    // call connect_account after clarifying).
+    // "connect / diagnose my X @handle" typed in plain language still kicks off a
+    // real scrape (a feature, not onboarding). Only when it's plausibly THEIR
+    // account — an ownership cue, or we're awaiting a handle. "check out @naval"
+    // is conversation about someone else and the chat brain handles it (it can
+    // still call the connect_account tool after clarifying).
     const intent = detectConnectIntent(text);
-    if (intent && (intent.owned || state.awaitingConnect || stage === "new" || stage === "connected")) {
+    if (intent && (intent.owned || state.awaitingConnect)) {
       await beginConnect(ctx, user, intent.platform, intent.handle);
       return;
     }
-
-    // A bare "@handle" is the answer when we just asked for one (/start,
-    // /connect help) — and an explicit "@handle" from a brand-new user counts
-    // cold. Straight to the scrape + diagnosis, never a goals questionnaire.
     const target = parseConnectTarget(text);
-    if (target && (state.awaitingConnect || (target.explicit && stage === "new"))) {
+    if (target && state.awaitingConnect) {
       await beginConnect(ctx, user, target.platform, target.handle);
       return;
     }
 
-    // A brand-new user who leads with a plain thought (not a handle, no /start)
-    // still enters the profile intake — profile-first is the default.
-    if (stage === "new" && !isOnboardingPhase(state)) {
-      await setStage(user.id, "profiling");
-      await setState(user.id, { phase: "profiling", profile: {} });
-    }
-
-    // In the paced onboarding arc → the LLM-driven strategist session.
-    if (isOnboardingPhase(state) || (await getStage(user.id)) === "profiling") {
-      try {
-        const r = await runSessionTurn(user.id, text);
-        // Still working through the intake questions? Keep the skip buttons under
-        // each one. Once we're past the questionnaire (connect hand-off, reveals),
-        // there's no per-step to skip, so drop them.
-        const stillProfiling = (await getState(user.id)).phase === "profiling";
-        await deliverTurnOutput(user, text, r, channel, { onboardingSkip: stillProfiling });
-        await maybeSendToneMenu(user.id, ctx);
-        // The intake just completed → the connect hand-off leads with the OAuth
-        // buttons (X first, LinkedIn once X resolves). One-shot: no-ops unless
-        // the phase is connect_transition and nothing has been offered yet.
-        await maybeSendConnectAuthOffer(user.id).catch((err) =>
-          console.error("connect auth offer failed", err),
-        );
-        // A small aside, after the real reply — not competing with it for
-        // attention. Only fires the one turn a goal is captured.
-        if (r.offerSecondPlatform) {
-          const missing = await otherUnconnectedPlatform(user.id).catch(() => null);
-          if (missing) {
-            await ctx.reply(
-              `want me to pull your ${missing === "linkedin" ? "LinkedIn" : "X"} too? different register ` +
-                "usually shows up there, worth having both in the picture.",
-            );
-          }
-        }
-      } catch (err) {
-        console.error("session turn failed", err);
-        void import("../lib/alerts.js").then(({ alertAdmin }) =>
-          alertAdmin("llm:session-turn", `Onboarding session turn failed — user saw the lost-my-thread line. Error: ${err instanceof Error ? err.message : String(err)}`),
-        );
-        await ctx.reply("give me a sec, lost my thread there. say that again?");
-      }
-      return;
-    }
+    // Everything else is steady-state chat. Onboarding lives on the web now —
+    // Telegram never runs the profile intake.
     await handleConversation(user, text, channel);
   });
 }
@@ -1070,10 +1007,21 @@ async function handleConversation(user: User, text: string, channel: Channel): P
   await deliverTurnOutput(user, text, result, channel);
 }
 
+/**
+ * The auth gate for every message/command. Looks up the linked web account for
+ * this Telegram id (never creates one). If the chat isn't linked, it replies
+ * with the sign-in instructions and returns undefined so the caller bails —
+ * this is what makes the bot web-account-gated.
+ */
 async function requireUser(ctx: Context): Promise<User | undefined> {
   const tgId = ctx.from?.id;
   if (!tgId) return undefined;
-  return findOrCreateUserByTelegram(tgId);
+  const user = await findUserByTelegramId(tgId);
+  if (!user) {
+    await ctx.reply(NOT_LINKED_MSG).catch(() => {});
+    return undefined;
+  }
+  return user;
 }
 
 /**

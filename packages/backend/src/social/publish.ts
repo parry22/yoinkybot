@@ -50,7 +50,7 @@ export async function resolveWriteAuth(userId: string, platform: Platform): Prom
 
 async function publishToX(auth: WriteAuth, content: string): Promise<PublishResult> {
   try {
-    const res = await fetch("https://api.twitter.com/2/tweets", {
+    const res = await fetch("https://api.x.com/2/tweets", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${auth.accessToken}`,

@@ -68,6 +68,11 @@ NODE_ENV=production
 PORT=3001
 PUBLIC_URL=https://bot.meetyoinky.com
 CHECKOUT_RETURN_URL=https://t.me/<your_bot>
+# The web app's own origin — an allowlisted return target for the OAuth
+# connect flow's `redirect` param (routes/oauth.ts), so Settings' "Connect X"
+# bounces back to app.meetyoinky.com instead of the bot-flavored static page.
+# Backend config, NOT set on Vercel. Omitting it just falls back harmlessly.
+WEB_APP_URL=https://app.meetyoinky.com
 
 DATABASE_URL=<the existing Neon connection string — copy verbatim, don't touch>
 

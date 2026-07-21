@@ -11,10 +11,11 @@ export type { Platform };
 
 // Recent history is what the diagnosis is about — a year-deep scrape mostly
 // buys extraction time, not insight. 90 days, floored at 40 posts (the read
-// needs ~30-40 to not be thin), capped at 120 so ingest time stays predictable.
+// needs ~30-40 to not be thin), capped at 100 so ingest time stays predictable
+// and we never scrape more than 100 of a user's tweets in one pull.
 const INGEST_WINDOW_DAYS = 90;
 const INGEST_MIN_POSTS = 40;
-const INGEST_MAX_POSTS = 120;
+const INGEST_MAX_POSTS = 100;
 
 /**
  * Honest wall-clock estimate for reading N posts: extraction + embedding/link
@@ -93,7 +94,7 @@ export async function handleIngestProfile(job: IngestProfileJob): Promise<void> 
   try {
     const pull =
       account.platform === "x"
-        ? await pullXProfile(account.handle, INGEST_MAX_POSTS + 40, {
+        ? await pullXProfile(account.handle, INGEST_MAX_POSTS, {
             sinceDays: INGEST_WINDOW_DAYS,
             minPosts: INGEST_MIN_POSTS,
           })

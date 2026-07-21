@@ -22,6 +22,9 @@ export const QUEUES = {
   campaignDetect: "memory.campaign-detect",
   classificationRecalibrate: "memory.classification-recalibrate",
   scheduledPost: "posts.scheduled",
+  agentTick: "agent.tick",
+  buyerRadar: "buyer.radar",
+  buyerRecalibrate: "buyer.recalibrate",
 } as const;
 
 export interface TranscribeJob {
@@ -99,6 +102,7 @@ export async function startBoss(): Promise<PgBoss> {
     QUEUES.viralBenchmark,
     QUEUES.mentionsFetch,
     QUEUES.peerIngest,
+    QUEUES.buyerRadar,
   ];
   for (const q of Object.values(QUEUES)) {
     // Per-item ingest jobs (extract/embed/transcribe/…) DO retry — a retry there

@@ -41,21 +41,8 @@
   color: var(--accent);
 }
 
-.form {
-  display: flex;
-  gap: 8px;
+.connectRow {
   margin-top: 14px;
-  align-items: center;
-}
-
-.form .field {
-  flex: 1;
-}
-
-.rowLabel {
-  font-size: 12px;
-  color: var(--ink-500);
-  margin: 14px 0 4px;
 }
 
 .msg {
@@ -63,4 +50,26 @@
   font-size: 13px;
   color: var(--ink-700);
   line-height: 1.5;
+}
+
+.banner {
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.4;
+  border: 0.5px solid var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--ink-900);
+}
+
+.bannerError {
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.4;
+  border: 0.5px solid #e5484d55;
+  background: #e5484d15;
+  color: var(--ink-900);
 }

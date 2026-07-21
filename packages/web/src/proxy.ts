@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 // Lightweight gate: bounce unauthenticated visitors off /app before render.
-// Presence only — the session token is validated in server components.
+// Presence only - the session token is validated in server components.
 export function proxy(req: NextRequest) {
   const hasSession = req.cookies.has("yoink_session");
   if (!hasSession) {

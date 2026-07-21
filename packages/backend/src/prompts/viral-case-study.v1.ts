@@ -44,7 +44,8 @@ THE SOURCE TWEET: paraphrase it in ONE short line ("source_note") — your words
 of theirs verbatim (copyright, not style). The permalink is provided separately.
 
 Output:
-- "breakdown": 2-4 short sentences on why it worked, each tied to a specific number from the facts.
+- "breakdown": 2-3 short sentences on why it worked, each tied to a specific number from the facts.
+  Keep it tight and skimmable — no wall of text.
 - "angle": ONE concrete thing THIS user could post in their own voice/lane, inspired by the mechanic
   that made this work (not by copying the topic). Specific, not "you could talk about this too".
 - "source_note": one-line paraphrase of the tweet.

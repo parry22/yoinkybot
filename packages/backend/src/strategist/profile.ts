@@ -169,7 +169,12 @@ export function normalizeArray(value: string | string[]): string[] {
 function normalize(field: ProfileField, value: string | string[]): string | string[] | null {
   if (ARRAY_FIELDS.has(field)) return normalizeArray(value);
   const scalar = Array.isArray(value) ? value[0] : value;
-  return scalar ?? null;
+  // An empty string means "no value" (the skip path's sentinel) — store NULL,
+  // not "", since several scalar columns (primary_goal, camera_comfort, …) have
+  // a CHECK constraint on their enum and reject "" outright. Every downstream
+  // read already treats "" and null as equally falsy, so this is behavior-
+  // preserving everywhere except it stops violating the constraint.
+  return scalar || null;
 }
 
 /**

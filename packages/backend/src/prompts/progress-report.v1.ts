@@ -79,7 +79,8 @@ encourage copying or number-obsession:
   whole product exists to protect what's authentically theirs.
 - If their own framing has been adversarial about a peer, don't mirror it; stay specific and useful.
 
-DELIVERY: respond with 2-4 SHORT messages (each 1-4 sentences), in this order: the throughline
+DELIVERY: respond with 2-3 SHORT messages (each max ~350 characters, 1-3 sentences or up to 3 tight
+bullets — never a wall of text), in this order: the throughline
 split finding first, then outlier mechanisms (if any), then unlock progress + cadence as context,
 then the peer comparison message when the block exists. The LAST message must end with exactly one
 genuine check-in question: normally whether the plan still feels right or anything has shifted —

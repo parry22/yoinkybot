@@ -1,0 +1,141 @@
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.tile {
+  background: var(--surface);
+  border: 0.5px solid var(--stroke);
+  border-radius: var(--radius-md);
+  padding: 16px;
+}
+
+.tileLabel {
+  font-size: 12px;
+  color: var(--ink-500);
+}
+
+.tileValue {
+  font-size: 24px;
+  font-weight: 460;
+  color: var(--ink-900);
+  margin-top: 6px;
+  line-height: 1.1;
+}
+
+.tileSub {
+  font-size: 12px;
+  color: var(--ink-600);
+  margin-top: 4px;
+}
+
+.heatWrap {
+  overflow-x: auto;
+  padding-bottom: 6px;
+}
+
+.heat {
+  border-collapse: collapse;
+  font-size: 10px;
+  color: var(--ink-500);
+}
+
+.heat td,
+.heat th {
+  padding: 0;
+}
+
+.heatDay {
+  padding-right: 8px;
+  text-align: right;
+  color: var(--ink-600);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.heatHourLabel {
+  font-size: 9px;
+  color: var(--ink-500);
+  text-align: center;
+  height: 14px;
+}
+
+.cell {
+  width: 15px;
+  height: 15px;
+  border: 1px solid var(--main-bg);
+  border-radius: 3px;
+  background: var(--hover);
+}
+
+.cellBest {
+  outline: 1.5px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.postRow {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 0;
+  border-top: 0.5px solid var(--stroke);
+}
+
+.postRow:first-child {
+  border-top: none;
+}
+
+.postText {
+  flex: 1;
+  font-size: 14px;
+  color: var(--ink-900);
+  line-height: 1.45;
+}
+
+.postMetrics {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--ink-600);
+}
+
+.postMetrics b {
+  color: var(--ink-900);
+  font-weight: 500;
+}
+
+.unavail {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+}
+
+.unavail li {
+  font-size: 13px;
+  color: var(--ink-600);
+  line-height: 1.5;
+  padding-left: 20px;
+  position: relative;
+}
+
+.unavail li::before {
+  content: "✕";
+  position: absolute;
+  left: 2px;
+  color: var(--ink-500);
+}
+
+.loadReplies {
+  margin-top: 4px;
+}
+
+.note {
+  font-size: 12px;
+  color: var(--ink-500);
+  margin-top: 8px;
+  line-height: 1.5;
+}

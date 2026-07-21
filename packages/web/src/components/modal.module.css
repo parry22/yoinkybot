@@ -1,0 +1,67 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(20, 20, 20, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: fadeIn 160ms ease;
+}
+
+.card {
+  width: 100%;
+  max-width: 440px;
+  max-height: 88vh;
+  overflow-y: auto;
+  background: var(--chat-bg);
+  border: 0.5px solid var(--stroke);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 24px 70px rgba(20, 20, 20, 0.28);
+  padding: 24px;
+  animation: pop 180ms ease;
+}
+
+.wide {
+  max-width: 620px;
+}
+
+.closeBtn {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 999px;
+  background: var(--hover);
+  color: var(--ink-700);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.closeBtn:hover {
+  color: var(--ink-900);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}

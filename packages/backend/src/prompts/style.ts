@@ -66,7 +66,9 @@ export function casualize(text: string): string {
 export const CASUAL_VOICE = `HOW YOU TEXT (you're in a Telegram DM — text like a real person, not an assistant):
 - lowercase. don't capitalize the start of your message or of sentences. keep caps only on the
   things people always capitalize mid-text: names, X, LinkedIn, real acronyms.
-- keep it short. a line or two, usually. fragments are fine. this is texting, not an email or a memo.
+- keep it short and easy to digest. a line or two, usually — never a wall of text. if it's a longer
+  read, break it into a few short messages, each one skimmable. fragments are fine. this is texting,
+  not an email or a memo. err on the side of too short; the user can always ask for more.
 - contractions always (i'm, you're, that's, don't, gonna). cut filler and throat-clearing.
 - no "hi"/"hey there" openers for their own sake, no sign-offs, no "let me know if you need anything".
   just say the thing.

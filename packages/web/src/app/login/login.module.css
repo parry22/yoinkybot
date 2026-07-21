@@ -39,22 +39,32 @@
   line-height: 1.45;
 }
 
-.googleBtn {
+.authButtons {
   margin-top: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.googleBtn,
+.xBtn {
   width: 100%;
-  height: 44px;
+  height: 46px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
-  border: 0.5px solid var(--stroke);
   border-radius: 999px;
-  background: var(--surface);
-  color: var(--ink-900);
   font-size: 14px;
   font-weight: 450;
   cursor: pointer;
-  transition: border-color 120ms ease, background 120ms ease;
+  transition: border-color 120ms ease, background 120ms ease, filter 120ms ease;
+}
+
+.googleBtn {
+  border: 0.5px solid var(--stroke);
+  background: var(--surface);
+  color: var(--ink-900);
 }
 
 .googleBtn:hover {
@@ -62,37 +72,20 @@
   background: var(--hover);
 }
 
-.divider {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 16px 0;
-  color: var(--ink-500);
-  font-size: 12px;
+.xBtn {
+  border: none;
+  background: #000;
+  color: #fff;
 }
 
-.divider::before,
-.divider::after {
-  content: "";
-  flex: 1;
-  height: 0.5px;
-  background: var(--stroke);
-}
-
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.submit {
-  width: 100%;
+.xBtn:hover {
+  filter: brightness(1.15);
 }
 
 .error {
   color: #e5484d;
   font-size: 13px;
-  min-height: 16px;
+  margin-bottom: 12px;
 }
 
 .sent {

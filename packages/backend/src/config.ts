@@ -6,6 +6,11 @@ const schema = z.object({
   PUBLIC_URL: z.string().default("http://localhost:3001"),
   // Where Dodo sends users after checkout — no web app, so default to the bot.
   CHECKOUT_RETURN_URL: z.string().default("https://t.me"),
+  // The web app's own origin (packages/web) — a trusted allowlist for the
+  // OAuth connect flow's optional `redirect` param (routes/oauth.ts), so a web
+  // user lands back in Settings instead of the Telegram-flavored static page.
+  // Only a `redirect` starting with this exact origin is ever honored.
+  WEB_APP_URL: z.string().default("http://localhost:3002"),
 
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   TELEGRAM_WEBHOOK_SECRET: z.string().optional(),
@@ -117,6 +122,44 @@ const schema = z.object({
   VIRAL_AUTHOR_COOLDOWN_DAYS: z.coerce.number().default(14),
   // Bounded composition agent (why-it-worked + one angle).
   VIRAL_MAX_TOOL_CALLS: z.coerce.number().default(3),
+
+  // ── Buyer Radar (§3h) ────────────────────────────────────────────────────
+  // Finds in-market prospects on X, scores intent deterministically, gates on
+  // domain fit, drafts an approval-only reply. Uses TWITTERAPI_IO_KEY; if unset,
+  // the feature is unavailable and says so plainly (fail-closed, like the buzz
+  // gate degrading without the key). Never auto-sends.
+  //   Master switch. Off → the whole feature is unavailable everywhere.
+  BUYER_RADAR_ENABLED: z
+    .string()
+    .default("true")
+    .transform((v) => v === "true" || v === "1"),
+  //   The proactive recurring scan/DM path ships DARK — pull-only at launch;
+  //   flip on per rollout AFTER the search-budget behavior is observed in prod.
+  BUYER_RADAR_PROACTIVE: z
+    .string()
+    .default("false")
+    .transform((v) => v === "true" || v === "1"),
+  //   Deterministic intent gate: intentScore (buyer/scoring.ts, 0..1) must clear
+  //   this. Live-calibrate like BUZZ_THRESHOLD.
+  INTENT_THRESHOLD: z.coerce.number().default(0.45),
+  //   Semantic niche gate: max cosine distance between a candidate tweet and the
+  //   ICP vector. Tighter than the trend NICHE_THRESHOLD — a buyer for a fitness
+  //   app asking about a CRM is off-domain even if the intent is loud.
+  BUYER_NICHE_THRESHOLD: z.coerce.number().default(0.55),
+  //   Intent decays: a 3-week-old "looking for" is likely resolved. Short window.
+  BUYER_LOOKBACK_HOURS: z.coerce.number().default(72),
+  //   Bounded composition loop cap (mirrors REPLY_AGENT_MAX_TOOL_CALLS).
+  MAX_BUYER_TOOL_CALLS: z.coerce.number().default(4),
+  //   Per-query advanced_search pagination cap (cost: $0.00015/tweet, and buyer
+  //   search is per-user O(users), not shared like trends/viral).
+  BUYER_SEARCH_PAGE_CAP: z.coerce.number().default(2),
+  //   Bounded set of distilled intent queries run per scan.
+  BUYER_MAX_QUERIES: z.coerce.number().default(8),
+  //   Cost + spam guard: max signals surfaced per user per calendar month. The
+  //   monthly budget is checked BEFORE any paid twitterapi.io call in a scan.
+  BUYER_MONTHLY_SIGNAL_CAP: z.coerce.number().default(40),
+  //   Don't resurface the same prospect within this window (repeat-author guard).
+  BUYER_AUTHOR_COOLDOWN_DAYS: z.coerce.number().default(21),
 
   // ── Native scheduled posting (write access) ─────────────────────────────
   // OAuth 2.0 user-context credentials for PUBLISHING on the user's behalf —

@@ -4,34 +4,54 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  BubbleChatIcon,
+  SparklesIcon,
   QuillWrite02Icon,
   Calendar03Icon,
+  FireIcon,
+  RadarIcon,
+  Analytics01Icon,
   Settings05Icon,
   Logout01Icon,
-  Sun03Icon,
-  Moon02Icon,
 } from "@hugeicons/core-free-icons";
-import { useEffect, useState } from "react";
 import styles from "./sidebar.module.css";
 
-type NavItem = { href: string; label: string; icon: typeof BubbleChatIcon };
+type NavItem = { href: string; label: string; icon: typeof SparklesIcon };
 
-const NAV: NavItem[] = [
-  { href: "/app", label: "Chat", icon: BubbleChatIcon },
+const AGENT_NAV: NavItem[] = [
   { href: "/app/compose", label: "Compose", icon: QuillWrite02Icon },
+  { href: "/app/automation", label: "Automation", icon: SparklesIcon },
+];
+
+const GROW_NAV: NavItem[] = [
+  { href: "/app/inspiration", label: "Inspiration", icon: FireIcon },
+  { href: "/app/buyers-radar", label: "Buyers Radar", icon: RadarIcon },
+  { href: "/app/analytics", label: "Analytics", icon: Analytics01Icon },
+];
+
+const ACCOUNT_NAV: NavItem[] = [
   { href: "/app/scheduled", label: "Scheduled", icon: Calendar03Icon },
   { href: "/app/settings", label: "Settings", icon: Settings05Icon },
 ];
 
-export function Sidebar({
-  user,
-  onboarding,
-}: {
-  user: { email: string; initials: string };
-  onboarding: boolean;
-}) {
+export function Sidebar({ user }: { user: { email: string; initials: string } }) {
   const pathname = usePathname();
+
+  function renderGroup(label: string, items: NavItem[]) {
+    return (
+      <div key={label}>
+        <p className={styles.navLabel}>{label}</p>
+        {items.map((item) => {
+          const active = pathname.startsWith(item.href);
+          return (
+            <Link key={item.href} href={item.href} className={`${styles.navItem} ${active ? styles.navItemActive : ""}`}>
+              <HugeiconsIcon icon={item.icon} size={18} strokeWidth={1.8} />
+              <span>{item.label}</span>
+            </Link>
+          );
+        })}
+      </div>
+    );
+  }
 
   return (
     <aside className={styles.sidebar} aria-label="Yoinky navigation">
@@ -40,28 +60,10 @@ export function Sidebar({
         Yoinky
       </div>
 
-      {onboarding && (
-        <Link href="/app/onboarding" className="btnPrimary" style={{ marginTop: 18, width: "100%" }}>
-          Finish setup
-        </Link>
-      )}
-
       <nav className={styles.nav}>
-        <p className={styles.navLabel}>Workspace</p>
-        {NAV.map((item) => {
-          const active = item.href === "/app" ? pathname === "/app" : pathname.startsWith(item.href);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`${styles.navItem} ${active ? styles.navItemActive : ""}`}
-            >
-              <HugeiconsIcon icon={item.icon} size={18} strokeWidth={1.8} />
-              <span>{item.label}</span>
-              {item.href === "/app/onboarding" && onboarding && <span className={styles.badge}>setup</span>}
-            </Link>
-          );
-        })}
+        {renderGroup("Agent", AGENT_NAV)}
+        {renderGroup("Grow", GROW_NAV)}
+        {renderGroup("Account", ACCOUNT_NAV)}
       </nav>
 
       <div className={styles.spacer} />
@@ -72,7 +74,6 @@ export function Sidebar({
           <span className={styles.userName}>{user.email}</span>
         </div>
         <div className={styles.actions}>
-          <ThemeToggle />
           <form action="/api/auth/logout" method="post">
             <button type="submit" className={styles.iconButton} aria-label="Sign out" title="Sign out">
               <HugeiconsIcon icon={Logout01Icon} size={18} strokeWidth={1.8} />
@@ -81,29 +82,5 @@ export function Sidebar({
         </div>
       </div>
     </aside>
-  );
-}
-
-function ThemeToggle() {
-  const [theme, setTheme] = useState<"light" | "dark">("light");
-
-  useEffect(() => {
-    const stored = (localStorage.getItem("yoink-theme") as "light" | "dark" | null) ?? null;
-    const initial =
-      stored ?? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-    setTheme(initial);
-  }, []);
-
-  function toggle() {
-    const next = theme === "dark" ? "light" : "dark";
-    setTheme(next);
-    document.documentElement.setAttribute("data-theme", next);
-    localStorage.setItem("yoink-theme", next);
-  }
-
-  return (
-    <button type="button" className={styles.iconButton} onClick={toggle} aria-label="Toggle theme" title="Toggle theme">
-      <HugeiconsIcon icon={theme === "dark" ? Sun03Icon : Moon02Icon} size={18} strokeWidth={1.8} />
-    </button>
   );
 }

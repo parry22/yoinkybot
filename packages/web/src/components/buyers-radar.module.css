@@ -1,0 +1,367 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 0.5px solid var(--accent-border);
+  margin-left: 10px;
+  vertical-align: middle;
+}
+
+.searchRow {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.searchInput {
+  flex: 1;
+  height: 46px;
+  padding: 0 16px;
+  border: 0.5px solid var(--stroke);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink-500);
+  font: inherit;
+  font-size: 14px;
+  cursor: not-allowed;
+}
+
+.searchBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 46px;
+  padding: 0 18px;
+  border-radius: 999px;
+  border: 0.5px solid var(--stroke);
+  background: var(--surface);
+  color: var(--ink-500);
+  font: inherit;
+  font-size: 14px;
+  cursor: not-allowed;
+}
+
+.notice {
+  font-size: 12px;
+  color: var(--ink-500);
+  margin-bottom: 24px;
+}
+
+.filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+.filterChip {
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 0.5px solid var(--stroke);
+  background: var(--surface);
+  color: var(--ink-500);
+  cursor: not-allowed;
+}
+
+.preview {
+  position: relative;
+}
+
+.overlayLabel {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.overlayCard {
+  background: var(--chat-bg);
+  border: 0.5px solid var(--accent-border);
+  border-radius: var(--radius-lg);
+  padding: 20px 26px;
+  text-align: center;
+  box-shadow: 0 16px 50px rgba(20, 20, 20, 0.14);
+  max-width: 320px;
+}
+
+.overlayTitle {
+  font-size: 15px;
+  font-weight: 470;
+  color: var(--ink-900);
+  margin-bottom: 6px;
+}
+
+.overlayBody {
+  font-size: 13px;
+  color: var(--ink-600);
+  line-height: 1.5;
+}
+
+.mockList {
+  filter: blur(2.5px);
+  opacity: 0.55;
+  pointer-events: none;
+  user-select: none;
+}
+
+.card {
+  background: var(--surface);
+  border: 0.5px solid var(--stroke);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
+  margin-bottom: 12px;
+}
+
+.cardTop {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--accent) 0%, var(--accent-2) 100%);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 500;
+  flex: 0 0 auto;
+}
+
+.handle {
+  font-size: 14px;
+  color: var(--ink-900);
+  font-weight: 470;
+}
+
+.time {
+  font-size: 12px;
+  color: var(--ink-500);
+}
+
+.cardSpacer {
+  flex: 1;
+}
+
+.matchPill {
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 0.5px solid var(--accent-border);
+  white-space: nowrap;
+}
+
+.tweetText {
+  font-size: 14px;
+  color: var(--ink-900);
+  line-height: 1.5;
+  margin: 10px 0 12px;
+}
+
+.cardActions {
+  display: flex;
+  gap: 8px;
+}
+
+.actionBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 0.5px solid var(--stroke);
+  background: var(--surface);
+  color: var(--ink-600);
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.12s ease;
+}
+.actionBtn:hover {
+  background: var(--accent-soft);
+}
+.actionBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Live radar controls ── */
+.controlRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.scanBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 20px;
+  border-radius: 999px;
+  border: none;
+  background: linear-gradient(180deg, var(--accent) 0%, var(--accent-2) 100%);
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.scanBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.quota {
+  font-size: 12px;
+  color: var(--ink-500);
+}
+
+.editBtn {
+  margin-left: auto;
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 0.5px solid var(--stroke);
+  background: var(--surface);
+  color: var(--ink-600);
+  cursor: pointer;
+}
+
+.scanMsg {
+  font-size: 13px;
+  color: var(--ink-600);
+  margin-bottom: 16px;
+}
+
+.empty {
+  font-size: 14px;
+  color: var(--ink-500);
+  line-height: 1.6;
+  border: 0.5px dashed var(--stroke);
+  border-radius: var(--radius-lg);
+  padding: 28px 24px;
+  text-align: center;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+}
+
+.whyNote {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--accent);
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+
+.draftBox {
+  background: var(--chat-bg);
+  border: 0.5px solid var(--accent-border);
+  border-radius: var(--radius-md, 12px);
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+.draftLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--accent);
+  margin-bottom: 6px;
+}
+.draftText {
+  font-size: 14px;
+  color: var(--ink-900);
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.ghostBtn {
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  color: var(--ink-500);
+  cursor: pointer;
+}
+.ghostBtn:hover {
+  color: var(--ink-900);
+}
+
+/* ── ICP intake form ── */
+.form {
+  max-width: 560px;
+}
+.formIntro {
+  font-size: 14px;
+  color: var(--ink-600);
+  line-height: 1.6;
+  margin-bottom: 20px;
+}
+.field {
+  display: block;
+  margin-bottom: 16px;
+}
+.fieldLabel {
+  display: block;
+  font-size: 13px;
+  color: var(--ink-700, var(--ink-900));
+  margin-bottom: 6px;
+}
+.input,
+.textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border: 0.5px solid var(--stroke);
+  border-radius: var(--radius-md, 12px);
+  background: var(--surface);
+  color: var(--ink-900);
+  font: inherit;
+  font-size: 14px;
+}
+.textarea {
+  resize: vertical;
+}
+.input:focus,
+.textarea:focus {
+  outline: none;
+  border-color: var(--accent-border);
+}
+.formErr {
+  font-size: 13px;
+  color: #d3455b;
+  margin-bottom: 12px;
+}
+.formActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+}

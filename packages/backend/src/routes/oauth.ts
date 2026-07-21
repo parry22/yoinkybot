@@ -37,6 +37,18 @@ interface PendingAuth {
   platform: Platform;
   verifier: string;
   expiresAt: number;
+  /** Web caller's return URL (only ever set when it matched WEB_APP_URL — see
+   *  `safeReturnTo`). Undefined for the Telegram-only flow, which keeps the
+   *  original static "return to Telegram" page. */
+  returnTo?: string;
+}
+
+/** Only ever honor a `redirect` that's on the web app's own trusted origin —
+ *  this is a browser redirect target after OAuth, so an unbounded value here
+ *  would be an open-redirect vector. */
+function safeReturnTo(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  return raw.startsWith(config.WEB_APP_URL) ? raw : undefined;
 }
 const pending = new Map<string, PendingAuth>();
 const STATE_TTL_MS = 10 * 60 * 1000;
@@ -57,12 +69,12 @@ const REDIRECT = (platform: Platform) => `${config.PUBLIC_URL}/oauth/${platform}
  * the PKCE verifier under an opaque state. Returns null when this platform's
  * app credentials aren't configured. Called by the bot to hand the user a link.
  */
-export function buildAuthUrl(userId: string, platform: Platform): string | null {
+export function buildAuthUrl(userId: string, platform: Platform, returnTo?: string): string | null {
   if (!publishConfigured(platform)) return null;
   sweepExpired();
   const state = b64url(randomBytes(16));
   const verifier = b64url(randomBytes(32));
-  pending.set(state, { userId, platform, verifier, expiresAt: Date.now() + STATE_TTL_MS });
+  pending.set(state, { userId, platform, verifier, expiresAt: Date.now() + STATE_TTL_MS, returnTo: safeReturnTo(returnTo) });
 
   if (platform === "x") {
     const challenge = b64url(createHash("sha256").update(verifier).digest());
@@ -75,7 +87,9 @@ export function buildAuthUrl(userId: string, platform: Platform): string | null 
       code_challenge: challenge,
       code_challenge_method: "S256",
     });
-    return `https://twitter.com/i/oauth2/authorize?${params}`;
+    // X migrated off twitter.com — the old twitter.com/i/oauth2/authorize path
+    // now 404s. x.com is the live consent endpoint.
+    return `https://x.com/i/oauth2/authorize?${params}`;
   }
   const params = new URLSearchParams({
     response_type: "code",
@@ -117,7 +131,7 @@ async function exchangeX(code: string, verifier: string): Promise<{ accessToken:
     client_id: config.X_CLIENT_ID!,
   });
   const basic = Buffer.from(`${config.X_CLIENT_ID}:${config.X_CLIENT_SECRET}`).toString("base64");
-  const res = await fetch("https://api.twitter.com/2/oauth2/token", {
+  const res = await fetch("https://api.x.com/2/oauth2/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded", Authorization: `Basic ${basic}` },
     body,
@@ -161,14 +175,14 @@ const DONE_HTML = (msg: string) =>
   `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><body style="font-family:system-ui;max-width:32rem;margin:4rem auto;padding:0 1rem"><p>${msg}</p><p>You can close this tab and return to Telegram.</p></body>`;
 
 export async function oauthRoutes(app: FastifyInstance): Promise<void> {
-  app.get<{ Params: { platform: string }; Querystring: { u?: string } }>(
+  app.get<{ Params: { platform: string }; Querystring: { u?: string; redirect?: string } }>(
     "/oauth/:platform/start",
     async (req, reply) => {
       const platform = req.params.platform as Platform;
       if (platform !== "x" && platform !== "linkedin") return reply.code(404).send("unknown platform");
       const userId = req.query.u;
       if (!userId) return reply.code(400).send("missing user");
-      const url = buildAuthUrl(userId, platform);
+      const url = buildAuthUrl(userId, platform, req.query.redirect);
       if (!url) return reply.code(503).send(`${platform} posting isn't configured on this instance`);
       return reply.redirect(url);
     },
@@ -202,6 +216,11 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
         }
       } catch (err) {
         req.log.error({ err }, "oauth token exchange failed");
+        if (pend.returnTo) {
+          const back = new URL(pend.returnTo);
+          back.searchParams.set("connect_error", "1");
+          return reply.redirect(back.toString());
+        }
         return reply.type("text/html").send(DONE_HTML("Something went wrong connecting your account. Try again from the bot."));
       }
       // Follow-through happens in Telegram (verify identity, kick the history
@@ -210,6 +229,13 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
       void afterOAuthConnected(pend.userId, platform, accessToken).catch((err) =>
         req.log.error({ err }, "oauth follow-through failed"),
       );
+      // A web caller gets bounced straight back to its own origin (Settings) —
+      // the Telegram-flavored static page below is only for the bot's own flow.
+      if (pend.returnTo) {
+        const back = new URL(pend.returnTo);
+        back.searchParams.set("connected", platform);
+        return reply.redirect(back.toString());
+      }
       return reply.type("text/html").send(DONE_HTML(`Your ${platform === "x" ? "X" : "LinkedIn"} account is connected. ✅ I've picked things up in Telegram.`));
     },
   );

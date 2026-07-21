@@ -7,7 +7,7 @@ import styles from "@/components/panel.module.css";
 
 export const dynamic = "force-dynamic";
 
-const PLATFORM_LABEL: Record<string, string> = { x: "X", linkedin: "LinkedIn" };
+const PLATFORM_LABEL: Record<string, string> = { x: "X" };
 
 export default async function ScheduledPage() {
   const user = await getSessionUser();
@@ -21,7 +21,7 @@ export default async function ScheduledPage() {
         <div className={styles.head}>
           <div>
             <div className={styles.title}>Scheduled</div>
-            <div className={styles.subtitle}>Posts queued to publish — soonest first.</div>
+            <div className={styles.subtitle}>Posts queued to publish - soonest first.</div>
           </div>
         </div>
 

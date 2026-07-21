@@ -10,7 +10,7 @@ export async function sendMagicLink(email: string, link: string): Promise<boolea
   const from = process.env.MAIL_FROM ?? "Yoinky <login@meetyoinky.com>";
 
   if (!key) {
-    console.log(`[magic-link] no RESEND_API_KEY set — login link for ${email}:\n${link}`);
+    console.log(`[magic-link] no RESEND_API_KEY set - login link for ${email}:\n${link}`);
     return false;
   }
 
@@ -26,7 +26,7 @@ export async function sendMagicLink(email: string, link: string): Promise<boolea
       }),
     });
     if (!res.ok) {
-      console.error(`[magic-link] Resend failed (${res.status}) — link for ${email}:\n${link}`);
+      console.error(`[magic-link] Resend failed (${res.status}) - link for ${email}:\n${link}`);
       return false;
     }
     return true;

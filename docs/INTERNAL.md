@@ -35,8 +35,13 @@ The backend's own HTTP surface is deliberately tiny: `/health` plus webhooks
 (`/webhooks/telegram`, `/webhooks/dodo`) and the write-OAuth routes. The
 user-facing web UI is a **separate Next.js app** (`packages/web`) that imports
 backend domain functions in-process — see §8. Identity is the internal
-`users.id` (uuid); a user row can be keyed by `telegram_id` (bot) and/or `email`
-(web magic-link), and the two converge on one row.
+`users.id` (uuid); a user row is created by **web sign-in** (Google/email) and
+keyed by `email`. Telegram is now **web-account-gated** (2026-07-20): DMing the
+bot no longer creates a row — the chat must be linked to an existing web account
+via the deep-link token (Settings → Connect Telegram), which attaches
+`telegram_id` to that row. An unlinked Telegram visitor is turned away with a
+"sign in on the web first" message; the bot also subscription-gates every action
+(`upgradeWall` → `!isPaidOrExempt`) and runs no onboarding.
 
 Entry point: `src/index.ts` (Fastify + bot bootstrap, migrations on boot).
 
@@ -298,6 +303,14 @@ registered once in `createBot()` right after `new Bot(...)`:
 ---
 
 ## 3b. Onboarding: profile-first, then the gap (Stages 1-11)
+
+> **Web-only as of 2026-07-20.** Onboarding no longer runs on Telegram at all —
+> the bot is auth-/subscription-gated and just chats (see §3i and the Telegram
+> section below). The conversational, LLM-driven intake described here
+> (`session-machine.ts`) is now reached *only* if something still drives the
+> `profiling` phase; the live web path is the structured form wizard
+> (`web/onboarding-form.ts`, §3i). This section documents the conversational
+> engine, which the web wizard bypasses and Telegram no longer invokes.
 
 As of 2026-07-11 onboarding is **profile-first**. It draws out a stated brand
 profile *before* reading history, so the diagnosis lands as a measured
@@ -907,13 +920,16 @@ code during web dev needs a rebuild.
 
 **What the barrel exposes** (keep this the only web surface): auth
 (`userForSession`, `createSession`, `findOrCreateUserByEmail`,
-`createLoginToken`, `consumeLoginToken`), the web-flavored brain
-(`runWebChatTurn`, `initWebOnboarding`, `runWebOnboardingTurn`,
-`skipOnboardingStep`, `skipOnboardingAll` — all in `src/web/chat.ts`, which wraps
-the same `converseWithUser`/`runSessionTurn`/`deliverTurnOutput` the bot uses but
-swaps in a *collecting* `Channel` so a turn's messages come back as an array),
-plus read models (`getStage`, `getState`, `getProfile`, `currentDiagnosis`,
-`getPlan`, `activePositions`, `loadChatHistory`).
+`createLoginToken`, `consumeLoginToken`, `createTelegramLinkToken`), the
+web-flavored chat brain (`runWebChatTurn` in `src/web/chat.ts`, which wraps the
+same `converseWithUser`/`deliverTurnOutput` the bot uses but swaps in a
+*collecting* `Channel` — `src/web/channel.ts` — so a turn's messages come back
+as an array), the structured onboarding form (`submitProfileForm`,
+`skipProfileFields`, `profileCompletionFields` in `src/web/onboarding-form.ts` —
+see below), plus read models (`getStage`, `getState`, `getProfile`,
+`PROFILE_FIELDS`, `GOAL_OPTIONS`, `TONE_TAXONOMY`, `currentDiagnosis`, `getPlan`,
+`activePositions`, `loadChatHistory`, `listTrendInspiration`,
+`listViralInspiration`).
 
 **Auth — Google OAuth + email magic-link.** Two paths, both landing on
 `findOrCreateUserByEmail` + `createSession` (reusing the `sessions` table from
@@ -938,28 +954,176 @@ is a **symlink to `packages/backend/.env`** — one source of truth; web-only ke
 (`GOOGLE_*`, `RESEND_API_KEY`, `MAIL_FROM`) live there too. Dev port is **3002**
 (backend stays 3001; :3000 was already taken on the dev machine).
 
-**Screens** (`src/app/app/*`, real `/app` segment — not a route group): `/app`
-chat workspace, `/app/compose` (draft composer — X/LinkedIn toggle → `/api/draft`
-→ `runWebDraft`→`runDraft`, respects the paywall/allowance and the voice-profile
-gate; lists persisted drafts), `/app/onboarding` (intake with the same skip-step /
-skip-onboarding buttons as the bot, driven by `/api/onboarding`), `/app/diagnosis`,
-`/app/plan`, `/app/beliefs`, `/app/settings` (account + **connect X/LinkedIn** via
-`/api/connect`→`runWebConnect`→`connectAccount`, which enqueues the ingest+diagnose
-job — needs the backend worker running — plus the Telegram add-on note). `/login`
-is public; `/` redirects. Web brain/connect wrappers use a **collecting Channel**
-(`src/web/channel.ts`) so bot logic returns messages as arrays.
+**Screens** (`src/app/app/*`, real `/app` segment — not a route group). `/app`
+is a redirect to `/app/agent` (chat lives there now, see below — there is no
+more standalone chat page). Sidebar groups: **Workspace** — `/app/agent`,
+`/app/compose` (X-only draft composer → `/api/draft` → `runWebDraft`→`runDraft`,
+respects the paywall/allowance and the voice-profile gate; lists persisted
+drafts), `/app/scheduled`. **Grow** — `/app/inspiration`, `/app/buyers-radar`
+(UI-only preview, see below), `/app/analytics`. **Account** — `/app/settings`
+(account info, editable stated profile, connect X, Telegram connect button,
+appearance toggle — see below). `/app/onboarding` is the gamified popup wizard
+(see below); `/app/diagnosis`, `/app/plan`, `/app/beliefs` exist as routes but
+aren't linked in the sidebar. `/login` is public; `/` redirects.
 
 **Design.** Ported from the WeaveOS reference (Geist, warm off-white canvas,
 hairline `0.5px` strokes, `20px` radii, sidebar + workspace). The reference's
 only accent was glossy black; per the brief it's recolored to a single **pink**
 token — `--accent` / `--accent-2` in `globals.css` (swap those two to rebrand).
-A dark theme was added (the original was light-only); the sidebar sun/moon
-toggle stamps `data-theme` and persists to `localStorage`.
+A dark theme was added (the original was light-only); the toggle lives in
+**Settings** now (`components/theme-toggle.tsx`, extracted from the sidebar),
+stamps `data-theme` on `<html>`, persists to `localStorage`.
+
+**LinkedIn is web-only removed (2026-07-20).** Compose is X-only in the web app
+— `/api/draft` hardcodes `platform: "x"`. This does **not** touch the Telegram
+bot or backend LinkedIn support (`connect.ts`, `apify-profile.ts`,
+`drafting/repurpose.ts`, `social/publish.ts` all still fully support it) — a
+user who connected LinkedIn via Telegram still has that `connected_accounts`
+row; the web's account list just filters to `platform === 'x'`.
+
+**Connect X is OAuth, not a typed handle (2026-07-20, `web/oauth-connect.ts`).**
+Settings' "Connect X" is a plain `<a href>` to the **backend's own**
+`/oauth/x/start?u=<userId>&redirect=<returnPath>` — the exact same PKCE flow
+the Telegram bot's connect button uses (`buildAuthUrl` in `routes/oauth.ts`),
+just reached via a web link instead of a Telegram inline button.
+`buildWebConnectUrl(userId, "x", "/app/settings")` builds that URL (null if
+`X_CLIENT_ID`/`SECRET` aren't configured — checked via the existing
+`publishConfigured`). For X, OAuth is strictly better than the old typed-handle
+path: after the callback verifies identity (`GET /2/users/me`),
+`afterOAuthConnected` (`telegram/connect-auth.ts`) automatically calls the same
+`startConnect` history-read kickoff the typed-handle path used — one authorize
+click does what used to take a click + typing a handle.
+
+New env: **`WEB_APP_URL`** (backend config, defaults `http://localhost:3002`) —
+an allowlisted return origin for the OAuth callback. `/oauth/:platform/start`
+now accepts an optional `redirect` query param; `safeReturnTo()` only ever
+honors it when it starts with `config.WEB_APP_URL` exactly (open-redirect
+guard, since this is a browser redirect target). When present, `/callback`
+redirects the browser to `${redirect}?connected=<platform>` (or
+`?connect_error=1` on a token-exchange failure) instead of the bot-flavored
+static `DONE_HTML` page — the Telegram flow (which never passes `redirect`)
+is completely unaffected. **Must be set to `https://app.meetyoinky.com` on the
+Railway backend's env** (not Vercel — this is backend config) for the
+production return-redirect to work; unset it and the callback just falls back
+to the static page harmlessly.
+
+**A cross-process bug caught before shipping.** The first implementation had
+the web app call `buildAuthUrl` **in-process** (skipping the `/start` hop
+entirely, reasoning "it's already in the same Node process as everything
+else"). That's wrong here specifically: the PKCE `pending` state in
+`routes/oauth.ts` is a plain in-memory `Map` (documented single-instance by
+design), and `/start` (which writes an entry) and `/callback` (which reads it)
+must run in the **same OS process** for that entry to exist. The web app
+(Vercel) and the backend (Railway) are separate deployments — calling
+`buildAuthUrl` from the web would populate a `pending` Map only the web
+process's memory holds; the backend's `/callback`, running in its own
+process, would `pending.get(state)` → `undefined` on every single attempt,
+silently failing as "that link expired." The fix is `buildWebConnectUrl`
+returning a URL **string** pointing at the backend's own route (mirroring
+`connect-auth.ts`'s `authUrl` helper) rather than ever importing/calling
+`buildAuthUrl` from web code — both legs of the PKCE handshake now always run
+on the backend, wherever that happens to be deployed. Worth remembering for
+any future feature that touches this in-memory `pending` map (or any other
+module-level mutable state in `routes/`): **in-process import ≠ same process**
+when the web and backend are different deployments — only reach across that
+boundary through actual HTTP, never a shared in-memory data structure.
+`/api/connect` and `runWebConnect` (the old typed-handle path) were
+dead-code-removed once this replaced them.
+
+**Telegram connect button (Settings).** Reuses the existing deep-link primitive:
+`POST /api/telegram/link` calls `createTelegramLinkToken(userId)` and returns
+`${TELEGRAM_BOT_URL}?start=${token}`; the button opens it in a new tab so the
+bot's `/start` consumes the token and attaches `telegram_id` to this user row.
+
+**Structured onboarding — a gamified popup, not a chat (2026-07-20,
+`web/onboarding-form.ts`).** The web's onboarding intake is a **separate,
+form-based write path** from the Telegram bot's LLM-driven conversational
+intake (`session-machine.ts`) — no LLM round trip, no ambiguity. A wizard
+(`components/onboarding-wizard.tsx`, rendered in a non-dismissible `Modal`)
+walks 3 screens clubbing the 7 `PROFILE_FIELDS`: (1) niche + audience, (2) goal
+(dropdown, `GOAL_OPTIONS`) + tone (chip multi-select, `TONE_TAXONOMY`) +
+inspirations, (3) content pillars + camera comfort (dropdown). A segmented
+progress bar (one segment per field) plus step dots gamifies completion.
+- `submitProfileForm(userId, fields)` writes each field via `upsertProfileField`
+  (or `confirmPillars` for `content_pillars`, matching the session-machine's own
+  special case), then finalizes + transitions to `connect_transition` once
+  every field is captured — mirrors the tail of `applyProfileActions`, minus
+  the LLM.
+- `skipProfileFields(userId, fields)` is "skip this section" (pass the current
+  screen's fields) or "skip onboarding entirely" (pass all `PROFILE_FIELDS`).
+  **It reads actual `brand_profiles` values via `profileCompletionFields`
+  first and only touches fields still empty** — unlike the Telegram-side
+  `skipAllIntake` (session-machine.ts), which keys off the conversational
+  session cursor (`strategist_state.profile.captured`), not the DB row. Since
+  the web writes fields directly (bypassing that cursor entirely), reusing
+  `skipAllIntake` here would have blindly overwritten already-answered fields
+  with blanks — this is why the web has its own skip function.
+- Both are exposed at `/api/profile` (`POST`): `{ skipFields: [...] }` for a
+  skip, any other flat `{ field: value }` body for a save — the same route
+  also serves the Settings profile editor (`components/profile-editor.tsx`),
+  so onboarding and later edits share one write path.
+- **Two real bugs found and fixed while building this** (both live in
+  `strategist/profile.ts`, so they also improve the Telegram path):
+  1. `normalize()` returned the literal `""` for a skipped scalar field instead
+     of SQL `NULL`. Several `brand_profiles` columns (`primary_goal`,
+     `camera_comfort`, `formality_gradient`, …) have a CHECK constraint on a
+     fixed enum that rejects `""` — Telegram's `skipAllIntake` silently
+     swallows this (`.catch(() => {})`), so the field just quietly never got
+     recorded; the web's version let it propagate as a 500. Fixed at the
+     source: `return scalar || null` — every downstream read already treats
+     `""` and `null` as equally falsy, so this is behavior-preserving.
+  2. `profileCompletionFields` originally required a *truthy* value, so a
+     legitimately **skipped** field (real value `NULL`, tracked in
+     `unresolved[]`) could never count as "done" — completion would never
+     reach 7/7. Fixed to count a field as done if it has a value **or** is in
+     the `unresolved` ledger, matching the Telegram intake's own definition of
+     "captured."
+- The old conversational web onboarding (`initWebOnboarding`,
+  `runWebOnboardingTurn`, `skipOnboardingStep`, `skipOnboardingAll` in
+  `web/chat.ts`, and `/api/onboarding`) was dead-code-removed once this
+  replaced it — Telegram's own onboarding is untouched.
+
+**Inspiration (`/app/inspiration`, `web/inspiration.ts`).** Read-only Trends and
+Virals tabs over what the proactive jobs already deliver to Telegram — no new
+delivery mechanism. `listTrendInspiration` reads `surfacings` where
+`type = 'trend_take'` (joined to `trends` for topic/summary); `listViralInspiration`
+reads `type = 'viral_benchmark'` (joined to `viral_benchmarks` for the 👍/👎
+reaction). Both are typically empty until a user has been connected + diagnosed
+long enough for `jobs/trend-match.ts` / `jobs/viral-benchmark.ts` to have fired.
+
+**Buyers Radar (`/app/buyers-radar`) — UI only, no backend.** A preview screen
+for a planned "find people publicly asking for your service on X" feature: a
+disabled search bar, disabled filter chips, and a blurred mock result list under
+a "Not live yet" overlay card. Ship this by adding a real matching pipeline
+behind it later — there is currently zero server-side capability here.
+
+**Agent mode (`/app/agent`, `web/agent.ts`).** Opt-in auto loop stored as
+`users.settings.agent_mode`. `runAgentCycle(user)`: `topPendingUnlock` (topic
+from the user's own backlog) → `generateDraft` (their voice) → `schedulePost` at
+now+20h (lands in the queue, cancellable before it fires — not an instant post).
+`markUnlockDeveloped` prevents reuse; `agent_last_run` gates cadence. Daily
+`agentTick` cron (`jobs/workers.ts`, `QUEUES.agentTick`) runs a cycle for each
+opted-in user that's due; the web also exposes a "Run one cycle now" button
+(`/api/agent`). "Best posts it learns from" reuses analytics top posts.
+
+**Analytics (`/app/analytics`, `web/analytics.ts`).** Fast path
+(`getAnalytics`) reads the per-post engagement already on `captures.metadata`
+(no API call): impressions/likes/replies/RT/quotes/bookmarks, median engagement
+rate, an engagement-weighted hour×day best-time heatmap (in the user's tz), top
+posts, follower snapshot. `getReplyAnalytics` is on-demand (`/api/analytics/replies`)
+— a live `pullXTimelineWithMetrics` pull (rate-limited) that keeps replies and
+computes reply-level impressions + engagement rate. Honesty: profile clicks,
+per-post follower attribution, and revenue/RPM are reported as unavailable (not
+exposed by any scrape/public API), never faked.
+
+**Scrape cap.** Every pull of a user's own tweets is hard-clamped to
+`MAX_OWN_TWEETS = 100` (`capture/imports/twitterapi-io.ts`), enforced in both
+provider entry points and `pullXProfile`; connect ingest is `INGEST_MAX_POSTS = 100`.
 
 **Deferred (reachable via chat today, no dedicated screen yet):** OAuth-button
 connect (the web uses the typed-handle/URL path; X/LinkedIn write-OAuth buttons
-still live only in the bot), repurpose, mentions inbox, scheduling, trends, viral
-case study, peers. Proactive delivery still goes out over Telegram, not in-app.
+still live only in the bot), repurpose, mentions inbox, peers. Proactive delivery
+still goes out over Telegram, not in-app.
 
 **Hosting — Vercel (`app.meetyoinky.com`).** The web app runs on Vercel (project
 `yoinky-web`), separate from the Telegram backend on Railway (`bot.meetyoinky.com`).
@@ -968,29 +1132,110 @@ is identical across web and bot. The web's env vars are mirrored onto the Vercel
 project (production/preview/development) — set them there, not just in
 `packages/backend/.env` (which only feeds local dev and the Railway bot).
 
-The tricky part is the **pnpm monorepo build**. Vercel's Next.js framework
-detection reads the *Root Directory*'s `package.json` for `next`; the repo root
-has no `next`, and there's no CLI flag to set Root Directory. The working config
-is a **repo-root `vercel.json` using a legacy `builds` entry** that points the
-`@vercel/next` builder straight at the sub-package:
+The Vercel project's **Root Directory is set to `packages/web`** (Project
+Settings, not a CLI flag), with build config pinned in `packages/web/vercel.json`:
 
 ```json
-{ "builds": [ { "src": "packages/web/package.json", "use": "@vercel/next" } ] }
+{ "framework": "nextjs", "buildCommand": "pnpm build", "installCommand": "pnpm install --frozen-lockfile" }
 ```
 
-This uploads the whole repo, installs the full pnpm workspace (so
-`workspace:@yoink/backend` resolves), and builds `packages/web` — `prebuild`
-compiles the backend to `dist/` first, exactly like local. `vercel.json` is
-committed; `.vercel/` is gitignored. Deploy with `vercel deploy --prod` from the
-repo root (link lives at the root, not `packages/web`). Google OAuth derives its
-redirect from the request origin, so the authorized redirect URI in Google Cloud
-must include `https://app.meetyoinky.com/api/auth/google/callback`.
+`pnpm build` (the package's own script) runs `pnpm --filter @yoink/backend
+build && next build`, so the backend compiles to `dist/` before Next builds —
+same as local dev. **Always deploy from the repo root** (`vercel deploy --prod`),
+not from inside `packages/web` — the monorepo needs the whole workspace
+uploaded (root `pnpm-lock.yaml` + `@yoink/backend`) for `pnpm install` to
+resolve the `workspace:*` dependency; deploying from the sub-package only
+uploads that folder and the install fails. There is no root `vercel.json` —
+only the one in `packages/web`. Google OAuth derives its redirect from the
+request origin, so the authorized redirect URI in Google Cloud must include
+`https://app.meetyoinky.com/api/auth/google/callback`.
+
+---
+
+## 3j. Buyer Radar (2026-07-22)
+
+Finds people on X expressing purchase intent that maps to what the user sells,
+scores that intent **deterministically**, gates it **semantically** against the
+user's domain, then hands over a reply drafted in the user's voice for approval.
+It is the engagement/trend machinery specialised for buying intent. It **never
+auto-sends** (approval-only, a doctrine + ToS/spam guard) and code — not the
+model — decides who is a buyer.
+
+**ICP, distinct from the brand profile.** `brand_profiles` is "who I am / who
+reads me"; the buyer is "who is in-market for my thing". `icp_profiles`
+(migration `0022`, one row/user, `buyer/icp.ts`) stores `product_oneliner`,
+`buyer_description`, `pain_signals[]`, `competitor_terms[]`, `exclusions[]`, and
+an `icp_embedding` (the niche-gate vector, recomputed on every save). Captured
+just-in-time via a minimal web intake (3-4 fields, pre-filled from
+`brand_profiles`), editable anytime.
+
+**The pipeline (`buyer/scan.ts` → `scanForUser`).**
+1. **Budget first.** `monthlySurfacedCount` vs `BUYER_MONTHLY_SIGNAL_CAP` is
+   checked BEFORE any paid call — a user at their cap never triggers a search.
+2. **Discovery (`buyer/discovery.ts`).** The ICP is distilled into intent
+   queries by `buyer-queries.v1` (LLM) with a deterministic fallback composing
+   `pain × product × competitor` across four buckets (explicit_ask,
+   competitor_dissatisfaction, pain, trigger_event). Queries run through
+   `searchTweets` (advanced_search, `since_time` recency, `-filter:replies`,
+   page cap), deduped against `buyer_signals` (tweet id + author cooldown), the
+   user's own tweets dropped.
+3. **Deterministic intent gate (`buyer/scoring.ts#intentScore`).** Pure,
+   unit-tested. Components: marker strength (a curated lexicon + the user's
+   `pain_signals`), query provenance, question presence, competitor mention,
+   steep recency decay, a follower **reachability band** (NOT monotonic — a
+   mid-size account beats an egg and a megaphone), a **crowding penalty** (the
+   inverse of buzz: many existing replies = a lost race), and an **exclusion
+   hard-kill** (any `exclusions` hit → score 0). Compared to `INTENT_THRESHOLD`.
+4. **Semantic niche gate (`buyer/niche-gate.ts`).** Candidate tweet embedded and
+   cosine-compared to `icp_embedding`; rejects `dist >= BUYER_NICHE_THRESHOLD`.
+   Only candidates clearing BOTH gates reach the agent. Fail-closed if the ICP
+   has no vector.
+5. **Composition agent (`buyer/radar-agent.ts` + `buyer-outreach.v1`).** Bounded
+   `runToolLoop` (`MAX_BUYER_TOOL_CALLS`), tools in `buyer/tools.ts` (no imports):
+   `get_icp`, `get_voice_profile`, `get_positions`, `get_content_pillars`,
+   `search_memory` (the moat — lead with the user's own prior take, not a pitch),
+   `get_thread_context` (degradable enrichment). Output: `fires`, `why` (Yoinky's
+   casual chatter, `casualize`d), `draft_reply` (the public reply,
+   `POST_WRITING_RULES` + `enforceStyle`, never casualized). `fires:false` is a
+   suppression escape hatch (sarcasm/rhetorical/offering-not-seeking) — recorded
+   as `rejected`, costs nothing, does NOT burn the budget. Single-shot fallback
+   on loop error (same posture as `consistency/check.ts`).
+
+**Persistence + verdicts.** `buyer_signals` doubles as the dedup ledger and the
+tuning surface: `verdict` ∈ `surfaced|replied|skipped|not_a_fit|rejected`,
+`components`/`agent_steps` stored inspectable. A fired signal consumes monthly
+budget; a decline does not.
+
+**Delivery is the web app (v1, pull-only).** `web/buyers-radar.ts` (read model
+`listBuyerSignals`, `buyerRadarStatus`, ICP get/save, `scanBuyerSignals`,
+`setBuyerSignalVerdict`) → routes `/api/buyers-radar/{scan,icp,verdict}` →
+`components/buyers-radar.tsx` (ICP intake, "Scan now", per-signal reply +
+open/copy/skip/not-a-fit). The proactive recurring path (`jobs/buyer-radar.ts`,
+queue `buyer.radar`, surfacing type `buyer_signal`) ships **DARK**
+(`BUYER_RADAR_PROACTIVE=false`) — enable per rollout after observing search-budget
+behavior in prod (twitterapi.io has hit `402 Credits` before, and buyer search is
+per-user O(users), not a shared pool like trends/viral).
+
+**Recalibration (`buyer/calibration.ts`, migration `0023`).** Verdicts feed a
+per-user override of the two gates, re-derived deterministically (mirrors
+memory/corrections.ts, no LLM): `not_a_fit` (the domain match was wrong) tightens
+the niche gate, `skipped` raises the intent bar, `replied` relaxes both back
+toward the config defaults so a user whose radar is landing gets more, not fewer,
+candidates. `buildCalibration` is pure/bounded (±0.03/verdict, clamped).
+`not_a_fit`/`skipped` recalibrate inline on the verdict write (responsive); a
+monthly sweep (`buyer.recalibrate`) is the backstop. `scanForUser` reads
+`effectiveThresholds(userId)` (falls back to config) for both gates.
+
+**Cost guards:** monthly signal cap (pre-search), per-query page cap, bounded
+query count, per-scan composition cap, author cooldown, fail-closed without
+`TWITTERAPI_IO_KEY`. **Follow-up (not built):** Telegram delivery parity for the
+proactive path.
 
 ---
 
 ## 4. Data model
 
-Schema is a linear migration chain in `src/db/migrations/` (`0001`…`0020`),
+Schema is a linear migration chain in `src/db/migrations/` (`0001`…`0023`),
 applied on boot and via `pnpm db:migrate` (`src/db/migrate.ts`). pgvector is
 required for embedding columns.
 

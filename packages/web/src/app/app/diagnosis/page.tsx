@@ -25,7 +25,7 @@ export default async function DiagnosisPage() {
           <div className={styles.empty}>
             <div className={styles.emptyTitle}>No diagnosis yet.</div>
             <p>
-              Finish setup and connect an account — Yoinky reads your history and reveals the gap between what you
+              Finish setup and connect an account - Yoinky reads your history and reveals the gap between what you
               say and what you ship. <Link href="/app/onboarding" style={{ color: "var(--accent)" }}>Finish setup →</Link>
             </p>
           </div>
@@ -88,7 +88,7 @@ export default async function DiagnosisPage() {
             <ul className={styles.list}>
               {d.consistency_audit.map((c, i) => (
                 <li key={i}>
-                  <strong>{c.tension}</strong> — {c.why_interesting}
+                  <strong>{c.tension}</strong> - {c.why_interesting}
                 </li>
               ))}
             </ul>
@@ -101,7 +101,7 @@ export default async function DiagnosisPage() {
             <ul className={styles.list}>
               {d.unsaid_patterns.map((u, i) => (
                 <li key={i}>
-                  <strong>{u.idea}</strong> — {u.evidence}
+                  <strong>{u.idea}</strong> - {u.evidence}
                 </li>
               ))}
             </ul>

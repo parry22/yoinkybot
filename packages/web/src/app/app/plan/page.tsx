@@ -64,7 +64,7 @@ export default async function PlanPage() {
         <div className={styles.section}>
           <div className={styles.sectionLabel}>Unlock backlog ({pending.length})</div>
           {pending.length === 0 ? (
-            <div className={styles.sectionBody}>Nothing pending — you&apos;ve developed the backlog. Nice.</div>
+            <div className={styles.sectionBody}>Nothing pending - you&apos;ve developed the backlog. Nice.</div>
           ) : (
             pending
               .sort((a, b) => a.priority - b.priority)

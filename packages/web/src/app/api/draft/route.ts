@@ -10,13 +10,12 @@ export async function POST(req: Request) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  const body = (await req.json().catch(() => ({}))) as { platform?: unknown; topic?: unknown };
-  const platform = body.platform === "linkedin" ? "linkedin" : "x";
+  const body = (await req.json().catch(() => ({}))) as { topic?: unknown };
   const topic = typeof body.topic === "string" ? body.topic.trim() : "";
   if (!topic) return NextResponse.json({ error: "give me something to write about" }, { status: 400 });
 
   try {
-    const { messages } = await runWebDraft(user, platform, topic);
+    const { messages } = await runWebDraft(user, "x", topic);
     return NextResponse.json({ messages });
   } catch (err) {
     console.error("web draft failed", err);

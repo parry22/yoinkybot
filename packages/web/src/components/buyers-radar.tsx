@@ -1,0 +1,343 @@
+"use client";
+
+import { useState } from "react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Search01Icon, Bookmark01Icon, Comment01Icon, RadarIcon } from "@hugeicons/core-free-icons";
+import panel from "./panel.module.css";
+import styles from "./buyers-radar.module.css";
+
+interface SignalView {
+  id: string;
+  handle: string;
+  name: string | null;
+  initials: string;
+  content: string;
+  url: string | null;
+  match: number;
+  why: string | null;
+  draftReply: string | null;
+  intentType: string | null;
+  verdict: string;
+  postedAt: string | null;
+}
+interface Status {
+  enabled: boolean;
+  hasIcp: boolean;
+  used: number;
+  cap: number;
+  remaining: number;
+}
+interface IcpView {
+  productOneliner: string;
+  buyerDescription: string;
+  painSignals: string[];
+  competitorTerms: string[];
+  exclusions: string[];
+  complete: boolean;
+}
+interface Prefill {
+  product_oneliner: string;
+  buyer_description: string;
+  pain_signals: string[];
+}
+
+export function BuyersRadar({
+  status,
+  initialSignals,
+  icp,
+  prefill,
+}: {
+  status: Status;
+  initialSignals: SignalView[];
+  icp: IcpView | null;
+  prefill: Prefill;
+}) {
+  const [signals, setSignals] = useState<SignalView[]>(initialSignals);
+  const [used, setUsed] = useState(status.used);
+  const [hasIcp, setHasIcp] = useState(status.hasIcp);
+  const [editing, setEditing] = useState(!status.hasIcp);
+  const [scanning, setScanning] = useState(false);
+  const [scanMsg, setScanMsg] = useState<string | null>(null);
+
+  function relTime(iso: string | null): string {
+    if (!iso) return "";
+    const then = new Date(iso).getTime();
+    if (Number.isNaN(then)) return "";
+    const mins = Math.max(0, Math.round((Date.now() - then) / 60000));
+    if (mins < 60) return `${mins}m ago`;
+    if (mins < 1440) return `${Math.round(mins / 60)}h ago`;
+    return `${Math.round(mins / 1440)}d ago`;
+  }
+
+  async function runScan() {
+    setScanning(true);
+    setScanMsg(null);
+    try {
+      const res = await fetch("/api/buyers-radar/scan", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setScanMsg(data.error ?? "scan failed");
+        return;
+      }
+      setSignals(data.signals ?? []);
+      setUsed((u) => u + (data.surfaced ?? 0));
+      if (data.status === "budget_exhausted") setScanMsg("You've hit this month's signal cap.");
+      else if (data.surfaced === 0) setScanMsg("No new buyer signals this round. Yoinky will keep looking.");
+      else setScanMsg(`Found ${data.surfaced} new signal${data.surfaced === 1 ? "" : "s"}.`);
+    } catch {
+      setScanMsg("scan failed");
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  async function act(id: string, verdict: string) {
+    setSignals((s) => s.filter((x) => x.id !== id));
+    await fetch("/api/buyers-radar/verdict", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id, verdict }),
+    }).catch(() => {});
+  }
+
+  function copyDraft(text: string | null) {
+    if (text) navigator.clipboard?.writeText(text).catch(() => {});
+  }
+
+  // Feature unavailable (no X data source configured) — fail closed, say so plainly.
+  if (!status.enabled) {
+    return (
+      <div className={panel.page}>
+        <div className={panel.inner}>
+          <Head />
+          <div className={styles.notice}>
+            Buyer Radar needs an X data source connected before it can scan. This is a configuration step on the
+            operator side; it will light up once that is in place.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ICP setup / editing.
+  if (editing || !hasIcp) {
+    return (
+      <div className={panel.page}>
+        <div className={panel.inner}>
+          <Head />
+          <IcpForm
+            icp={icp}
+            prefill={prefill}
+            onCancel={hasIcp ? () => setEditing(false) : undefined}
+            onSaved={(view) => {
+              setHasIcp(view.complete);
+              if (view.complete) setEditing(false);
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={panel.page}>
+      <div className={panel.inner}>
+        <Head />
+
+        <div className={styles.controlRow}>
+          <button className={styles.scanBtn} onClick={runScan} disabled={scanning}>
+            <HugeiconsIcon icon={Search01Icon} size={16} strokeWidth={1.8} />
+            {scanning ? "Scanning X…" : "Scan now"}
+          </button>
+          <span className={styles.quota}>
+            {used}/{status.cap} signals this month
+          </span>
+          <button className={styles.editBtn} onClick={() => setEditing(true)}>
+            Edit targeting
+          </button>
+        </div>
+        {scanMsg && <div className={styles.scanMsg}>{scanMsg}</div>}
+
+        {signals.length === 0 ? (
+          <div className={styles.empty}>
+            No buyer signals yet. Run a scan and Yoinky will surface people on X asking for what you offer, each with a
+            reply drafted in your voice for you to approve.
+          </div>
+        ) : (
+          <div className={styles.list}>
+            {signals.map((r) => (
+              <div key={r.id} className={styles.card}>
+                <div className={styles.cardTop}>
+                  <span className={styles.avatar}>{r.initials}</span>
+                  <div>
+                    <div className={styles.handle}>@{r.handle}</div>
+                    <div className={styles.time}>{relTime(r.postedAt)}</div>
+                  </div>
+                  <div className={styles.cardSpacer} />
+                  <span className={styles.matchPill}>{r.match}% match</span>
+                </div>
+                <div className={styles.tweetText}>{r.content}</div>
+                {r.why && (
+                  <div className={styles.whyNote}>
+                    <HugeiconsIcon icon={RadarIcon} size={13} strokeWidth={1.8} />
+                    {r.why}
+                  </div>
+                )}
+                {r.draftReply && (
+                  <div className={styles.draftBox}>
+                    <div className={styles.draftLabel}>
+                      <HugeiconsIcon icon={Comment01Icon} size={13} strokeWidth={1.8} />
+                      Reply, in your voice
+                    </div>
+                    <div className={styles.draftText}>{r.draftReply}</div>
+                  </div>
+                )}
+                <div className={styles.cardActions}>
+                  <button className={styles.actionBtn} onClick={() => copyDraft(r.draftReply)} disabled={!r.draftReply}>
+                    Copy reply
+                  </button>
+                  {r.url && (
+                    <a className={styles.actionBtn} href={r.url} target="_blank" rel="noreferrer">
+                      Open on X
+                    </a>
+                  )}
+                  <button className={styles.actionBtn} onClick={() => act(r.id, "replied")}>
+                    <HugeiconsIcon icon={Bookmark01Icon} size={13} strokeWidth={1.8} />
+                    Mark replied
+                  </button>
+                  <div className={styles.cardSpacer} />
+                  <button className={styles.ghostBtn} onClick={() => act(r.id, "skipped")}>
+                    Skip
+                  </button>
+                  <button className={styles.ghostBtn} onClick={() => act(r.id, "not_a_fit")}>
+                    Not a fit
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Head() {
+  return (
+    <div className={panel.head}>
+      <div>
+        <div className={panel.title}>Buyers Radar</div>
+        <div className={panel.subtitle}>
+          Find people publicly asking for what you offer, on X, and get a reply drafted in your voice to approve.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function IcpForm({
+  icp,
+  prefill,
+  onSaved,
+  onCancel,
+}: {
+  icp: IcpView | null;
+  prefill: Prefill;
+  onSaved: (view: IcpView) => void;
+  onCancel?: () => void;
+}) {
+  const [product, setProduct] = useState(icp?.productOneliner || prefill.product_oneliner || "");
+  const [buyer, setBuyer] = useState(icp?.buyerDescription || prefill.buyer_description || "");
+  const [competitors, setCompetitors] = useState((icp?.competitorTerms ?? []).join(", "));
+  const [exclusions, setExclusions] = useState((icp?.exclusions ?? []).join(", "));
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function save() {
+    if (!product.trim() || !buyer.trim()) {
+      setErr("Tell me what you sell and who buys it, at least.");
+      return;
+    }
+    setSaving(true);
+    setErr(null);
+    try {
+      const res = await fetch("/api/buyers-radar/icp", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          productOneliner: product.trim(),
+          buyerDescription: buyer.trim(),
+          competitorTerms: competitors,
+          exclusions,
+          painSignals: icp?.painSignals ?? prefill.pain_signals,
+        }),
+      });
+      const view = (await res.json()) as IcpView;
+      if (!res.ok) {
+        setErr("could not save, try again");
+        return;
+      }
+      onSaved(view);
+    } catch {
+      setErr("could not save, try again");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className={styles.form}>
+      <div className={styles.formIntro}>
+        Two quick things so Yoinky knows who to look for. You can edit these anytime.
+      </div>
+      <label className={styles.field}>
+        <span className={styles.fieldLabel}>What do you sell?</span>
+        <input
+          className={styles.input}
+          value={product}
+          onChange={(e) => setProduct(e.target.value)}
+          placeholder="e.g. landing page copywriting for B2B SaaS"
+        />
+      </label>
+      <label className={styles.field}>
+        <span className={styles.fieldLabel}>Who buys it?</span>
+        <textarea
+          className={styles.textarea}
+          value={buyer}
+          onChange={(e) => setBuyer(e.target.value)}
+          rows={2}
+          placeholder="e.g. early-stage SaaS founders shipping their first paid tier"
+        />
+      </label>
+      <label className={styles.field}>
+        <span className={styles.fieldLabel}>Competitors or tools they might switch from (optional)</span>
+        <input
+          className={styles.input}
+          value={competitors}
+          onChange={(e) => setCompetitors(e.target.value)}
+          placeholder="comma separated"
+        />
+      </label>
+      <label className={styles.field}>
+        <span className={styles.fieldLabel}>Who is NOT your buyer (optional)</span>
+        <input
+          className={styles.input}
+          value={exclusions}
+          onChange={(e) => setExclusions(e.target.value)}
+          placeholder="e.g. jobseekers, students, other copywriters"
+        />
+      </label>
+      {err && <div className={styles.formErr}>{err}</div>}
+      <div className={styles.formActions}>
+        <button className={styles.scanBtn} onClick={save} disabled={saving}>
+          {saving ? "Saving…" : "Save targeting"}
+        </button>
+        {onCancel && (
+          <button className={styles.ghostBtn} onClick={onCancel}>
+            Cancel
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}

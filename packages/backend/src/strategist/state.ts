@@ -125,11 +125,14 @@ export async function resetUserData(userId: string): Promise<void> {
     "mentions",
     "peer_comparison_snapshots", // FK → peer_profiles; delete before it
     "peer_profiles", // cascades peer_captures
+    "buyer_signals", // FK → surfacings (SET NULL); delete before it anyway
+    "buyer_calibration",
     "surfacings",
     "moments",
     "brand_plans",
     "brand_diagnoses",
     "brand_profiles",
+    "icp_profiles",
     "goals",
     "positions",
     "clusters",

@@ -1,6 +1,6 @@
 /*
  * Design system ported from the WeaveOS reference (warm off-white canvas,
- * hairline strokes, Geist type, 20px radii) — with the single change the brief
+ * hairline strokes, Geist type, 20px radii) - with the single change the brief
  * asked for: the glossy BLACK primary action becomes glossy PINK. The pink lives
  * in one place, --accent (+ --accent-2 for the gradient tail); swap those two to
  * rebrand. A dark theme is added since the original was light-only.
@@ -20,7 +20,7 @@
   --ink-600: #7a7a78;
   --ink-500: #9b9a99;
 
-  /* Pink accent — the recolored primary action + active/selected states */
+  /* Pink accent - the recolored primary action + active/selected states */
   --accent: #ec4899;
   --accent-2: rgba(236, 72, 153, 0.82);
   --accent-ink: #ffffff;
@@ -113,7 +113,7 @@ a {
   text-decoration: none;
 }
 
-/* ── Shared primitives ─────────────────────────────────────────────────────── */
+/*   Shared primitives   */
 
 .btnPrimary {
   display: inline-flex;
@@ -122,7 +122,7 @@ a {
   gap: 6px;
   height: 40px;
   padding: 0 18px;
-  border: 1px solid rgba(255, 255, 255, 0.55);
+  border: none;
   border-radius: 999px;
   background: linear-gradient(180deg, var(--accent) 0%, var(--accent-2) 59.38%);
   color: var(--accent-ink);
@@ -131,9 +131,6 @@ a {
   font-weight: 450;
   line-height: 1;
   cursor: pointer;
-  box-shadow:
-    inset 0 3px 2px rgba(255, 255, 255, 0.28),
-    inset 0 4px 2px rgba(255, 255, 255, 0.25);
   transition: filter 120ms ease;
 }
 
