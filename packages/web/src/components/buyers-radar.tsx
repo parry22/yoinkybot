@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Search01Icon, Bookmark01Icon, Comment01Icon, RadarIcon } from "@hugeicons/core-free-icons";
 import panel from "./panel.module.css";
@@ -81,8 +81,9 @@ export function BuyersRadar({
       }
       setSignals(data.signals ?? []);
       setUsed((u) => u + (data.surfaced ?? 0));
-      if (data.status === "budget_exhausted") setScanMsg("You've hit this month's signal cap.");
-      else if (data.surfaced === 0) setScanMsg("No new buyer signals this round. Yoinky will keep looking.");
+      // The backend says why a scan came back empty (buyer/scan.ts stages) — an
+      // empty radar has several causes and they need different things from you.
+      if (data.surfaced === 0) setScanMsg(data.reason ?? "No new buyer signals this round. Yoinky will keep looking.");
       else setScanMsg(`Found ${data.surfaced} new signal${data.surfaced === 1 ? "" : "s"}.`);
     } catch {
       setScanMsg("scan failed");
@@ -156,9 +157,11 @@ export function BuyersRadar({
             Edit targeting
           </button>
         </div>
-        {scanMsg && <div className={styles.scanMsg}>{scanMsg}</div>}
+        {scanMsg && !scanning && <div className={styles.scanMsg}>{scanMsg}</div>}
 
-        {signals.length === 0 ? (
+        {scanning ? (
+          <ScanningRadar />
+        ) : signals.length === 0 ? (
           <div className={styles.empty}>
             No buyer signals yet. Run a scan and Yoinky will surface people on X asking for what you offer, each with a
             reply drafted in your voice for you to approve.
@@ -217,6 +220,57 @@ export function BuyersRadar({
             ))}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A scan is genuinely slow — paced X searches, then embeddings, then up to eight
+ * bounded composition loops — so the wait is a minute or two. The captions track
+ * the real pipeline stages (discovery → intent → niche gate → drafting) at roughly
+ * the timings those stages take, so the wait reads as work rather than a hang.
+ */
+const SCAN_STAGES = [
+  { at: 0, label: "Sweeping X for people in your category" },
+  { at: 15, label: "Reading what they actually asked for" },
+  { at: 40, label: "Matching each one against what you sell" },
+  { at: 70, label: "Drafting replies in your voice" },
+  { at: 110, label: "Finishing the last few" },
+];
+
+function ScanningRadar() {
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    const t = setInterval(() => setElapsed((e) => e + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const stage = [...SCAN_STAGES].reverse().find((s) => elapsed >= s.at) ?? SCAN_STAGES[0]!;
+
+  return (
+    <div className={styles.scanStage} role="status" aria-live="polite">
+      <div className={styles.radar} aria-hidden="true">
+        <span className={styles.ring} />
+        <span className={styles.ring} />
+        <span className={styles.ring} />
+        <span className={styles.sweep} />
+        <span className={styles.core} />
+        <span className={`${styles.blip} ${styles.blip1}`} />
+        <span className={`${styles.blip} ${styles.blip2}`} />
+        <span className={`${styles.blip} ${styles.blip3}`} />
+      </div>
+      <div className={styles.scanStageLabel}>
+        {stage.label}
+        <span className={styles.dots} aria-hidden="true">
+          <i />
+          <i />
+          <i />
+        </span>
+      </div>
+      <div className={styles.scanStageHint}>
+        This takes a minute or two — Yoinky only surfaces someone once there's a reply worth sending.
       </div>
     </div>
   );

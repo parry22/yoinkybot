@@ -24,6 +24,19 @@ which is where it's most useful. Both share one Postgres and one `users` row.
 
 <!-- Keep newest-first. Update this whenever a change ships that a reader of the repo should know about. -->
 
+- **2026-07-23 — Automations (multi-automation "auto agent").** The single global
+  autopilot is replaced by named, independent automations, each with its own source
+  (rides trends in your niche, or posts from your backlog), cadence, and delivery
+  mode. **Approval mode** DMs you a drafted post over Telegram with approve / edit /
+  reject (edit is a real revise-by-instruction loop); a web **Approvals inbox**
+  mirrors it. **Auto mode** (ships DARK behind `AUTOMATIONS_AUTO_ENABLED`) schedules
+  a cancellable post instead of firing instantly, with a warm-up ramp that routes the
+  first few through approval. Doctrine holds: deterministic selectors decide
+  whether/which (the `trend_ride` selector is the exact niche→buzz→rank gate the
+  proactive nudge uses), the model only drafts. Caps everywhere (per-automation
+  monthly + global daily), atomic run claims, moderation on every seed. New Cowork-style
+  `/app/automations` surface. Backend `automations/*`, migration `0024`. See INTERNAL §3l.
+
 - **2026-07-22 — Content moderation, crisper voice, calendar scheduling, seeded Inspiration.**
   (1) **Moderation gate** (`moderation/filter.ts`): a deterministic lexicon (explicit/abusive,
   word-boundary matched, no LLM) rejects pornographic or abusive user text with one consistent

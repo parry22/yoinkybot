@@ -1,0 +1,254 @@
+.section {
+  margin-bottom: 28px;
+}
+.sectionTitle {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-600);
+  margin-bottom: 12px;
+}
+
+.toast {
+  font-size: 13px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 0.5px solid var(--accent-border);
+  border-radius: 999px;
+  padding: 8px 14px;
+  display: inline-block;
+  margin-bottom: 18px;
+}
+
+/* ── automation cards ── */
+.card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--surface);
+  border: 0.5px solid var(--stroke);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
+  margin-bottom: 10px;
+}
+.cardMain {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+.cardName {
+  font-size: 15px;
+  font-weight: 470;
+  color: var(--ink-900);
+}
+.cardMeta {
+  font-size: 13px;
+  color: var(--ink-500);
+  margin-top: 3px;
+}
+.pendingTag {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 0.5px solid var(--accent-border);
+  border-radius: 999px;
+  padding: 2px 10px;
+}
+.cardActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+.runBtn {
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 0.5px solid var(--stroke);
+  background: var(--surface);
+  color: var(--ink-700);
+  cursor: pointer;
+}
+.runBtn:hover {
+  background: var(--hover);
+}
+.runBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* toggle switch */
+.toggle {
+  width: 42px;
+  height: 24px;
+  border-radius: 999px;
+  border: none;
+  background: var(--stroke);
+  position: relative;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  flex: 0 0 auto;
+}
+.toggle.on {
+  background: var(--accent);
+}
+.knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #fff;
+  transition: transform 0.15s ease;
+}
+.toggle.on .knob {
+  transform: translateX(18px);
+}
+
+.empty {
+  font-size: 14px;
+  color: var(--ink-500);
+  line-height: 1.6;
+  border: 0.5px dashed var(--stroke);
+  border-radius: var(--radius-lg);
+  padding: 32px 24px;
+  text-align: center;
+}
+
+/* ── approvals ── */
+.approval {
+  background: var(--surface);
+  border: 0.5px solid var(--accent-border);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
+  margin-bottom: 12px;
+}
+.approvalFrom {
+  font-size: 12px;
+  color: var(--accent);
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+.approvalDraft {
+  font-size: 15px;
+  color: var(--ink-900);
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+.approvalMedia {
+  font-size: 12px;
+  color: var(--ink-500);
+  margin-top: 8px;
+}
+.approvalActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+.editRow {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+.editInput {
+  flex: 1;
+  font: inherit;
+  font-size: 14px;
+  padding: 9px 12px;
+  border: 0.5px solid var(--stroke);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink-900);
+}
+.editInput:focus {
+  outline: none;
+  border-color: var(--accent-border);
+}
+.ghost {
+  font: inherit;
+  font-size: 13px;
+  padding: 9px 14px;
+  border-radius: 999px;
+  border: 0.5px solid var(--stroke);
+  background: var(--surface);
+  color: var(--ink-600);
+  cursor: pointer;
+}
+.ghost:hover {
+  background: var(--hover);
+}
+
+/* ── config modal ── */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(20, 20, 20, 0.42);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.modal {
+  width: min(480px, 100%);
+  max-height: 88vh;
+  overflow-y: auto;
+  background: var(--chat-bg);
+  border: 0.5px solid var(--stroke);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-drawer);
+  padding: 22px;
+}
+.modalTitle {
+  font-size: 17px;
+  font-weight: 470;
+  color: var(--ink-900);
+  margin-bottom: 16px;
+}
+.field {
+  display: block;
+  margin-bottom: 16px;
+}
+.label {
+  display: block;
+  font-size: 13px;
+  color: var(--ink-700, var(--ink-900));
+  margin-bottom: 6px;
+}
+.input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 11px 13px;
+  border: 0.5px solid var(--stroke);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--ink-900);
+  font: inherit;
+  font-size: 14px;
+}
+.input:focus {
+  outline: none;
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.hint {
+  display: block;
+  font-size: 12px;
+  color: var(--ink-500);
+  line-height: 1.5;
+  margin-top: 8px;
+}
+.err {
+  font-size: 13px;
+  color: #d3455b;
+  margin-bottom: 12px;
+}
+.modalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+}

@@ -7,7 +7,7 @@
 import { config } from "../config.js";
 import { query, queryOne } from "../db/pool.js";
 import { getIcp, saveIcp, prefillIcp, icpComplete, type IcpInput, type IcpPrefill } from "../buyer/icp.js";
-import { scanForUser, monthlySurfacedCount, type ScanStatus } from "../buyer/scan.js";
+import { scanForUser, monthlySurfacedCount, type ScanStatus, type ScanResult } from "../buyer/scan.js";
 import { recalibrateUser } from "../buyer/calibration.js";
 import { assertClean } from "../moderation/filter.js";
 
@@ -154,13 +154,47 @@ export interface ScanResponse {
   status: ScanStatus;
   surfaced: number;
   signals: BuyerSignalView[];
+  /** Why a scan came back empty, in the user's language. Null when it surfaced something. */
+  reason: string | null;
+}
+
+/**
+ * Turn the funnel counts into one honest sentence. An empty radar has several
+ * very different causes (nobody was talking, everybody was off-domain, the model
+ * declined them all) and they need different things from the user — so we say
+ * which one it was rather than the same "no signals yet" every time.
+ */
+function emptyReason(result: ScanResult): string | null {
+  if (result.surfaced > 0) return null;
+  const s = result.stages;
+  if (result.status === "budget_exhausted") return "You've hit this month's signal cap.";
+  if (result.status === "no_icp") return "Tell me what you sell and who buys it first.";
+  if (result.status === "unavailable") return "The X data source isn't connected yet, so there's nothing to scan.";
+  if (!s.hasIcpVector) {
+    return "Your targeting hasn't been indexed yet — open Edit targeting and save it once to fix this.";
+  }
+  if (s.candidates === 0) {
+    return "Nobody on X matched your category this round. If that keeps happening, widen what you sell in Edit targeting — a broad category finds more than a precise one.";
+  }
+  if (s.intentPassed === 0) {
+    return `Read ${s.candidates} posts in your category, but none of them were actually asking for anything. That's a quiet week, not a problem.`;
+  }
+  if (s.nichePassed === 0) {
+    return `${s.intentPassed} people were asking for something, but none were close enough to what you sell. Sharpening "who buys it" in Edit targeting helps here.`;
+  }
+  if (s.composeFailed > 0 && s.composeFailed === s.composed) {
+    return "Found candidates but couldn't draft replies for them — that's on my side, they'll still be here next scan.";
+  }
+  return `Looked at ${s.candidates} posts and none were a real buyer. Yoinky will keep looking.`;
 }
 
 /** On-demand scan (the "Scan now" button). Budget-gated inside scanForUser. */
 export async function scanBuyerSignals(userId: string): Promise<ScanResponse> {
   const result = await scanForUser(userId);
   const signals = await listBuyerSignals(userId);
-  return { status: result.status, surfaced: result.surfaced, signals };
+  // The funnel counts are the thing you need when a user says "it found nobody".
+  console.log(`buyer scan user=${userId} status=${result.status} surfaced=${result.surfaced}`, result.stages);
+  return { status: result.status, surfaced: result.surfaced, signals, reason: emptyReason(result) };
 }
 
 /**

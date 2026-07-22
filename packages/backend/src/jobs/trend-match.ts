@@ -193,6 +193,89 @@ async function createTrendMoment(
   return moment?.id ?? null;
 }
 
+/** A trend that cleared the niche + buzz gates, with its grounding, ranked by buzz. */
+export interface RankedTrend {
+  trend: TrendCandidate;
+  position: WeightedPosition;
+  whyNow: string;
+  verification: VolumeVerification;
+  buzz: number;
+}
+
+/**
+ * Shared niche prefilter: the user's active positions + recent on-niche X trends
+ * that don't already have a moment, near-gated by NICHE_THRESHOLD. Pure read.
+ * Both the verified selector and the degraded fallback consume this, so the niche
+ * gate is defined once.
+ */
+async function nicheCandidates(
+  userId: string,
+): Promise<{ positions: WeightedPosition[]; near: TrendCandidate[] } | null> {
+  const positions = await activePositions(userId);
+  if (positions.length === 0) return null;
+  const candidates = await query<TrendCandidate>(
+    `SELECT t.id, t.topic, t.summary, t.url, t.platform,
+            (SELECT min(t.embedding <=> p.embedding) FROM positions p
+             WHERE p.user_id = $1 AND p.status = 'active' AND p.embedding IS NOT NULL) AS distance,
+            (SELECT p.id FROM positions p
+             WHERE p.user_id = $1 AND p.status = 'active' AND p.embedding IS NOT NULL
+             ORDER BY t.embedding <=> p.embedding ASC LIMIT 1) AS nearest_position_id
+     FROM trends t
+     WHERE t.fetched_at > now() - interval '3 days'
+       AND t.observed_at > now() - interval '36 hours'
+       AND t.embedding IS NOT NULL
+       AND t.platform = 'x'
+       AND t.source = 'twitterapi'
+       AND NOT EXISTS (SELECT 1 FROM moments m WHERE m.user_id = $1 AND m.trend_id = t.id)
+     ORDER BY distance ASC NULLS LAST
+     LIMIT 12`,
+    [userId],
+  );
+  const near = candidates.filter((c) => c.distance !== null && c.distance < config.NICHE_THRESHOLD);
+  if (near.length === 0) return null;
+  return { positions, near };
+}
+
+/**
+ * The deterministic "ranked eligible trends for a user" selector: niche gate →
+ * buzz verification (BUZZ_THRESHOLD) → rank by buzzScore. PURE READ — creates no
+ * moment and delivers nothing, so it's safe to call from multiple consumers (the
+ * proactive `⚡` nudge AND automations) without one hiding trends from the other.
+ * Returns [] on the degraded (no-twitterapi) path — callers handle their own
+ * fallback. NO LLM.
+ */
+export async function selectEligibleTrends(userId: string): Promise<RankedTrend[]> {
+  if (!twitterapiConfigured()) return [];
+  const nc = await nicheCandidates(userId);
+  if (!nc) return [];
+  const { positions, near } = nc;
+  const verifications = new Map<string, VolumeVerification>();
+  const surviving: TrendCandidate[] = [];
+  for (const c of near.slice(0, VERIFY_CANDIDATES)) {
+    try {
+      const v = await verifyTrendVolume(c.topic, true);
+      if (v.buzz > config.BUZZ_THRESHOLD) {
+        verifications.set(c.id, v);
+        surviving.push(c);
+      }
+    } catch (err) {
+      console.error(`buzz verification failed for trend "${c.topic}"`, err);
+    }
+  }
+  surviving.sort((a, b) => (verifications.get(b.id)?.buzz ?? 0) - (verifications.get(a.id)?.buzz ?? 0));
+  return surviving.map((trend) => {
+    const verification = verifications.get(trend.id)!;
+    const position = positions.find((p) => p.id === trend.nearest_position_id) ?? positions[0]!;
+    return {
+      trend,
+      position,
+      whyNow: `"${trend.topic}" is surging on X right now and sits squarely in your lane`,
+      verification,
+      buzz: verification.buzz,
+    };
+  });
+}
+
 export async function trendMatchForUser(
   userId: string,
   settings: UserSettings = {},
@@ -220,60 +303,17 @@ export async function trendMatchForUser(
   const remaining = config.MAX_DAILY_TREND_SENDS - Number(sentRow?.n ?? 0);
   if (remaining <= 0) return false;
 
-  const positions = await activePositions(userId);
-  if (positions.length === 0) return false;
-
-  // Stage C — niche gate (deterministic): recent trends semantically near ANY of
-  // the user's positions, dedup'd against any trend that already has a moment
-  // (sent or rejected). Runs BEFORE the paid volume checks. Loose prefilter —
-  // it only drops clearly unrelated trends; the gates below are the real bar.
-  //
-  // X-ONLY (2026-07-12): this whole pipeline is X-native — buzz is verified on X
-  // (twitterapi.io advanced_search) and the source post the agent cites comes
-  // from X (get_top_tweets). A LinkedIn-seeded trend would be delivered with an
-  // X driving-post but a LinkedIn seed link, which is incoherent. The Apify
-  // fetch still pulls both platforms into `trends`; the macro-moment feature
-  // consumes only the X ones. (Flip this filter to re-include LinkedIn seeds.)
-  // FRESHNESS (2026-07-12): gate on observed_at (the driving tweet's own time),
-  // not just fetched_at — a same-day trend is the whole point. discover-x sets
-  // observed_at to the source tweet's timestamp, so a moment 5 days stale can't
-  // resurface here. 36h keeps it "today / yesterday" while surviving the gap
-  // between fetch runs.
-  // source = 'twitterapi' ONLY: those are the distilled-TERM trends from
-  // discover-x ("Agentic AI"), which verify on X and can actually clear the buzz
-  // gate. The Apify fallback writes VERBATIM tweet text as the topic (buzz ~0.15,
-  // never clears), and because those often sit at a low niche distance they used
-  // to grab every buzz-verify slot and starve the real terms — nothing ever
-  // fired. Excluding them costs nothing (they can't fire) and unblocks the pool.
-  const candidates = await query<TrendCandidate>(
-    `SELECT t.id, t.topic, t.summary, t.url, t.platform,
-            (SELECT min(t.embedding <=> p.embedding) FROM positions p
-             WHERE p.user_id = $1 AND p.status = 'active' AND p.embedding IS NOT NULL) AS distance,
-            (SELECT p.id FROM positions p
-             WHERE p.user_id = $1 AND p.status = 'active' AND p.embedding IS NOT NULL
-             ORDER BY t.embedding <=> p.embedding ASC LIMIT 1) AS nearest_position_id
-     FROM trends t
-     WHERE t.fetched_at > now() - interval '3 days'
-       AND t.observed_at > now() - interval '36 hours'
-       AND t.embedding IS NOT NULL
-       AND t.platform = 'x'
-       AND t.source = 'twitterapi'
-       AND NOT EXISTS (SELECT 1 FROM moments m WHERE m.user_id = $1 AND m.trend_id = t.id)
-     ORDER BY distance ASC NULLS LAST
-     LIMIT 12`,
-    [userId],
-  );
-  const near = candidates.filter((c) => c.distance !== null && c.distance < config.NICHE_THRESHOLD);
-  if (near.length === 0) return false;
-
   // Degraded path (no volume verification available): no buzz to rank by, so
   // take the nearest on-niche candidate that clears the position gate and hand
   // it to the shared angle-offer flow (the pre-buzz behavior). Only this path
-  // still uses the per-trend position gate + themes.
+  // still uses the per-trend position gate + themes. Niche gate via the shared
+  // nicheCandidates helper (defined once, above).
   if (!verified) {
+    const nc = await nicheCandidates(userId);
+    if (!nc) return false;
     const themes = await gatherThemes(userId);
-    for (const c of near) {
-      const gate = await runPositionGate(userId, c, positions, themes);
+    for (const c of nc.near) {
+      const gate = await runPositionGate(userId, c, nc.positions, themes);
       if (!gate) continue;
       const momentId = await createTrendMoment(userId, c, gate.position, gate.whyNow);
       if (!momentId) return false;
@@ -283,44 +323,17 @@ export async function trendMatchForUser(
     return false;
   }
 
-  // Stage B — buzz gate (deterministic, verified volume): verify the nearest
-  // few, keep those clearing BUZZ_THRESHOLD, rank by buzzScore. Distinct-author-
-  // weighted score is what separates "the whole timeline is on this" from "a
-  // few niche accounts are."
-  const verifications = new Map<string, VolumeVerification>();
-  const surviving: TrendCandidate[] = [];
-  for (const c of near.slice(0, VERIFY_CANDIDATES)) {
-    try {
-      const v = await verifyTrendVolume(c.topic, true);
-      if (v.buzz > config.BUZZ_THRESHOLD) {
-        verifications.set(c.id, v);
-        surviving.push(c);
-      }
-    } catch (err) {
-      console.error(`buzz verification failed for trend "${c.topic}"`, err);
-    }
-  }
-  if (surviving.length === 0) return false;
-  surviving.sort((a, b) => (verifications.get(b.id)?.buzz ?? 0) - (verifications.get(a.id)?.buzz ?? 0));
-
-  // Compose per candidate in buzzScore order, bounded by BOTH the per-run cap
-  // (MIN) and the remaining daily band (MAX − sent today); the smaller wins.
-  //
-  // NO hard position-collision gate (2026-07-14). The old macro-match gate
-  // demanded a broad trend collide with a SPECIFIC stated position, which term-
-  // based trends ("Agentic AI") never do — so on-niche, high-buzz trends were
-  // rejected and NOTHING ever fired. The niche gate (embedding < threshold) plus
-  // the buzz gate already prove relevance + reality; that's enough to be worth a
-  // take. We attach the NEAREST position as grounding context and let the
-  // compose agent decide — it still declines (fires:false) when there's genuinely
-  // no angle. Same doctrine as the viral case study: code selects, model composes.
+  // Verified path — the SAME deterministic selector the automation uses (niche →
+  // buzz → rank), so there is one definition of eligibility. Compose per trend in
+  // buzzScore order, bounded by BOTH the per-run cap (MIN) and the remaining daily
+  // band (MAX − sent today); the smaller wins. We attach the NEAREST position as
+  // grounding and let the compose agent decide (it declines when there's no angle).
+  const ranked = await selectEligibleTrends(userId);
+  if (ranked.length === 0) return false;
   const perRun = Math.min(remaining, Math.max(1, config.MIN_DAILY_TREND_SENDS));
   let sent = 0;
-  for (const trend of surviving) {
+  for (const { trend, position, whyNow, verification } of ranked) {
     if (sent >= perRun) break;
-    const verification = verifications.get(trend.id)!;
-    const position = positions.find((p) => p.id === trend.nearest_position_id) ?? positions[0]!;
-    const whyNow = `"${trend.topic}" is surging on X right now and sits squarely in your lane`;
     const momentId = await createTrendMoment(userId, trend, position, whyNow, verification);
     if (!momentId) continue;
     const delivered = await composeAndDeliverTake(

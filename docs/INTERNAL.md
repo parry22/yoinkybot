@@ -1178,7 +1178,22 @@ just-in-time via a minimal web intake (3-4 fields, pre-filled from
    competitor_dissatisfaction, pain, trigger_event). Queries run through
    `searchTweets` (advanced_search, `since_time` recency, `-filter:replies`,
    page cap), deduped against `buyer_signals` (tweet id + author cooldown), the
-   user's own tweets dropped.
+   user's own tweets dropped. If a pass finds nothing at all, the strongest three
+   queries retry once over `BUYER_LOOKBACK_HOURS × BUYER_WIDEN_FACTOR` — an empty
+   radar is worse than an old candidate that still has to clear both gates.
+
+   **THE query invariant: never AND a run of bare words.** X requires every
+   unquoted word to appear in the same tweet, so
+   `("looking for" OR "recommend") AI ghostwriter that turns founders` matches
+   nobody, ever. The category must be an OR-group (`categoryGroup` → e.g.
+   `("landing page" OR copywriting OR landing)`), and a pain phrasing stands
+   alone as a quoted phrase rather than having the category AND-ed onto it.
+   `tooNarrow` enforces this on LLM-distilled queries before they cost a paid
+   search; `discovery.test.ts` guards the fallback. This was the bug that made
+   the radar return zero prospects for every user (fixed 2026-07-23): measured
+   live, the bare-phrase form returned 0 at every lookback window while the
+   OR-group form returned a full page inside 72h. The funnel on one real ICP went
+   from `0 → 0 → 0` to `91 candidates → 51 intent → 18 niche`.
 3. **Deterministic intent gate (`buyer/scoring.ts#intentScore`).** Pure,
    unit-tested. Components: marker strength (a curated lexicon + the user's
    `pain_signals`), query provenance, question presence, competitor mention,
@@ -1189,7 +1204,12 @@ just-in-time via a minimal web intake (3-4 fields, pre-filled from
 4. **Semantic niche gate (`buyer/niche-gate.ts`).** Candidate tweet embedded and
    cosine-compared to `icp_embedding`; rejects `dist >= BUYER_NICHE_THRESHOLD`.
    Only candidates clearing BOTH gates reach the agent. Fail-closed if the ICP
-   has no vector.
+   has no vector (reported as `stages.hasIcpVector` so the UI can say so rather
+   than showing a mystery-empty radar). The ICP vector is fetched ONCE and the
+   distance computed in-process — pgvector's `<=>` per candidate was a DB
+   round-trip per tweet for what is arithmetic. `0.55` is measured, not
+   conservative-by-default: on live data it passed ~⅓ of intent-clearing
+   candidates and was what killed the off-domain crypto/event noise.
 5. **Composition agent (`buyer/radar-agent.ts` + `buyer-outreach.v1`).** Bounded
    `runToolLoop` (`MAX_BUYER_TOOL_CALLS`), tools in `buyer/tools.ts` (no imports):
    `get_icp`, `get_voice_profile`, `get_positions`, `get_content_pillars`,
@@ -1204,13 +1224,31 @@ just-in-time via a minimal web intake (3-4 fields, pre-filled from
 **Persistence + verdicts.** `buyer_signals` doubles as the dedup ledger and the
 tuning surface: `verdict` ∈ `surfaced|replied|skipped|not_a_fit|rejected`,
 `components`/`agent_steps` stored inspectable. A fired signal consumes monthly
-budget; a decline does not.
+budget; a decline does not. The **author cooldown only counts authors actually
+surfaced** — a `rejected` row is a model decline the user never saw, and blocking
+that author for three weeks shrank the candidate pool with every scan. A
+composition that *errors* (provider down/out of credit) is not persisted at all,
+so the candidate stays eligible next scan; it also no longer aborts the run, which
+used to throw away every candidate already paid for.
+
+**`ScanResult.stages` — why an empty radar is now legible.** `candidates →
+intentPassed → nichePassed → composed / composeFailed` plus `hasIcpVector`,
+logged on every scan and turned into one plain sentence by `emptyReason`
+(`web/buyers-radar.ts`). Without it, "0 signals" is indistinguishable from "the
+pipeline is broken" — which is exactly how a dead query set stayed invisible. The
+causes need different things from the user (widen the category / sharpen the
+buyer / nothing, it was a quiet week), so the UI says which one it was.
 
 **Delivery is the web app (v1, pull-only).** `web/buyers-radar.ts` (read model
 `listBuyerSignals`, `buyerRadarStatus`, ICP get/save, `scanBuyerSignals`,
 `setBuyerSignalVerdict`) → routes `/api/buyers-radar/{scan,icp,verdict}` →
 `components/buyers-radar.tsx` (ICP intake, "Scan now", per-signal reply +
-open/copy/skip/not-a-fit). The proactive recurring path (`jobs/buyer-radar.ts`,
+open/copy/skip/not-a-fit). A scan is genuinely slow (paced X searches →
+embeddings → up to eight bounded composition loops, a minute or two), so
+`ScanningRadar` replaces the empty state with a centred radar sweep whose
+captions track the real pipeline stages at roughly their real timings — the wait
+reads as work rather than a hang. CSS-only motion, `prefers-reduced-motion`
+respected. The proactive recurring path (`jobs/buyer-radar.ts`,
 queue `buyer.radar`, surfacing type `buyer_signal`) ships **DARK**
 (`BUYER_RADAR_PROACTIVE=false`) — enable per rollout after observing search-budget
 behavior in prod (twitterapi.io has hit `402 Credits` before, and buyer search is
@@ -1271,9 +1309,64 @@ niche/pillars; trend seeding depends on the fleet `trends` table and no-ops if e
 
 ---
 
+## 3l. Automations (multi-automation "auto agent") (2026-07-23)
+
+Generalizes the single global autopilot (`users.settings.agent_mode` + one
+`runAgentCycle`, both retired) into several independent, named automations. Each
+has a source, cadence, and delivery mode; when due it runs a deterministically
+selected item through the existing draft path and delivers one of two ways.
+Doctrine holds: **code decides whether/which** (existing gates), the LLM only
+composes. Migration `0024` (`automations`, `automation_runs`); the old
+`agent.tick` schedule is unscheduled and every `agent_mode` user is migrated to
+one `unlock_backlog` auto automation.
+
+**Sources (`automations/sources/`, a selector contract, no LLM).** `trend_ride`
+reuses `selectEligibleTrends` (extracted from `trendMatchForUser` so the proactive
+`⚡` nudge and the automation share ONE niche→buzz→rank selector; a pure read, no
+moment creation), deduped against the automation's own prior runs. `unlock_backlog`
+uses `topPendingUnlock` + `markUnlockDeveloped` (the old autopilot's source). A
+third source is one selector + one registry entry; any `per_user_paid` type must
+add its own budget gate first.
+
+**Run pipeline (`automations/run.ts`).** Cap check BEFORE any paid/model call
+(per-automation `monthly_cap` + global `AUTOMATION_USER_DAILY_CAP`) → deterministic
+select → moderate the seed (`assertClean`) → compose via `generateDraft` (feed
+voice, metered, voice+pillars+reach) → persist an `automation_runs` row → deliver.
+The seed leads with the user's nearest position so `generateDraft`'s memory
+retrieval hits (it declines on empty). Every gating transition is an atomic claim
+(`store.claimRun`: `UPDATE … WHERE id=$1 AND status=$expected RETURNING`), so a
+duplicate tick / double tap / redelivered job can't double-draft/DM/post.
+
+**Cron (`automations/tick.ts`, `automation.tick`).** Fires 3×/day; `isDue` gates
+per-day (once), weekly-day, and an optional hour; quiet hours defer to a later
+tick. Safe to over-fire.
+
+**Approval mode.** Draft body is DM'd verbatim via `dmChannel` with a casual
+framing line (only the label is casualized — voice split) + `auto:ok|edit|no:<runId>`
+buttons. Callbacks in `bot.ts` call channel-agnostic actions in
+`automations/approval.ts` (`approveRun`/`rejectRun`/`applyEdit`), which the web
+Approvals inbox reuses. Approve → `schedulePost` (short delay, cancellable) →
+`scheduled`. Edit binds the next Telegram turn (via `strategist_state.pendingAutoEdit`)
+as an instruction to `reviseDraft` (a new revise-by-instruction composer; none
+existed), re-presents the card, capped at `AUTOMATION_MAX_EDITS`.
+
+**Auto mode (DARK until `AUTOMATIONS_AUTO_ENABLED`).** Never instant: schedules
+`AUTOMATION_AUTO_DELAY_MIN` out (cancellable from the queue). A warmup ramp routes
+the first `AUTOMATION_AUTO_WARMUP` posts of a new auto automation through approval
+first. Outcome DMs come from the existing `jobs/scheduled-post.ts`. All gates still
+run.
+
+**Web (`/app/automations`, replaces the old page).** `web/automations.ts` read
+model → `/api/automations/{list,save,toggle,run,approvals,verdict}` → a lean
+Cowork-style `components/automations.tsx`: automation cards (name · source ·
+cadence · mode, pause toggle, "run now", pending badge), a config modal, and an
+Approvals inbox mirroring the Telegram cards. Automation name is moderated on save.
+
+---
+
 ## 4. Data model
 
-Schema is a linear migration chain in `src/db/migrations/` (`0001`…`0023`),
+Schema is a linear migration chain in `src/db/migrations/` (`0001`…`0024`),
 applied on boot and via `pnpm db:migrate` (`src/db/migrate.ts`). pgvector is
 required for embedding columns.
 

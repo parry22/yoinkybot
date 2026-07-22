@@ -83,6 +83,9 @@ export interface StrategistState {
   connectFlow?: { offered?: ("x" | "linkedin")[]; skipped?: ("x" | "linkedin")[] };
   /** The Stage 4 tone inline-keyboard has been sent once (don't resend each turn). */
   toneMenuSent?: boolean;
+  /** An automation approval-card "edit" was tapped — the next text turn is the
+   *  edit instruction for this run (automations/approval.ts). */
+  pendingAutoEdit?: { runId: string };
 }
 
 export async function getState(userId: string): Promise<StrategistState> {
@@ -125,6 +128,8 @@ export async function resetUserData(userId: string): Promise<void> {
     "mentions",
     "peer_comparison_snapshots", // FK → peer_profiles; delete before it
     "peer_profiles", // cascades peer_captures
+    "automation_runs", // FK → automations; delete before it
+    "automations",
     "buyer_signals", // FK → surfacings (SET NULL); delete before it anyway
     "buyer_calibration",
     "surfacings",

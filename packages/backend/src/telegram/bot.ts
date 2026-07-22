@@ -36,6 +36,8 @@ import { parsePeersCommand, addPeer, removePeer, listPeers } from "../benchmark/
 import { parseSettingsCommand, applySettings, SETTINGS_USAGE } from "./settings.js";
 import { trackOutgoingMessages, recordMessage, deleteAllTrackedMessages } from "./message-log.js";
 import { casualize } from "../prompts/style.js";
+import { approveRun, rejectRun, applyEdit, approvalKeyboard } from "../automations/approval.js";
+import { getRun } from "../automations/store.js";
 import {
   type Channel,
   connectAccount,
@@ -406,6 +408,37 @@ export function createBot(): Bot | undefined {
       const id = data.slice("schedq:cancel:".length);
       const ok = await cancelScheduled(user.id, id);
       return void (await ctx.answerCallbackQuery({ text: ok ? "canceled" : "already gone" }));
+    }
+
+    // Automation approval card: approve / edit / reject a drafted run.
+    const autoCb = /^auto:(ok|edit|no):([0-9a-f-]{36})$/.exec(data);
+    if (autoCb) {
+      const [, action, runId] = autoCb as unknown as [string, "ok" | "edit" | "no", string];
+      const spend = (label: string) =>
+        ctx.editMessageReplyMarkup({ reply_markup: new InlineKeyboard().text(label, "noop") }).catch(() => {});
+      if (action === "ok") {
+        await ctx.answerCallbackQuery({ text: "queuing it…" });
+        const r = await approveRun(user.id, runId);
+        await spend(r.ok ? "✅ approved" : "•");
+        await ctx.reply(
+          casualize(r.ok ? "done, queued to go out. you can still cancel it from scheduled." : r.reason ?? "couldn't queue that one."),
+        );
+        return;
+      }
+      if (action === "no") {
+        await ctx.answerCallbackQuery({ text: "rejected" });
+        const r = await rejectRun(user.id, runId);
+        await spend("🗑 rejected");
+        if (r.ok) await ctx.reply(casualize("skipped it, won't post."));
+        return;
+      }
+      // edit: bind the next text turn to this run as the edit instruction.
+      await ctx.answerCallbackQuery();
+      const st = await getState(user.id);
+      await setState(user.id, { ...st, pendingAutoEdit: { runId } });
+      await spend("✏️ editing");
+      await ctx.reply(casualize("what should i change?"));
+      return;
     }
 
     // "skip for now" on an OAuth connect offer. The module decides what comes
@@ -915,6 +948,28 @@ async function handleTextTurn(user: User, text: string, ctx: Context): Promise<v
   }
   await withTyping(channel, async () => {
     const state = await getState(user.id);
+
+    // Automation edit-loop: the user tapped "edit" on an approval card, so this
+    // message is the edit instruction for that run (not normal chat). Runs under
+    // the per-user turn lock, so the state read-modify-write is safe.
+    if (state.pendingAutoEdit) {
+      const { runId } = state.pendingAutoEdit;
+      await setState(user.id, { ...state, pendingAutoEdit: undefined });
+      const res = await applyEdit(user.id, runId, text);
+      if (res.capped) {
+        await channel.say(casualize("that's the edit limit on this one. approve it or reject it."));
+        const run = await getRun(runId, user.id);
+        if (run?.draft_body) await channel.say(run.draft_body, approvalKeyboard(runId));
+        return;
+      }
+      if (!res.ok) {
+        await channel.say(casualize(res.reason ?? "couldn't apply that edit."));
+        return;
+      }
+      await channel.say(casualize("updated it:"));
+      await channel.say(res.draft!, approvalKeyboard(runId));
+      return;
+    }
 
     // "connect / diagnose my X @handle" typed in plain language still kicks off a
     // real scrape (a feature, not onboarding). Only when it's plausibly THEIR

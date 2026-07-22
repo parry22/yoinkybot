@@ -42,8 +42,15 @@ Rules:
   - "competitor_dissatisfaction": ("switching from" OR "alternative to") <competitor>
   - "pain": "<pain phrasing>" <category>
   - "trigger_event": ("just started" OR "we're scaling" OR "just launched") <context>
+- CRITICAL: X ANDs every bare (unquoted) word, so a query must never leave more than
+  two bare words loose — all of them would have to appear in the same tweet and it
+  returns nothing. Put the category in an OR-group or quotes:
+  GOOD: ("looking for" OR "recommend") ("ai ghostwriter" OR ghostwriter)
+  DEAD: ("looking for" OR "recommend") AI ghostwriter that turns founders ideas
 - Category vocabulary must be BROAD enough to return results ("email tool", not
   "the email tool I use for my B2B SaaS onboarding flow").
+- A pain query is the quoted phrase on its own. Do NOT append the category to it —
+  that ANDs two narrow things together and matches nobody.
 - Skip competitor_dissatisfaction queries if no competitor is given. Skip nothing else.
 
 Respond with ONLY valid JSON:

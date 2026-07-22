@@ -19,7 +19,7 @@ type NavItem = { href: string; label: string; icon: typeof SparklesIcon };
 
 const AGENT_NAV: NavItem[] = [
   { href: "/app/compose", label: "Compose", icon: QuillWrite02Icon },
-  { href: "/app/automation", label: "Automation", icon: SparklesIcon },
+  { href: "/app/automations", label: "Automations", icon: SparklesIcon },
 ];
 
 const GROW_NAV: NavItem[] = [

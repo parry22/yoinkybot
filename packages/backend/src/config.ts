@@ -146,8 +146,15 @@ const schema = z.object({
   //   ICP vector. Tighter than the trend NICHE_THRESHOLD — a buyer for a fitness
   //   app asking about a CRM is off-domain even if the intent is loud.
   BUYER_NICHE_THRESHOLD: z.coerce.number().default(0.55),
-  //   Intent decays: a 3-week-old "looking for" is likely resolved. Short window.
-  BUYER_LOOKBACK_HOURS: z.coerce.number().default(72),
+  //   Intent decays: a 3-week-old "looking for" is likely resolved, so the window
+  //   stays short — but 72h left niche categories with no volume at all to search
+  //   (verified live 2026-07-23), so a week is the floor that still reads as fresh.
+  //   Recency is a decay inside this window, not a cliff (buyer/scoring.ts).
+  BUYER_LOOKBACK_HOURS: z.coerce.number().default(168),
+  //   When a pass finds NOTHING in-window, discovery retries the strongest queries
+  //   once over this multiple of the window — an empty radar is worse than an old
+  //   candidate that still has to clear both gates on its own merits.
+  BUYER_WIDEN_FACTOR: z.coerce.number().default(4),
   //   Bounded composition loop cap (mirrors REPLY_AGENT_MAX_TOOL_CALLS).
   MAX_BUYER_TOOL_CALLS: z.coerce.number().default(4),
   //   Per-query advanced_search pagination cap (cost: $0.00015/tweet, and buyer
@@ -160,6 +167,26 @@ const schema = z.object({
   BUYER_MONTHLY_SIGNAL_CAP: z.coerce.number().default(40),
   //   Don't resurface the same prospect within this window (repeat-author guard).
   BUYER_AUTHOR_COOLDOWN_DAYS: z.coerce.number().default(21),
+
+  // ── Automations (multi-automation "auto agent", §3l) ─────────────────────
+  // The unattended AUTO cron ships DARK (mirrors BUYER_RADAR_PROACTIVE): approval
+  // mode can be validated in prod before any hands-off post fires.
+  AUTOMATIONS_AUTO_ENABLED: z
+    .string()
+    .default("false")
+    .transform((v) => v === "true" || v === "1"),
+  // Global ceiling on posts/day across ALL of a user's automations (flood guard).
+  AUTOMATION_USER_DAILY_CAP: z.coerce.number().default(3),
+  // Auto mode schedules this many minutes out (cancellable from the web queue
+  // before it fires) rather than posting instantly — the escape hatch in hands-off mode.
+  AUTOMATION_AUTO_DELAY_MIN: z.coerce.number().default(60),
+  // Warmup ramp: the first N posts of a new AUTO automation route through approval
+  // first, so the user confirms the voice before it goes fully unattended.
+  AUTOMATION_AUTO_WARMUP: z.coerce.number().default(3),
+  // Edit-loop cap in approval mode before forcing an approve/reject.
+  AUTOMATION_MAX_EDITS: z.coerce.number().default(5),
+  // Default monthly post cap for a new automation.
+  AUTOMATION_DEFAULT_MONTHLY_CAP: z.coerce.number().default(30),
 
   // ── Native scheduled posting (write access) ─────────────────────────────
   // OAuth 2.0 user-context credentials for PUBLISHING on the user's behalf —

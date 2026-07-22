@@ -26,6 +26,7 @@ export const QUEUES = {
   buyerRadar: "buyer.radar",
   buyerRecalibrate: "buyer.recalibrate",
   inspirationSeed: "inspiration.seed",
+  automationTick: "automation.tick",
 } as const;
 
 export interface TranscribeJob {

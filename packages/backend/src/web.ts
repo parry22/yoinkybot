@@ -86,15 +86,20 @@ export {
   type ReplyAnalytics,
 } from "./web/analytics.js";
 
-// Agent (auto) mode
+// Automations (multi-automation "auto agent", replaces the single autopilot)
 export {
-  getAgentState,
-  getAgentEnabled,
-  setAgentEnabled,
-  runAgentCycle,
-  type AgentState,
-  type AgentCycleResult,
-} from "./web/agent.js";
+  listAutomationsForWeb,
+  getAutomationForWeb,
+  saveAutomationFromWeb,
+  setAutomationEnabledWeb,
+  runAutomationOnceWeb,
+  listPendingApprovalsWeb,
+  listAutomationRunsWeb,
+  actOnRunWeb,
+  type AutomationView,
+  type PendingApprovalView,
+  type RunView,
+} from "./web/automations.js";
 
 // Chat history for hydrating the transcript
 export { loadChatHistory, type ChatHistoryEntry } from "./web/chat-history.js";

@@ -31,7 +31,7 @@ import { handlePerformancePulse } from "../strategist/performance.js";
 import { handleCampaignDetect } from "./campaign-detect.js";
 import { handleMonthlyRecalibration } from "../memory/corrections.js";
 import { handleScheduledPost } from "./scheduled-post.js";
-import { handleAgentTick } from "../web/agent.js";
+import { handleAutomationTick } from "../automations/tick.js";
 import type { IngestProfileJob, DiagnoseJob, CampaignDetectJob, ScheduledPostJob } from "./boss.js";
 
 /**
@@ -118,7 +118,7 @@ export async function registerWorkers(boss: PgBoss): Promise<void> {
 
   // Web "agent mode": once/day, for each user who's opted in, run the full
   // topic→draft→schedule loop. The handler enforces a per-user ~daily gap.
-  await boss.work(QUEUES.agentTick, logged(QUEUES.agentTick, () => handleAgentTick()));
+  await boss.work(QUEUES.automationTick, logged(QUEUES.automationTick, () => handleAutomationTick()));
 
   // Proactive engine tick: hourly; cadence/quiet-hour gates live in the handler.
   // This single tick now also offers to turn the resurfaced idea into angles
@@ -164,14 +164,14 @@ export async function registerWorkers(boss: PgBoss): Promise<void> {
   // Classification calibration: monthly, 1st of the month — correction-only
   // (see memory/corrections.ts), no external research integration.
   await boss.schedule(QUEUES.classificationRecalibrate, "0 6 1 * *");
-  // Agent mode: daily tick; the handler runs a cycle only for opted-in users
-  // that are due (per-user ~daily gap), so it's safe to over-fire.
-  await boss.schedule(QUEUES.agentTick, "0 6 * * *");
+  // Automations: fire a few times a day; the handler runs only enabled + due
+  // automations (per-day gate + atomic run claims), so it's safe to over-fire.
+  await boss.schedule(QUEUES.automationTick, "0 */3 * * *");
 
   // Retired schedules — pg-boss persists these in its own table independent of
   // the code, so removing a boss.schedule() call above does nothing on an
   // install that already registered it. Drop them explicitly.
-  for (const retired of ["macro.match", QUEUES.offerAngles]) {
+  for (const retired of ["macro.match", QUEUES.offerAngles, "agent.tick"]) {
     try {
       await boss.unschedule(retired);
     } catch {

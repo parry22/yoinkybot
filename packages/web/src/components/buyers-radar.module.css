@@ -262,6 +262,204 @@
   text-align: center;
 }
 
+/* ── Scanning state: a live radar sweep instead of an empty-state sentence ── */
+.scanStage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 44px 24px 52px;
+  min-height: 340px;
+}
+
+.radar {
+  position: relative;
+  width: 168px;
+  height: 168px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 26px;
+}
+
+/* Three rings expanding outward, staggered — the "pinging outward" read. */
+.ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  border: 1px solid var(--accent-border);
+  opacity: 0;
+  animation: ping 3s cubic-bezier(0.2, 0.6, 0.3, 1) infinite;
+}
+.ring:nth-child(2) {
+  animation-delay: 1s;
+}
+.ring:nth-child(3) {
+  animation-delay: 2s;
+}
+
+@keyframes ping {
+  0% {
+    transform: scale(0.28);
+    opacity: 0;
+  }
+  18% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+
+/* The rotating sweep wedge. */
+.sweep {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: conic-gradient(from 0deg, transparent 0deg, transparent 300deg, var(--accent-soft) 350deg, var(--accent) 360deg);
+  -webkit-mask: radial-gradient(circle, transparent 22%, #000 23%);
+  mask: radial-gradient(circle, transparent 22%, #000 23%);
+  opacity: 0.55;
+  animation: sweep 2.6s linear infinite;
+}
+
+@keyframes sweep {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.core {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--accent) 0%, var(--accent-2) 100%);
+  box-shadow: 0 0 0 6px var(--accent-soft);
+  animation: corePulse 2.6s ease-in-out infinite;
+}
+
+@keyframes corePulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.18);
+  }
+}
+
+/* Contacts appearing as the sweep passes them. */
+.blip {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--accent);
+  opacity: 0;
+  animation: blip 2.6s ease-out infinite;
+}
+.blip1 {
+  top: 30%;
+  left: 68%;
+  animation-delay: 0.5s;
+}
+.blip2 {
+  top: 66%;
+  left: 58%;
+  animation-delay: 1.3s;
+}
+.blip3 {
+  top: 56%;
+  left: 26%;
+  animation-delay: 2s;
+}
+
+@keyframes blip {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  10% {
+    opacity: 1;
+    transform: scale(1.3);
+  }
+  60% {
+    opacity: 0.45;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+
+.scanStageLabel {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  font-size: 15px;
+  font-weight: 470;
+  color: var(--ink-900);
+}
+
+/* Typing-style dots so the label never looks frozen between stage changes. */
+.dots i {
+  display: inline-block;
+  width: 3px;
+  height: 3px;
+  margin-left: 3px;
+  border-radius: 999px;
+  background: var(--ink-500);
+  animation: dot 1.4s ease-in-out infinite;
+}
+.dots i:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.dots i:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.25;
+  }
+  30% {
+    opacity: 1;
+  }
+}
+
+.scanStageHint {
+  font-size: 13px;
+  color: var(--ink-500);
+  line-height: 1.6;
+  max-width: 380px;
+  margin-top: 10px;
+}
+
+/* Motion is decoration here — the stage label already carries the meaning. */
+@media (prefers-reduced-motion: reduce) {
+  .ring,
+  .sweep,
+  .core,
+  .blip,
+  .dots i {
+    animation: none;
+  }
+  .ring {
+    opacity: 0.5;
+  }
+  .blip {
+    opacity: 0.7;
+  }
+  .sweep {
+    opacity: 0.3;
+  }
+}
+
 .list {
   display: flex;
   flex-direction: column;

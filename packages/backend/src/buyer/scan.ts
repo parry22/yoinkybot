@@ -23,11 +23,32 @@ const MAX_COMPOSE_PER_SCAN = 8;
 
 export type ScanStatus = "ok" | "no_icp" | "unavailable" | "budget_exhausted";
 
+/**
+ * Where the funnel emptied out. Without this, "0 signals" is indistinguishable
+ * from "the pipeline is broken" — which is exactly how a dead query set stayed
+ * invisible. Cheap to carry, and the UI turns it into a plain-language reason.
+ */
+export interface ScanStages {
+  /** Tweets returned by discovery after dedup/pre-filtering. */
+  candidates: number;
+  /** Cleared the deterministic intent gate. */
+  intentPassed: number;
+  /** Also cleared the semantic niche gate. */
+  nichePassed: number;
+  /** Handed to the composition agent (bounded by budget + MAX_COMPOSE_PER_SCAN). */
+  composed: number;
+  /** Composition calls that errored out (model provider down/out of credit). */
+  composeFailed: number;
+  /** False when the ICP has no embedding, so the niche gate rejected everything. */
+  hasIcpVector: boolean;
+}
+
 export interface ScanResult {
   status: ScanStatus;
   surfaced: number;
   declined: number;
   remaining: number;
+  stages: ScanStages;
 }
 
 /** Signals actually shown this calendar month (declines don't count). */
@@ -91,7 +112,21 @@ async function persistSignal(
  * the recurring job. Returns a status the caller turns into UI/messaging.
  */
 export async function scanForUser(userId: string): Promise<ScanResult> {
-  const empty = (status: ScanStatus, remaining = 0): ScanResult => ({ status, surfaced: 0, declined: 0, remaining });
+  const stages: ScanStages = {
+    candidates: 0,
+    intentPassed: 0,
+    nichePassed: 0,
+    composed: 0,
+    composeFailed: 0,
+    hasIcpVector: true,
+  };
+  const empty = (status: ScanStatus, remaining = 0): ScanResult => ({
+    status,
+    surfaced: 0,
+    declined: 0,
+    remaining,
+    stages,
+  });
 
   if (!config.BUYER_RADAR_ENABLED || !config.TWITTERAPI_IO_KEY) return empty("unavailable");
 
@@ -108,7 +143,8 @@ export async function scanForUser(userId: string): Promise<ScanResult> {
   const thresholds = await effectiveThresholds(userId);
 
   const candidates = await discoverCandidates(userId, icp);
-  if (candidates.length === 0) return { status: "ok", surfaced: 0, declined: 0, remaining };
+  stages.candidates = candidates.length;
+  if (candidates.length === 0) return { status: "ok", surfaced: 0, declined: 0, remaining, stages };
 
   // DETERMINISTIC intent gate.
   const ctx = {
@@ -121,25 +157,41 @@ export async function scanForUser(userId: string): Promise<ScanResult> {
     .map((c) => ({ c, ...intentScore({ text: c.tweet.text, authorFollowers: c.tweet.authorFollowers, replyCount: c.tweet.replyCount, createdAt: c.tweet.createdAt, provenance: c.provenance }, ctx) }))
     .filter((s) => s.score >= thresholds.intent)
     .sort((a, b) => b.score - a.score);
-  if (scored.length === 0) return { status: "ok", surfaced: 0, declined: 0, remaining };
+  stages.intentPassed = scored.length;
+  if (scored.length === 0) return { status: "ok", surfaced: 0, declined: 0, remaining, stages };
 
   // SEMANTIC niche gate (needs an embedding call per candidate — only on intent-passers).
-  const gated = await applyNicheGate(
+  const niche = await applyNicheGate(
     userId,
     scored.map((s) => s.c),
     thresholds.niche,
   );
+  const gated = niche.passed;
+  stages.nichePassed = gated.length;
+  stages.hasIcpVector = niche.hasVector;
   const scoreById = new Map(scored.map((s) => [s.c.tweet.id, s]));
 
   let surfaced = 0;
   let declined = 0;
   let composed = 0;
+  let composeFailed = 0;
   for (const g of gated) {
     if (surfaced >= remaining || composed >= MAX_COMPOSE_PER_SCAN) break;
     const s = scoreById.get(g.tweet.id);
     if (!s) continue;
     composed++;
-    const outreach = await composeOutreach(userId, g);
+    // A composition failure is one candidate lost, not the scan. It used to
+    // propagate and abort the whole run — so a single provider hiccup (an expired
+    // key, a 402) threw away every candidate already paid for and surfaced nothing.
+    // NOT persisted: an un-composed candidate must stay eligible for the next scan.
+    let outreach;
+    try {
+      outreach = await composeOutreach(userId, g);
+    } catch (err) {
+      console.error(`buyer outreach composition failed for tweet ${g.tweet.id}`, err);
+      composeFailed++;
+      continue;
+    }
     if (outreach.fires) {
       await persistSignal(userId, g.tweet, {
         score: s.score,
@@ -172,6 +224,8 @@ export async function scanForUser(userId: string): Promise<ScanResult> {
     }
   }
 
+  stages.composed = composed;
+  stages.composeFailed = composeFailed;
   remaining = Math.max(0, config.BUYER_MONTHLY_SIGNAL_CAP - (used + surfaced));
-  return { status: "ok", surfaced, declined, remaining };
+  return { status: "ok", surfaced, declined, remaining, stages };
 }
