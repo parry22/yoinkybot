@@ -1,22 +1,24 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/session";
-import { createCheckout, setIntendedPlan, config } from "@yoink/backend/web";
+import { createCheckout, setIntendedPlan, trialInfo } from "@yoink/backend/web";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /**
- * Signup lands here (Clerk's after-sign-up redirect). It starts the Dodo
- * subscription-with-trial: a checkout that collects a card now but doesn't
- * charge until the 7-day trial ends, at which point Dodo auto-charges and the
- * subscription converts to paid. We redirect the user to Dodo's hosted checkout.
+ * "Add payment" — the in-app card capture. Reached from the trial banner and
+ * Settings → Billing, AFTER the user has seen the product. It opens the Dodo
+ * subscription-with-trial checkout: the card is collected now but not charged
+ * until the trial ends, when Dodo auto-charges and converts to paid.
  *
- * Robustness: `getSessionUser()` has already minted the local `trialing` row
- * (immediate access), so if Dodo isn't configured or the call fails, we fall
- * back to the app — the user still gets their 7-day trial, it just won't
- * auto-charge (they'll hit the upgrade wall when it lapses). Same if they
- * abandon the hosted checkout.
+ * The Dodo trial length is the user's REMAINING local trial days, so adding a
+ * card on day 5 still charges on day 7 (no free-period extension). A user whose
+ * trial already lapsed gets no trial here — they're charged immediately (this
+ * doubles as the plain upgrade for the expired state).
+ *
+ * Robustness: the local `trialing` row already grants access, so if Dodo isn't
+ * configured or the call fails, we fall back to the app.
  */
 export async function GET(req: Request) {
   const origin = new URL(req.url).origin;
@@ -28,10 +30,12 @@ export async function GET(req: Request) {
   if (planParam) await setIntendedPlan(user.id, planParam).catch(() => {});
 
   try {
-    const { url } = await createCheckout(user.id, user.email, plan, { trialDays: config.TRIAL_DAYS });
+    const info = await trialInfo(user.id).catch(() => null);
+    const trialDays = info?.onTrial ? Math.max(1, info.daysLeft) : 0;
+    const { url } = await createCheckout(user.id, user.email, plan, trialDays > 0 ? { trialDays } : {});
     return NextResponse.redirect(url);
   } catch (err) {
     console.error("start-trial checkout failed (falling back to local trial)", err);
-    return NextResponse.redirect(new URL("/app", origin));
+    return NextResponse.redirect(new URL("/app/settings?billing_error=1", origin));
   }
 }

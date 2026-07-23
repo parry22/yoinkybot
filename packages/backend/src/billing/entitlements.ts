@@ -136,6 +136,32 @@ export interface TrialInfo {
   intendedPlan: string | null;
 }
 
+export interface BillingOverview {
+  trial: TrialInfo;
+  /** A Dodo subscription is on file (card captured) → offer the manage/cancel portal. */
+  hasDodoSubscription: boolean;
+  /** The Dodo customer id (needed to open the customer portal), if any. */
+  dodoCustomerId: string | null;
+}
+
+/**
+ * Everything the Settings → Billing section needs: the trial/plan state plus
+ * whether a Dodo subscription exists (so we show "Manage plan" via the customer
+ * portal) or not (so we show "Add payment" / "Upgrade" checkout instead).
+ */
+export async function billingOverview(userId: string): Promise<BillingOverview> {
+  const sub = await queryOne<{ dodo_subscription_id: string | null; dodo_customer_id: string | null }>(
+    `SELECT dodo_subscription_id, dodo_customer_id FROM subscriptions WHERE user_id = $1`,
+    [userId],
+  );
+  const trial = await trialInfo(userId);
+  return {
+    trial,
+    hasDodoSubscription: Boolean(sub?.dodo_subscription_id),
+    dodoCustomerId: sub?.dodo_customer_id ?? null,
+  };
+}
+
 /** The trial/subscription state for a user, for the web banner + Telegram copy. */
 export async function trialInfo(userId: string): Promise<TrialInfo> {
   const sub = await queryOne<{ plan: Plan; status: string; trial_ends_at: string | null; intended_plan: string | null }>(

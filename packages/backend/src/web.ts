@@ -19,17 +19,19 @@ export {
   createTelegramLinkToken,
 } from "./lib/auth.js";
 
-// Trial + billing (7-day free trial → upgrade wall)
+// Trial + billing (7-day free trial → Dodo subscription-with-trial → self-serve portal)
 export {
   trialInfo,
+  billingOverview,
   startTrial,
   setIntendedPlan,
   entitlementsFor,
   isPaidOrExempt,
   type TrialInfo,
+  type BillingOverview,
   type Plan,
 } from "./billing/entitlements.js";
-export { createCheckout } from "./billing/dodo.js";
+export { createCheckout, createCustomerPortal } from "./billing/dodo.js";
 
 // "Sign in with X" / "Connect X" finalizer + status (web runs the OAuth itself)
 export { finalizeXConnect, getXConnectStatus, type XConnectStatus } from "./web/x-signin.js";

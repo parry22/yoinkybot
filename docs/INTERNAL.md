@@ -959,29 +959,40 @@ Wiring:
   `tweet.write`) is now **connect-only**: it requires a Clerk session and attaches
   the posting token via `finalizeXConnect` (identity is Clerk's job).
 
-**Trial = Dodo subscription-with-trial (auto-charge at day 7).** Signup flow:
-Clerk sign-up → `forceRedirectUrl` = `GET /api/billing/start-trial?plan=…` →
-`createCheckout(..., { trialDays: TRIAL_DAYS })` posts to Dodo `/checkouts` with
-`subscription_data.trial_period_days`. The customer enters a card, is **not**
-charged during the trial, and Dodo **auto-charges** when it ends (converting to a
-normal paid subscription). Dodo's subscription webhooks (`billing/webhook` +
-`handleDodoEvent`) drive the local `subscriptions` row from there
-(`subscription.active` on trial start → `renewed` on the day-7 charge → `on_hold`/
-`failed`/`cancelled` if it doesn't convert), keyed by `metadata.user_id`.
-- **Immediate access + abandonment fallback.** `getSessionUser` → `startTrial`
-  still mints a local `status='trialing'` + `trial_ends_at` row on first sign-in,
-  so the user has access instantly and — if Dodo is unconfigured or they bail on
-  the hosted checkout — still gets the 7 days (no card → no auto-charge → the wall
-  when it lapses). The webhook's `ON CONFLICT (user_id)` upsert transitions that
-  same row to the Dodo-backed subscription once checkout completes.
-- **No second free trial.** The post-trial upgrade paths — web `<TrialBanner>` →
-  `GET /api/billing/checkout` and the Telegram `bill:*` buttons — call
-  `createCheckout` **without** `trialDays`, so a lapsed user is charged immediately.
-- **`<TrialBanner>`** (from `trialInfo`): "N days left" while the local trial runs,
-  "trial ended — upgrade" once it lapses (day count cleared to 0). A card-on-file
-  Dodo trial reads as `active` (no banner — they'll auto-charge). Gating only bites
-  when `PAYWALL_ENABLED=true`. The landing `?plan=` is recorded on
-  `subscriptions.intended_plan` (`setIntendedPlan`). See §3b's paywall + `entitlementsFor`.
+**Trial = Dodo subscription-with-trial (auto-charge at day 7), card collected
+INSIDE the app.** Sign-up takes no card: `forceRedirectUrl` = `/app?plan=…`, and
+`getSessionUser` → `startTrial` mints a local `status='trialing'` + `trial_ends_at`
+row on first sign-in, so the user has instant full access. Card capture is a
+separate, later step, done from:
+- the **`<TrialBanner>`** ("Add payment") or **Settings → Plan & billing** →
+  `GET /api/billing/start-trial` → `createCheckout(..., { trialDays })` posts to
+  Dodo `/checkouts` with `subscription_data.trial_period_days`. Critically,
+  `trialDays` = the user's **remaining** local trial days (`trialInfo().daysLeft`),
+  so adding a card on day 5 still charges on day 7 — no free-period extension. The
+  customer isn't charged during the trial; Dodo **auto-charges** when it ends,
+  converting to a normal paid subscription. Dodo webhooks (`POST /webhooks/dodo` →
+  `handleDodoEvent`, keyed by `metadata.user_id`) drive the row from there
+  (`subscription.active` on trial start → `renewed` on the day-7 charge → `on_hold`/
+  `failed`/`cancelled` otherwise); the `ON CONFLICT (user_id)` upsert transitions the
+  same local row to the Dodo-backed subscription.
+- **Abandonment fallback.** No card / Dodo unconfigured → the 7 days still run on the
+  local row, then the wall when it lapses (day count cleared to 0, no auto-charge).
+- **No second free trial.** The post-trial upgrade paths — `<TrialBanner>` (expired)
+  + Settings "Upgrade" → `GET /api/billing/checkout`, and the Telegram `bill:*`
+  buttons — call `createCheckout` **without** `trialDays`, so a lapsed user is charged
+  immediately.
+
+**Self-serve management (Settings, `/app/settings`).** Two surfaces, both reachable
+without leaving the app: **Account** — `<ManageAccountButton>` opens Clerk's
+`openUserProfile()` modal (email, password, connected social logins, active sessions,
+delete account). **Plan & billing** — status line from `billingOverview(userId)` (the
+trial/plan state + whether a Dodo subscription exists), then either "Manage plan" →
+`GET /api/billing/portal` → Dodo **customer portal** (`createCustomerPortal`, self-serve
+change/upgrade/cancel + update card) when a Dodo subscription is on file, or
+"Add payment"/"Upgrade" checkout otherwise. `<TrialBanner>` reads from `trialInfo`;
+a card-on-file (active) subscription shows no banner. Gating bites only when
+`PAYWALL_ENABLED=true`; landing `?plan=` is recorded on `subscriptions.intended_plan`
+(`setIntendedPlan`). See §3b's paywall + `entitlementsFor`.
 
 **Env.** The web runs backend code in-process, so it needs the backend's env
 (`DATABASE_URL`, `OPENROUTER_API_KEY`, embeddings keys, …). `packages/web/.env.local`

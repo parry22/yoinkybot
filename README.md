@@ -34,23 +34,26 @@ which is where it's most useful. Both share one Postgres and one `users` row.
   untouched. Configure Google/X as **social logins in the Clerk dashboard** (app
   `app_3GuEglSCyTcG11r4RQTo89Ve9O3`); the separate in-app **"Connect X"** posting flow
   (`/api/auth/x/*`) is unchanged and now connect-only. **Trial = Dodo
-  subscription-with-trial (auto-charges at day 7).** After Clerk sign-up the user is
-  sent to `/api/billing/start-trial` → a Dodo checkout with
-  `subscription_data.trial_period_days` (card collected now, **not** charged until the
-  trial ends, when Dodo auto-charges and converts to paid). A local
-  `subscriptions.status='trialing'` + `trial_ends_at` row (migration `0025`) is minted
-  on first sign-in as immediate access + an abandonment fallback: if Dodo is
-  unconfigured or the user bails on the hosted checkout, they still get the 7 days,
-  it just won't auto-charge (they hit the wall when it lapses, day count cleared to 0).
-  The post-trial upgrade wall (web `TrialBanner` + `/api/billing/checkout`, and the
-  Telegram bot) calls checkout **without** a trial, so a lapsed user can't mint a second
-  free one. Enforcement requires `PAYWALL_ENABLED=true`. Landing plan CTAs deep-link to
-  `/sign-up?plan=…` (growth/scale), carried through to the checkout + recorded as the
+  subscription-with-trial (auto-charges at day 7), card collected inside the app.**
+  Sign-up takes no card — the user lands straight in `/app` on a local
+  `subscriptions.status='trialing'` + `trial_ends_at` row (migration `0025`, minted on
+  first sign-in) with full access. Card capture happens later, from the trial banner or
+  **Settings → Plan & billing** ("Add payment method"), which opens a Dodo checkout with
+  `subscription_data.trial_period_days` = the **remaining** trial days (so adding a card
+  on day 5 still charges on day 7, no free-period extension). Dodo then auto-charges when
+  the trial ends and the subscription webhook (`POST /webhooks/dodo`) converts the row to
+  paid. No card / abandoned checkout → the 7 days still run locally, then the wall
+  (day count cleared to 0). The post-trial upgrade path calls checkout **without** a
+  trial, so a lapsed user can't mint a second free one. **Self-serve from Settings:**
+  "Manage account" opens Clerk's profile (email/password/social logins/sessions/delete);
+  "Manage plan" opens the **Dodo customer portal** (`/api/billing/portal`) to
+  change/upgrade/cancel + update the card. Enforcement requires `PAYWALL_ENABLED=true`.
+  Landing plan CTAs deep-link to `/sign-up?plan=…` (growth/scale), recorded as the
   intended plan. **Note for you:** set `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` +
   `CLERK_SECRET_KEY` (and `NEXT_PUBLIC_CLERK_SIGN_IN_URL`/`SIGN_UP_URL`) on Vercel,
   `DODO_API_KEY` + `DODO_PRODUCT_PAID` + `DODO_WEBHOOK_SECRET`, and
-  `PAYWALL_ENABLED=true` on both deploys, before the change is live. Configure the Dodo
-  paid product as a recurring subscription. See INTERNAL §3i / §4 / §5.
+  `PAYWALL_ENABLED=true` on both deploys. Configure the Dodo paid product as a recurring
+  subscription and enable the customer portal. See INTERNAL §3i / §4 / §5.
 
 - **2026-07-23 — Automations (multi-automation "auto agent").** The single global
   autopilot is replaced by named, independent automations, each with its own source

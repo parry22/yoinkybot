@@ -69,6 +69,27 @@ export async function createCheckout(
   return { url: data.checkout_url };
 }
 
+/**
+ * Create a Dodo customer-portal session so the user can self-serve manage their
+ * subscription — change/upgrade the plan, update the card, or cancel. Returns
+ * the hosted portal URL to redirect to. Needs the Dodo `customer_id` we stored
+ * from the subscription webhook.
+ */
+export async function createCustomerPortal(customerId: string): Promise<{ url: string }> {
+  if (!config.DODO_API_KEY) throw new Error("DODO_API_KEY not configured");
+  const res = await fetch(
+    `${apiBase()}/customers/${encodeURIComponent(customerId)}/customer-portal/session`,
+    {
+      method: "POST",
+      headers: { authorization: `Bearer ${config.DODO_API_KEY}`, "content-type": "application/json" },
+      body: JSON.stringify({ return_url: config.CHECKOUT_RETURN_URL }),
+    },
+  );
+  if (!res.ok) throw new Error(`dodo customer portal failed ${res.status}: ${await res.text()}`);
+  const data = (await res.json()) as { link: string };
+  return { url: data.link };
+}
+
 interface DodoSubscriptionEvent {
   type: string;
   data: {
