@@ -26,11 +26,19 @@ export async function foundingSeatsLeft(): Promise<number> {
  * Create a Dodo checkout session for a subscription product. Dodo is the
  * merchant of record, so one integration covers India + international
  * (replaces the PRD's Razorpay + Stripe pair).
+ *
+ * `opts.trialDays` turns this into a **subscription-with-trial**: the customer
+ * enters a card at checkout but isn't charged until the trial ends, when Dodo
+ * auto-charges the collected method (`subscription_data.trial_period_days`).
+ * Signup uses this (7-day trial → auto-convert to paid). The post-trial upgrade
+ * wall calls WITHOUT trialDays, so it charges immediately — a lapsed user can't
+ * mint themselves a second free trial.
  */
 export async function createCheckout(
   userId: string,
   email: string | null,
   plan: "paid" | "founding",
+  opts: { trialDays?: number } = {},
 ): Promise<{ url: string }> {
   if (!config.DODO_API_KEY) throw new Error("DODO_API_KEY not configured");
   const productId = plan === "founding" ? config.DODO_PRODUCT_FOUNDING : config.DODO_PRODUCT_PAID;
@@ -39,6 +47,8 @@ export async function createCheckout(
   if (plan === "founding" && (await foundingSeatsLeft()) <= 0) {
     throw new Error("Founding cohort is full (500/500)");
   }
+
+  const trial = opts.trialDays && opts.trialDays > 0 ? { trial_period_days: opts.trialDays } : undefined;
 
   const res = await fetch(`${apiBase()}/checkouts`, {
     method: "POST",
@@ -51,6 +61,7 @@ export async function createCheckout(
       customer: email ? { email } : undefined,
       return_url: config.CHECKOUT_RETURN_URL,
       metadata: { user_id: userId, plan },
+      ...(trial ? { subscription_data: trial } : {}),
     }),
   });
   if (!res.ok) throw new Error(`dodo checkout failed ${res.status}: ${await res.text()}`);

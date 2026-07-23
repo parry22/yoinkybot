@@ -1,0 +1,59 @@
+name: Deploy
+
+# Auto-deploy on every push to main (and on manual dispatch). The monorepo ships
+# to two places, so we run both in parallel:
+#   web      → Vercel  (project bundles the compiled backend; root dir = packages/web)
+#   backend  → Railway (Fastify + Telegram bot + pg-boss jobs; migrations run on boot)
+# Cross-cutting changes touch both, so both deploy on every push (reliability over
+# doing clever path-filtering that could skip a needed deploy).
+#
+# REQUIRED repo secrets (Settings → Secrets and variables → Actions). Until they
+# exist each job SKIPS cleanly (no red X):
+#   VERCEL_TOKEN       — Vercel account token (vercel.com/account/tokens)
+#   VERCEL_ORG_ID      — from `.vercel/project.json` after `vercel link`, or the dashboard
+#   VERCEL_PROJECT_ID  — same source; the yoinky-web project id
+#   RAILWAY_TOKEN      — a Railway PROJECT token (scoped to the yoinky project/env)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  web:
+    name: web → Vercel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to Vercel (production)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "::warning::VERCEL_TOKEN not set — skipping web deploy. Add VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID repo secrets to enable auto-deploy."
+            exit 0
+          fi
+          npm i -g vercel@latest
+          vercel deploy --prod --yes --token="$VERCEL_TOKEN"
+
+  backend:
+    name: backend → Railway
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to Railway
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          if [ -z "$RAILWAY_TOKEN" ]; then
+            echo "::warning::RAILWAY_TOKEN not set — skipping backend deploy. Add a RAILWAY_TOKEN (project token) repo secret to enable auto-deploy."
+            exit 0
+          fi
+          npm i -g @railway/cli
+          railway up --service backend --detach

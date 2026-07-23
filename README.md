@@ -33,17 +33,24 @@ which is where it's most useful. Both share one Postgres and one `users` row.
   `users` row via a new `clerk_user_id` (migration `0025`), so the ~30 callers are
   untouched. Configure Google/X as **social logins in the Clerk dashboard** (app
   `app_3GuEglSCyTcG11r4RQTo89Ve9O3`); the separate in-app **"Connect X"** posting flow
-  (`/api/auth/x/*`) is unchanged and now connect-only. **Trial:** every new signup
-  starts a 7-day, full-access trial (`subscriptions.status='trialing'` +
-  `trial_ends_at`, minted on first sign-in). While it runs, entitlements are paid-tier;
-  once it lapses, the day count clears to 0, entitlements fall to free, and the upgrade
-  wall applies on **both web** (a trial banner + `/api/billing/checkout` → Dodo) **and
-  Telegram** (the bot's default becomes "your trial ended, upgrade"). Enforcement
-  requires `PAYWALL_ENABLED=true`. Landing plan CTAs deep-link to `/sign-up?plan=…`
-  (growth/scale), forwarded into the app and recorded as the intended plan. **Note for
-  you:** set `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` + `CLERK_SECRET_KEY` (and the
-  `NEXT_PUBLIC_CLERK_SIGN_IN_URL`/`SIGN_UP_URL`) on Vercel, and `PAYWALL_ENABLED=true`
-  on both deploys, before the change is live. See INTERNAL §3i / §4 / §5.
+  (`/api/auth/x/*`) is unchanged and now connect-only. **Trial = Dodo
+  subscription-with-trial (auto-charges at day 7).** After Clerk sign-up the user is
+  sent to `/api/billing/start-trial` → a Dodo checkout with
+  `subscription_data.trial_period_days` (card collected now, **not** charged until the
+  trial ends, when Dodo auto-charges and converts to paid). A local
+  `subscriptions.status='trialing'` + `trial_ends_at` row (migration `0025`) is minted
+  on first sign-in as immediate access + an abandonment fallback: if Dodo is
+  unconfigured or the user bails on the hosted checkout, they still get the 7 days,
+  it just won't auto-charge (they hit the wall when it lapses, day count cleared to 0).
+  The post-trial upgrade wall (web `TrialBanner` + `/api/billing/checkout`, and the
+  Telegram bot) calls checkout **without** a trial, so a lapsed user can't mint a second
+  free one. Enforcement requires `PAYWALL_ENABLED=true`. Landing plan CTAs deep-link to
+  `/sign-up?plan=…` (growth/scale), carried through to the checkout + recorded as the
+  intended plan. **Note for you:** set `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` +
+  `CLERK_SECRET_KEY` (and `NEXT_PUBLIC_CLERK_SIGN_IN_URL`/`SIGN_UP_URL`) on Vercel,
+  `DODO_API_KEY` + `DODO_PRODUCT_PAID` + `DODO_WEBHOOK_SECRET`, and
+  `PAYWALL_ENABLED=true` on both deploys, before the change is live. Configure the Dodo
+  paid product as a recurring subscription. See INTERNAL §3i / §4 / §5.
 
 - **2026-07-23 — Automations (multi-automation "auto agent").** The single global
   autopilot is replaced by named, independent automations, each with its own source
