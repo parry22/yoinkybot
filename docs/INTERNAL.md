@@ -54,9 +54,20 @@ Entry point: `src/index.ts` (Fastify + bot bootstrap, migrations on boot).
 **Every model call routes through `src/llm/gateway.ts`. No module calls a provider
 directly.** As of 2026-07-10 this is deliberately simple:
 
-- One model for **all** requests: `z-ai/glm-5.2` via **OpenRouter**
-  (`config.MODEL_CHAT`). No tier routing, no multi-provider fallback chain.
-- `llmCall(req)` does: per-user daily cap check → single OpenRouter call with
+- One model for **all** requests (Grok 4.5), reached over one of two transports
+  chosen by `LLM_TRANSPORT`: `openrouter` (default; `config.MODEL_CHAT`,
+  cross-provider retry) or `xai` (direct `api.x.ai`, `config.XAI_MODEL`). xAI-direct
+  unlocks the `x-grok-conv-id` cache-affinity header, `cached_tokens` in the usage
+  payload, and native `reasoning_effort`. The switch is a one-env-var rollback;
+  `gateway.ts` stays the single path either way. **No multi-provider fallback chain.**
+- **Cache affinity + reasoning effort (2026-07-24 cost spec):** `LlmRequest.cacheKey`
+  (build with `hashForCacheKey`, never a raw id) routes same-key calls to one server
+  so the prefix cache is warm — the code is correct at a 0% hit rate, a warm cache is
+  opportunistic. `tier` now maps to `reasoning_effort` (`frontier→high`, everything
+  else→`low`); reasoning tokens bill at the output rate, so this is the biggest
+  per-call lever. On xAI it's the `x-grok-conv-id` header + `reasoning_effort`; on
+  OpenRouter it's `session_id` + `reasoning:{effort}`.
+- `llmCall(req)` does: per-user daily cap check → single provider call with
   retries (`withRetries`, 3 attempts, backoff on 429/5xx/timeout) → for
   `json: true`, a **bounded JSON recovery ladder** (2026-07-13 — GLM's flaky
   JSON was silently killing resurface/mentions/clustering/trend-compose jobs):
@@ -93,16 +104,28 @@ directly.** As of 2026-07-10 this is deliberately simple:
 
 ### What the `tier` field is now
 
-`LlmRequest.tier` and `Prompt.tier` (`"cheap" | "frontier"`) still exist and
-callsites/prompts still set them, but **routing ignores them** — they're advisory
-metadata only. This was kept on purpose so the ~40 callsites and every
-`prompts/*.v1.ts` compiled unchanged when tiers were collapsed. If you want to
-reintroduce differentiated routing later, `tier` is the hook; don't delete it.
+`LlmRequest.tier` / `Prompt.tier` (`"none" | "cheap" | "frontier"`) now **map to
+`reasoning_effort`** in the gateway: `frontier→high`, `cheap`/`cheap_floor`/`none→low`
+(`none` is a placeholder for a true no-reasoning mode should one land). This is the
+2026-07-24 revival of the field that was previously advisory-only. Composition
+prompts that are the product (`draft.v1`, `reply-draft.v2`, `trend-take.v2`) are kept
+`frontier` (=high) until the §10 A/B decides whether `low` flattens voice — a cheaper
+draft that doesn't sound like the user is a worse outcome than a larger bill. The
+JSON-repair rung forces `none` (reformatting needs no deliberation).
 
-### Switching models
+### Cost metering (cached tokens)
 
-Set `MODEL_CHAT=<openrouter-model-id>` in the env and redeploy. No code change.
-Update the price entry in `gateway.ts` (`PRICE`) so cost metering stays honest.
+`PRICE` is `{ in, cachedIn, out }` per 1M (grok-4.5: $2 / $0.50 / $6, confirm from the
+console). `cost()` bills `(in−cached)·in + cached·cachedIn + out·out`. `usage_events`
+carries `cached_input_tokens` (nullable — NULL = transport didn't report it, ≠ 0) and
+`reasoning_effort` (migration `0028`); `usageSummary` exposes `cache_hit_rate`
+(cached ÷ input), the primary success metric for the cache work. `LLM_DEBUG=1` logs
+the raw `usage` payload so the live `cached_tokens` location can be confirmed.
+
+### Switching models / transports
+
+Set `MODEL_CHAT` (OpenRouter) or `XAI_MODEL` (xAI) + `LLM_TRANSPORT` in the env and
+redeploy. No code change. Update the `PRICE` row so cost metering stays honest.
 
 ### Embeddings are separate
 

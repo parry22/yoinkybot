@@ -1,20 +1,25 @@
 /**
  * The single LLM gateway. Every model call in the codebase routes through here.
- *
- * Deliberately simple: one model (GLM 5.2 via OpenRouter), retries with backoff,
- * a bounded JSON recovery ladder (token-bump on truncation → repair-own-output
- * → truncation salvage), per-user daily call cap, and cost logging to usage_events.
- * There is no tier routing and no multi-provider fallback chain — every request
- * hits the same model. The `tier` field on requests is kept as advisory metadata
- * (callsites and prompt definitions still set it) but no longer changes routing.
  * No other module may call a model provider directly.
+ *
+ * One model (Grok 4.5), reached over one of two transports selected by
+ * `LLM_TRANSPORT`: OpenRouter (default; cross-provider retry) or xAI-direct
+ * (api.x.ai; unlocks the cache-affinity header, cached_tokens, reasoning_effort).
+ * Also: retries with backoff, a bounded JSON recovery ladder, a per-user daily
+ * call cap, and cost logging to usage_events.
+ *
+ * `tier` now maps to `reasoning_effort` (cheap→low, frontier→high, none→low) —
+ * reasoning tokens bill at the output rate, so it's the biggest per-call lever.
+ * `cacheKey` routes same-key requests to one upstream server so the prefix cache
+ * is warm; the code is correct at a 0% hit rate — a warm cache is opportunistic.
  */
+import { createHash } from "node:crypto";
 import { config } from "../config.js";
 import { recordUsage } from "../usage/meter.js";
 import { queryOne } from "../db/pool.js";
 
-// Kept so existing callsites/prompt definitions compile unchanged; ignored by routing.
-export type Tier = "cheap" | "cheap_floor" | "frontier";
+// "cheap_floor" is a legacy value some callsites still set; it maps like "cheap".
+export type Tier = "none" | "cheap" | "cheap_floor" | "frontier";
 
 export interface LlmRequest {
   userId: string | null;
@@ -25,6 +30,26 @@ export interface LlmRequest {
   maxTokens?: number;
   /** When true, the prompt must instruct JSON output; the response is parsed and returned. */
   json?: boolean;
+  /**
+   * Cache-affinity routing tag (spec §3). Same key → same upstream server → warm
+   * prefix cache. MUST NOT be a raw user id/email (it leaves our system as a
+   * routing tag) — build it with `hashForCacheKey`. Optional; omitting it just
+   * forgoes affinity, never breaks a call.
+   */
+  cacheKey?: string;
+}
+
+/** Map the advisory tier to a reasoning_effort. Reasoning tokens bill at the
+ *  output rate, so lower effort is the largest single-call saving. "none" maps to
+ *  "low" for now (grok-4.5 has no documented "off" switch); revisit if one lands. */
+export function reasoningEffort(tier: Tier): "low" | "high" {
+  return tier === "frontier" ? "high" : "low";
+}
+
+/** SHA-256 (first 16 hex chars) of an id, for use inside a cacheKey. Never send a
+ *  raw user id to a third party as a routing tag. */
+export function hashForCacheKey(id: string): string {
+  return createHash("sha256").update(id).digest("hex").slice(0, 16);
 }
 
 export interface LlmResponse {
@@ -35,16 +60,29 @@ export interface LlmResponse {
   finishReason?: string;
 }
 
-// Approximate $/1M tokens for margin visibility; update as pricing changes.
-// OpenRouter list prices verified 2026-07-24 (x-ai/grok-4.5: $2 in / $6 out).
-const PRICE: Record<string, { in: number; out: number }> = {
-  "x-ai/grok-4.5": { in: 2.0, out: 6.0 },
-  "z-ai/glm-5.2": { in: 0.54, out: 1.76 },
+// Approximate $/1M tokens for margin visibility. `cachedIn` = the discounted rate
+// for prompt-cache hits (~4x cheaper on Grok 4.5). CONFIRM from the xAI/OpenRouter
+// console before trusting — figures below checked 2026-07-24.
+const PRICE: Record<string, { in: number; cachedIn: number; out: number }> = {
+  "x-ai/grok-4.5": { in: 2.0, cachedIn: 0.5, out: 6.0 }, // OpenRouter id
+  "grok-4.5": { in: 2.0, cachedIn: 0.5, out: 6.0 }, // xAI-direct id
+  "z-ai/glm-5.2": { in: 0.54, cachedIn: 0.54, out: 1.76 }, // historical; no separate cached rate known
 };
 
-function cost(model: string, tokensIn: number, tokensOut: number): number {
-  const p = PRICE[model] ?? { in: 0, out: 0 };
-  return (tokensIn * p.in + tokensOut * p.out) / 1_000_000;
+/** Price row for a model id, tolerant of the OpenRouter vs xAI naming split. */
+function priceFor(model: string): { in: number; cachedIn: number; out: number } {
+  if (PRICE[model]) return PRICE[model]!;
+  if (model.includes("grok-4.5")) return PRICE["grok-4.5"]!;
+  return { in: 0, cachedIn: 0, out: 0 };
+}
+
+/** Cost of one call. `cachedIn` tokens (a subset of `tokensIn`) bill at the
+ *  discounted rate; the remaining fresh input at full rate; output (incl.
+ *  reasoning) at the output rate. Exported for unit tests. */
+export function cost(model: string, tokensIn: number, cachedIn: number, tokensOut: number): number {
+  const p = priceFor(model);
+  const fresh = Math.max(0, tokensIn - cachedIn);
+  return (fresh * p.in + cachedIn * p.cachedIn + tokensOut * p.out) / 1_000_000;
 }
 
 async function withRetries<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
@@ -98,54 +136,90 @@ export async function fetchWithTimeout(
   }
 }
 
-/** Single OpenRouter call to the configured chat model. `useJsonMode` is separate
- *  from `req.json` so the caller can retry WITHOUT response_format when a provider
- *  rejects it (OpenRouter routes GLM across providers, and not all accept
- *  response_format json_object — that 400 must degrade, not kill the turn). */
-async function callModel(req: LlmRequest, useJsonMode: boolean): Promise<LlmResponse> {
-  if (!config.OPENROUTER_API_KEY) throw new Error("OPENROUTER_API_KEY not configured");
-  const ignore = config.OPENROUTER_PROVIDER_IGNORE.split(",").map((s) => s.trim()).filter(Boolean);
-  const model = config.MODEL_CHAT;
-  const res = await fetchWithTimeout(`${config.OPENROUTER_BASE_URL}/chat/completions`, {
+/** Single chat-completions call over the active transport (OpenRouter or
+ *  xAI-direct, per LLM_TRANSPORT). `useJsonMode` is separate from `req.json` so the
+ *  caller can retry WITHOUT response_format when a provider rejects it (OpenRouter
+ *  spreads across providers, and not all accept response_format — that 400 must
+ *  degrade, not kill the turn). Both transports speak the OpenAI chat shape. */
+async function callModel(req: LlmRequest, useJsonMode: boolean, sendReasoning = true): Promise<LlmResponse> {
+  const xai = config.LLM_TRANSPORT === "xai";
+  const apiKey = xai ? config.XAI_API_KEY : config.OPENROUTER_API_KEY;
+  if (!apiKey) throw new Error(`${xai ? "XAI_API_KEY" : "OPENROUTER_API_KEY"} not configured`);
+  const baseUrl = xai ? config.XAI_BASE_URL : config.OPENROUTER_BASE_URL;
+  const model = xai ? config.XAI_MODEL : config.MODEL_CHAT;
+  const effort = reasoningEffort(req.tier);
+
+  const headers: Record<string, string> = {
+    authorization: `Bearer ${apiKey}`,
+    "content-type": "application/json",
+  };
+  const body: Record<string, unknown> = {
+    model,
+    max_tokens: req.maxTokens ?? 1024,
+    temperature: 0.2,
+    messages: [
+      { role: "system", content: req.system },
+      { role: "user", content: req.user },
+    ],
+    ...(useJsonMode ? { response_format: { type: "json_object" } } : {}),
+  };
+
+  if (xai) {
+    // xAI-native reasoning param + cache-affinity header (spec §3). NOTE: verify
+    // grok-4.5 accepts reasoning_effort in the console before relying on it.
+    if (sendReasoning) body.reasoning_effort = effort;
+    if (req.cacheKey) headers["x-grok-conv-id"] = req.cacheKey;
+  } else {
+    headers["HTTP-Referer"] = "https://t.me/yoinkyybot";
+    headers["X-Title"] = "Yoinky";
+    // OpenRouter's unified reasoning param + its own sticky-routing tag (spec §1B).
+    if (sendReasoning) body.reasoning = { effort };
+    const ignore = config.OPENROUTER_PROVIDER_IGNORE.split(",").map((s) => s.trim()).filter(Boolean);
+    if (ignore.length) body.provider = { ignore };
+    if (req.cacheKey) body.session_id = req.cacheKey;
+  }
+
+  const res = await fetchWithTimeout(`${baseUrl}/chat/completions`, {
     method: "POST",
-    headers: {
-      authorization: `Bearer ${config.OPENROUTER_API_KEY}`,
-      "content-type": "application/json",
-      "HTTP-Referer": "https://t.me/yoinkyybot",
-      "X-Title": "Yoinky",
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: req.maxTokens ?? 1024,
-      temperature: 0.2,
-      ...(useJsonMode ? { response_format: { type: "json_object" } } : {}),
-      ...(ignore.length ? { provider: { ignore } } : {}),
-      messages: [
-        { role: "system", content: req.system },
-        { role: "user", content: req.user },
-      ],
-    }),
+    headers,
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw new LlmHttpError(res.status, await res.text());
   const data = (await res.json()) as {
     choices: Array<{ message: { content?: string; reasoning?: string }; finish_reason?: string }>;
-    usage?: { prompt_tokens: number; completion_tokens: number };
+    usage?: {
+      prompt_tokens?: number;
+      completion_tokens?: number;
+      cached_tokens?: number;
+      prompt_tokens_details?: { cached_tokens?: number };
+    };
   };
+  // Log the raw usage shape when debugging — the spec wants the live cached_tokens
+  // location confirmed on the chosen transport before trusting the metering.
+  if (process.env.LLM_DEBUG === "true" || process.env.LLM_DEBUG === "1") {
+    console.log(`llm usage [${req.eventType}] transport=${xai ? "xai" : "openrouter"} ${JSON.stringify(data.usage ?? {})}`);
+  }
   const choice = data.choices[0];
-  // GLM is a hybrid reasoning model: some providers put the whole answer in
-  // message.reasoning and leave content empty — that used to surface as
-  // "no JSON found in model output" on a call that actually answered.
+  // Hybrid reasoning models sometimes put the whole answer in message.reasoning
+  // and leave content empty — that used to surface as "no JSON found".
   const content = choice?.message.content ?? "";
   const text = content.trim() ? content : (choice?.message.reasoning ?? "");
   const tokensIn = data.usage?.prompt_tokens ?? 0;
   const tokensOut = data.usage?.completion_tokens ?? 0;
+  // cached_tokens is a SUBSET of prompt_tokens. Undefined (transport didn't report
+  // it) → record NULL ("unknown"), not 0 (which would claim a cold cache). Cost
+  // uses 0 when unknown, i.e. bills conservatively at the full input rate.
+  const rawCached = data.usage?.prompt_tokens_details?.cached_tokens ?? data.usage?.cached_tokens;
+  const cachedIn = rawCached ?? 0;
   await recordUsage({
     userId: req.userId,
     eventType: req.eventType,
     tokensIn,
     tokensOut,
+    cachedInputTokens: rawCached,
     model,
-    cost: cost(model, tokensIn, tokensOut),
+    cost: cost(model, tokensIn, cachedIn, tokensOut),
+    reasoningEffort: effort,
   });
   return { text, model, finishReason: choice?.finish_reason };
 }
@@ -304,9 +378,15 @@ export async function llmCall(req: LlmRequest): Promise<LlmResponse> {
   try {
     res = await withRetries(() => callModel(req, req.json === true), 3);
   } catch (err) {
-    if (req.json && err instanceof LlmHttpError && err.status === 400) {
-      console.warn("response_format rejected by provider; retrying without json mode");
-      res = await withRetries(() => callModel(req, false), 3);
+    // A non-retriable 400 on the chat path is almost always a request param the
+    // routed provider rejects — response_format (uneven across OpenRouter hosts)
+    // or the reasoning field (unverified on grok-4.5). Degrade once: drop BOTH and
+    // lean on the prompt's "respond with ONLY JSON" instruction. A plain call beats
+    // a dead turn; without this, provider roulette (or an unaccepted param) would
+    // silently break every structured call.
+    if (err instanceof LlmHttpError && err.status === 400) {
+      console.warn("provider rejected response_format/reasoning (400); retrying without them");
+      res = await withRetries(() => callModel(req, false, false), 3);
     } else {
       throw err;
     }
@@ -350,6 +430,9 @@ export async function llmCall(req: LlmRequest): Promise<LlmResponse> {
         callModel(
           {
             ...req,
+            // Reformatting the model's own text into JSON needs no deliberation —
+            // force low reasoning_effort regardless of the original prompt's tier.
+            tier: "none",
             maxTokens: biggerBudget,
             user:
               `${req.user}\n\nYou already answered this, but not as valid JSON. ` +

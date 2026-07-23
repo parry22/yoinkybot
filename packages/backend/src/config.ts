@@ -39,6 +39,18 @@ const schema = z.object({
   // (spec: US/EU hosts only). Tighten or clear via env without a code change.
   OPENROUTER_PROVIDER_IGNORE: z.string().default("Baidu,Alibaba,StreamLake"),
 
+  // ── LLM transport (Grok 4.5 cache-optimization spec §1) ──────────────────
+  // 'openrouter' (default — current behavior, cross-provider retry) or 'xai'
+  // (direct api.x.ai). xAI-direct unlocks the cache-affinity header
+  // (x-grok-conv-id), cached_tokens in the usage payload, and reasoning_effort.
+  // Flip to 'xai' ONLY after XAI_API_KEY is set; it's a one-env-var rollback.
+  LLM_TRANSPORT: z.enum(["openrouter", "xai"]).default("openrouter"),
+  XAI_API_KEY: z.string().optional(),
+  XAI_BASE_URL: z.string().default("https://api.x.ai/v1"),
+  // xAI's own model id (no vendor prefix). VERIFY the exact id in the xAI console
+  // before flipping LLM_TRANSPORT=xai — it may be "grok-4.5" or a dated variant.
+  XAI_MODEL: z.string().default("grok-4.5"),
+
   // Embeddings are separate from the chat model (the chat model is chat-only):
   // OpenAI when OPENAI_API_KEY is set, else Qwen/DashScope (OpenAI-compatible mode).
   EMBEDDING_MODEL: z.string().default("text-embedding-3-large"),

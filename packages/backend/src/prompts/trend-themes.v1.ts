@@ -20,7 +20,7 @@ export interface TrendThemesVars {
 export const trendThemes: Prompt<TrendThemesVars> = {
   id: "trend-themes",
   version: 1,
-  tier: "cheap",
+  tier: "none",
   system: `You pick X/Twitter search terms that will surface this week's high-engagement
 professional discourse for a content creator, given signals about what they work on.
 

@@ -19,7 +19,7 @@ const toneMenu = ALL_TONE_KEYS.map((k) => `${k}: ${TONE_LABEL[k]}`).join("\n");
 export const classifyPeerThemes: Prompt<ClassifyPeerThemesVars> = {
   id: "classify-peer-themes",
   version: 2,
-  tier: "cheap",
+  tier: "none",
   system: `You label posts for territory comparison. For each numbered post, give:
 1. theme: ONE short topical label (2-5 words, lowercase, e.g. "ai developer tools", "founder
    hiring", "distribution strategy"). Reuse the same label across posts covering the same

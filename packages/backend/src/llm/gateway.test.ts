@@ -1,5 +1,42 @@
 import { describe, expect, it } from "vitest";
-import { extractJson, salvageTruncatedJson, asObject } from "./gateway.js";
+import { extractJson, salvageTruncatedJson, asObject, cost, reasoningEffort, hashForCacheKey } from "./gateway.js";
+
+describe("cost (cached input bills ~4x cheaper)", () => {
+  it("splits fresh vs cached input and adds output at the output rate", () => {
+    // grok-4.5: $2 in / $0.50 cachedIn / $6 out per 1M.
+    // 1M input of which 500k cached, 100k output:
+    //   fresh 500k*2 + cached 500k*0.5 + out 100k*6 = 1_000_000 + 250_000 + 600_000 = 1.85M $-units /1e6
+    expect(cost("x-ai/grok-4.5", 1_000_000, 500_000, 100_000)).toBeCloseTo(1.85, 6);
+  });
+  it("charges full input when nothing is cached", () => {
+    expect(cost("grok-4.5", 1_000_000, 0, 0)).toBeCloseTo(2.0, 6);
+  });
+  it("matches the xAI-direct and OpenRouter ids to the same grok price", () => {
+    expect(cost("grok-4.5", 1000, 0, 1000)).toBeCloseTo(cost("x-ai/grok-4.5", 1000, 0, 1000), 9);
+  });
+  it("falls back to zero for an unknown model (never NaN)", () => {
+    expect(cost("mystery-model", 1000, 100, 1000)).toBe(0);
+  });
+});
+
+describe("reasoningEffort", () => {
+  it("frontier → high, everything else → low", () => {
+    expect(reasoningEffort("frontier")).toBe("high");
+    expect(reasoningEffort("cheap")).toBe("low");
+    expect(reasoningEffort("cheap_floor")).toBe("low");
+    expect(reasoningEffort("none")).toBe("low");
+  });
+});
+
+describe("hashForCacheKey", () => {
+  it("is deterministic, 16 hex chars, and not the raw id", () => {
+    const h = hashForCacheKey("user-123");
+    expect(h).toMatch(/^[0-9a-f]{16}$/);
+    expect(h).toBe(hashForCacheKey("user-123"));
+    expect(h).not.toContain("user-123");
+    expect(hashForCacheKey("user-123")).not.toBe(hashForCacheKey("user-124"));
+  });
+});
 
 describe("extractJson", () => {
   it("parses clean JSON", () => {

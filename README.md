@@ -24,6 +24,24 @@ which is where it's most useful. Both share one Postgres and one `users` row.
 
 <!-- Keep newest-first. Update this whenever a change ships that a reader of the repo should know about. -->
 
+- **2026-07-24 — Grok 4.5 cost/cache optimization (phases 1–2 of the spec).**
+  Foundation for cutting per-call spend without changing what any feature does.
+  (1) **Metering now accounts for cached input** (`usage/meter.ts`, migration `0028`):
+  `PRICE` is 3-rate `{in, cachedIn, out}`, `cost()` bills the cached fraction at the
+  ~4x-cheaper rate, and `usage_events` gains nullable `cached_input_tokens` +
+  `reasoning_effort`; `usageSummary` exposes `cache_hit_rate`. Without this, spend was
+  systematically overstated. (2) **`LLM_TRANSPORT` switch** in `gateway.ts`: `openrouter`
+  (default — zero change) or `xai` (direct `api.x.ai`, for the `x-grok-conv-id`
+  cache-affinity header + `cached_tokens` + `reasoning_effort`). Rollback is one env var;
+  `XAI_API_KEY` required only when flipped. (3) **`tier` → `reasoning_effort`**
+  (`frontier→high`, else `low`) — reasoning tokens bill at the output rate, so it's the
+  biggest per-call lever; composition prompts stay `high` pending the §10 A/B. (4)
+  **`cacheKey` + `hashForCacheKey`** plumbed through the gateway (per-callsite keys land
+  in phase 3). Correct at a 0% cache hit rate. **Verify before flipping to xai:** the
+  exact `XAI_MODEL` id, Grok 4.5 regional availability, `cached_tokens` shape (set
+  `LLM_DEBUG=1`), and live prices. Phases 3–6 (prefix layering, loop cache-friendliness,
+  native structured outputs, Batch API) still pending. See INTERNAL §2.
+
 - **2026-07-24 — Pre-launch fix sweep: Grok 4.5, Buyer Radar unblocked, Inspiration
   for web users, culturally-aware drafts, cleaner UI.** Five fixes from live-prod
   diagnosis: (1) **Model switch** — `MODEL_CHAT` default (and env on both deploys) is
