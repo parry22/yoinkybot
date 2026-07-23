@@ -29,15 +29,18 @@ const schema = z.object({
 
   // OpenRouter — the only LLM route. One model for every request (no tiers, no
   // fallback chain). Set MODEL_CHAT to switch models without a code change.
+  // Grok 4.5 (2026-07-24, was z-ai/glm-5.2): native X/cultural awareness is the
+  // product — drafts, trend takes, and buyer outreach all reason about what's
+  // happening on X. Verified live on OpenRouter ($2/M in, $6/M out, 500k ctx).
   OPENROUTER_API_KEY: z.string().optional(),
   OPENROUTER_BASE_URL: z.string().default("https://openrouter.ai/api/v1"),
-  MODEL_CHAT: z.string().default("z-ai/glm-5.2"),
-  // Comma-separated OpenRouter provider names to exclude when picking a GLM host
+  MODEL_CHAT: z.string().default("x-ai/grok-4.5"),
+  // Comma-separated OpenRouter provider names to exclude when picking a host
   // (spec: US/EU hosts only). Tighten or clear via env without a code change.
   OPENROUTER_PROVIDER_IGNORE: z.string().default("Baidu,Alibaba,StreamLake"),
 
-  // Embeddings are separate from the chat model (GLM 5.2 is chat-only): OpenAI
-  // when OPENAI_API_KEY is set, else Qwen/DashScope (OpenAI-compatible mode).
+  // Embeddings are separate from the chat model (the chat model is chat-only):
+  // OpenAI when OPENAI_API_KEY is set, else Qwen/DashScope (OpenAI-compatible mode).
   EMBEDDING_MODEL: z.string().default("text-embedding-3-large"),
   EMBEDDING_DIMS: z.coerce.number().default(1536),
   QWEN_API_KEY: z.string().optional(),
@@ -145,9 +148,14 @@ const schema = z.object({
   //   this. Live-calibrate like BUZZ_THRESHOLD.
   INTENT_THRESHOLD: z.coerce.number().default(0.45),
   //   Semantic niche gate: max cosine distance between a candidate tweet and the
-  //   ICP vector. Tighter than the trend NICHE_THRESHOLD — a buyer for a fitness
-  //   app asking about a CRM is off-domain even if the intent is loud.
-  BUYER_NICHE_THRESHOLD: z.coerce.number().default(0.55),
+  //   ICP vector for a CONFIDENT pass. Recalibrated 2026-07-24 from live geometry
+  //   (Qwen embeddings put on-topic candidates at ~0.57; the old 0.55 rejected
+  //   100% of everything, forever).
+  BUYER_NICHE_THRESHOLD: z.coerce.number().default(0.62),
+  //   Hard ceiling for the top-K rescue pass in the niche gate: when nothing
+  //   clears the threshold, the K nearest candidates under this ceiling still go
+  //   to the composition agent (which researches + declines off-fit ones).
+  BUYER_NICHE_CEILING: z.coerce.number().default(0.78),
   //   Intent decays: a 3-week-old "looking for" is likely resolved, so the window
   //   stays short — but 72h left niche categories with no volume at all to search
   //   (verified live 2026-07-23), so a week is the floor that still reads as fresh.

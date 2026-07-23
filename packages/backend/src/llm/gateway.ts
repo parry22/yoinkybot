@@ -36,9 +36,10 @@ export interface LlmResponse {
 }
 
 // Approximate $/1M tokens for margin visibility; update as pricing changes.
-// OpenRouter list price for z-ai/glm-5.2 verified 2026-07-05: $0.54 in / $1.76 out.
+// OpenRouter list prices verified 2026-07-24 (x-ai/grok-4.5: $2 in / $6 out).
 const PRICE: Record<string, { in: number; out: number }> = {
-  [config.MODEL_CHAT]: { in: 0.54, out: 1.76 },
+  "x-ai/grok-4.5": { in: 2.0, out: 6.0 },
+  "z-ai/glm-5.2": { in: 0.54, out: 1.76 },
 };
 
 function cost(model: string, tokensIn: number, tokensOut: number): number {

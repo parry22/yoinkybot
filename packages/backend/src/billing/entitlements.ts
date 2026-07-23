@@ -9,25 +9,75 @@ export type Plan = "free" | "trialing" | "paid" | "scale" | "founding";
 
 export interface Entitlements {
   plan: Plan;
+  // ── Numeric caps. `null` means UNLIMITED (JSON-safe, and the type forces every
+  //    call site to handle the unlimited branch — unlike Infinity/-1). Use
+  //    withinCap()/remainingFor() below so the null case is handled identically. ──
+  /** Posts a user may schedule per calendar month. */
+  scheduledPostsPerMonth: number | null;
+  /** Buyer-radar intent signals surfaced per calendar month. */
+  buyerIntentsPerMonth: number | null;
+  /** Viral-tweet breakdowns delivered per day. */
+  viralPerDay: number | null;
+  /** Trend takes/day — carried for display/telemetry; identical across paid tiers today. */
+  trendsPerDay: number | null;
   /** Hard cap on proactive resurfacings per week. */
   maxResurfacePerWeek: number;
+  // ── Feature flags ──
+  /** Hands-off AUTO automation delivery ("posts on its own") — Scale only. */
+  autoAgent: boolean;
   consistencyChecks: boolean;
   voiceProfile: boolean;
   drafting: boolean;
   macroMatching: boolean;
 }
 
+/** true while `used` is still under `cap`; a null cap (unlimited) is always within. */
+export function withinCap(used: number, cap: number | null): boolean {
+  return cap === null || used < cap;
+}
+
+/** Remaining headroom under `cap`, or null when the cap is unlimited. */
+export function remainingFor(used: number, cap: number | null): number | null {
+  return cap === null ? null : Math.max(0, cap - used);
+}
+
 const FREE: Entitlements = {
   plan: "free",
+  scheduledPostsPerMonth: 0,
+  buyerIntentsPerMonth: 0,
+  viralPerDay: 0,
+  trendsPerDay: 0,
   maxResurfacePerWeek: 1,
+  autoAgent: false,
   consistencyChecks: false,
   voiceProfile: false,
   drafting: false,
   macroMatching: false,
 };
 
-const PAID: Omit<Entitlements, "plan"> = {
+// Growth (the 'paid' plan): the entry paid tier — real caps, no hands-off agent.
+const GROWTH: Omit<Entitlements, "plan"> = {
+  scheduledPostsPerMonth: 30,
+  buyerIntentsPerMonth: 25,
+  viralPerDay: 1,
+  trendsPerDay: config.MAX_DAILY_TREND_SENDS, // 2-3/day band, unchanged
   maxResurfacePerWeek: 3,
+  autoAgent: false,
+  consistencyChecks: true,
+  voiceProfile: true,
+  drafting: true,
+  macroMatching: true,
+};
+
+// Scale (the 'scale'/'founding' plan, and the trial): everything uncapped + the
+// hands-off auto agent. `null` = unlimited.
+const SCALE: Omit<Entitlements, "plan"> = {
+  scheduledPostsPerMonth: null,
+  buyerIntentsPerMonth: null,
+  viralPerDay: null,
+  trendsPerDay: config.MAX_DAILY_TREND_SENDS, // same band as Growth (deliberate — not a differentiator)
+  maxResurfacePerWeek: 5,
+  autoAgent: true,
   consistencyChecks: true,
   voiceProfile: true,
   drafting: true,
@@ -71,6 +121,24 @@ export async function isPaidOrExempt(user: { id: string; telegram_id: string | n
   return ent.plan !== "free";
 }
 
+/**
+ * Map a plan label to its entitlement caps. Growth ('paid') is the entry tier;
+ * Scale ('scale'), Founding, and the trial get the full uncapped set. Exported
+ * for unit tests — the pure heart of the plan differentiation.
+ */
+export function entitlementsForPlan(plan: Plan): Entitlements {
+  switch (plan) {
+    case "scale":
+    case "founding":
+    case "trialing":
+      return { plan, ...SCALE };
+    case "paid":
+      return { plan, ...GROWTH };
+    default:
+      return FREE;
+  }
+}
+
 export async function entitlementsFor(userId: string): Promise<Entitlements> {
   const sub = await queryOne<{ plan: Plan; status: string; trial_ends_at: string | null }>(
     `SELECT plan, status, trial_ends_at FROM subscriptions WHERE user_id = $1`,
@@ -80,16 +148,18 @@ export async function entitlementsFor(userId: string): Promise<Entitlements> {
     !!sub && sub.status === "trialing" && !!sub.trial_ends_at && new Date(sub.trial_ends_at).getTime() > Date.now();
   const paid = !!sub && sub.status === "active" && sub.plan !== "free";
 
-  // Paywall is off during testing (PAYWALL_ENABLED=false) — everyone gets the
-  // full feature set. Flip the flag on to enforce plans; the logic below is ready.
-  // We still report the true plan label so the UI/telemetry reflect trial vs paid.
+  // Paywall off during testing (PAYWALL_ENABLED=false): grant the full uncapped
+  // (Scale) set to everyone so no cap trips locally, but report the true plan
+  // label so UI/telemetry still reflect trial vs paid vs free.
   if (!config.PAYWALL_ENABLED) {
     const plan: Plan = trialing ? "trialing" : (sub?.plan ?? "free");
-    return { plan, ...PAID };
+    return { plan, ...SCALE };
   }
 
-  if (trialing) return { plan: "trialing", ...PAID };
-  if (paid) return { plan: sub!.plan, ...PAID };
+  // The trial is the full Scale experience (best-foot-forward for conversion),
+  // regardless of the stored plan label (startTrial writes 'paid').
+  if (trialing) return { plan: "trialing", ...SCALE };
+  if (paid) return entitlementsForPlan(sub!.plan);
   return FREE;
 }
 

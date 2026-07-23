@@ -5,6 +5,29 @@ import { hybridSearch } from "../memory/search.js";
 import { currentVoiceProfile } from "../voice/profile.js";
 import { getProfile, profileSummaryForPrompt } from "../strategist/profile.js";
 import { enforceStyle } from "../prompts/style.js";
+import { embedOne } from "../llm/embeddings.js";
+import { query } from "../db/pool.js";
+
+/**
+ * Cultural grounding: the freshest fleet trends nearest the draft request, so
+ * the writer knows what's live on X around this topic RIGHT NOW. One cheap
+ * embed + one pgvector query; best-effort (a drafting request must never fail
+ * because the trends table is cold).
+ */
+async function nearbyTrends(userId: string, request: string, k = 4): Promise<Array<{ topic: string; summary: string }>> {
+  try {
+    const vec = await embedOne(request.slice(0, 1000), userId);
+    const rows = await query<{ topic: string; summary: string | null }>(
+      `SELECT topic, summary FROM trends
+       WHERE embedding IS NOT NULL AND fetched_at > now() - interval '48 hours'
+       ORDER BY embedding <=> $1::vector LIMIT $2`,
+      [JSON.stringify(vec), k],
+    );
+    return rows.map((r) => ({ topic: r.topic, summary: r.summary ?? "" }));
+  } catch {
+    return [];
+  }
+}
 
 const draftSchema = z.object({
   draft: z.string(),
@@ -48,7 +71,10 @@ export async function generateDraft(
     return { ok: false, draft: "", note: "No memories match this request — capture some thinking on it first.", mediaSuggestion: "", sources: [] };
   }
 
-  const brandProfile = await getProfile(userId).catch(() => null);
+  const [brandProfile, currentContext] = await Promise.all([
+    getProfile(userId).catch(() => null),
+    nearbyTrends(userId, request),
+  ]);
 
   const res = await llmCall({
     userId,
@@ -62,6 +88,7 @@ export async function generateDraft(
       voiceTraits: profile.traits,
       profileSummary: brandProfile ? profileSummaryForPrompt(brandProfile) : undefined,
       offLimits: brandProfile?.topics_off_limits ?? [],
+      currentContext,
     }),
     json: true,
     maxTokens: 1500,

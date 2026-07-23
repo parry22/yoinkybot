@@ -10,6 +10,8 @@ export interface DraftVars {
   profileSummary?: string;
   /** Hard boundary: topics the user refuses to touch. Never draft on these. */
   offLimits?: string[];
+  /** What's live on X near this topic right now (fleet trends nearest the request). */
+  currentContext?: Array<{ topic: string; summary: string }>;
 }
 
 /**
@@ -49,10 +51,13 @@ after diagram"), never a generic "add an image". If the post is genuinely strong
 Respond with ONLY valid JSON:
 {"draft":"...","source_memory_ids":["..."],"media_suggestion":"one concrete visual to pair with the post, or empty string","note":"anything the author should know (or empty string)"}
 If the memories are insufficient, or the request crosses an off-limits topic: {"draft":"","source_memory_ids":[],"media_suggestion":"","note":"why"}`,
-  render: ({ request, platform, memories, voiceTraits, profileSummary, offLimits }) =>
+  render: ({ request, platform, memories, voiceTraits, profileSummary, offLimits, currentContext }) =>
     `Request: ${request}\nPlatform: ${platform}\n\n` +
     (profileSummary ? `THEIR STATED PROFILE:\n${profileSummary}\n\n` : "") +
     (offLimits?.length ? `OFF-LIMITS TOPICS (never draft on these):\n${offLimits.map((t) => `- ${t}`).join("\n")}\n\n` : "") +
+    (currentContext?.length
+      ? `LIVE ON X RIGHT NOW (near this topic — use ONLY if it genuinely sharpens the post; a natural nod to the live conversation reads current, a forced reference reads like engagement bait; substance must still come from the memories):\n${currentContext.map((c) => `- ${c.topic}: ${c.summary}`).join("\n")}\n\n`
+      : "") +
     `Voice profile:\n${JSON.stringify(voiceTraits, null, 2)}\n\n` +
     `Retrieved memories:\n${memories.map((m) => `[${m.id}] (${m.kind}) ${m.content}`).join("\n\n")}`,
 };

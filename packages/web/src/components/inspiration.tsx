@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { FlashIcon, FireIcon } from "@hugeicons/core-free-icons";
 import panel from "./panel.module.css";
@@ -39,6 +40,21 @@ const REACTION_ICON: Record<string, string> = { fire: "🔥", useful: "👍", of
 
 export function Inspiration({ trends, virals }: { trends: Trend[]; virals: Viral[] }) {
   const [tab, setTab] = useState<"trends" | "virals">("trends");
+  const [filling, setFilling] = useState(false);
+  const router = useRouter();
+  const triedFill = useRef(false);
+
+  // Empty feed → kick off an on-demand fill (server-side stale guard makes this
+  // safe to fire on every visit), then re-render the server lists.
+  useEffect(() => {
+    if (triedFill.current || trends.length + virals.length > 0) return;
+    triedFill.current = true;
+    setFilling(true);
+    fetch("/api/inspiration/refresh", { method: "POST" })
+      .then(() => router.refresh())
+      .catch(() => {})
+      .finally(() => setFilling(false));
+  }, [trends.length, virals.length, router]);
 
   return (
     <div className={panel.page}>
@@ -64,8 +80,12 @@ export function Inspiration({ trends, virals }: { trends: Trend[]; virals: Viral
         {tab === "trends" &&
           (trends.length === 0 ? (
             <div className={panel.empty}>
-              <div className={panel.emptyTitle}>No trend takes yet.</div>
-              <p>Once you&apos;re connected and diagnosed, Yoinky matches live X trends against your stated positions.</p>
+              <div className={panel.emptyTitle}>{filling ? "Scanning your niche…" : "Nothing here yet."}</div>
+              <p>
+                {filling
+                  ? "Finding what's moving on X for you right now. This takes a moment."
+                  : "Fresh trends land here as they break in your niche. Check back soon."}
+              </p>
             </div>
           ) : (
             trends.map((t) => (
@@ -104,8 +124,12 @@ export function Inspiration({ trends, virals }: { trends: Trend[]; virals: Viral
         {tab === "virals" &&
           (virals.length === 0 ? (
             <div className={panel.empty}>
-              <div className={panel.emptyTitle}>No viral case studies yet.</div>
-              <p>A daily spotlight on a high-impression tweet in your niche, with why it worked and an angle for you.</p>
+              <div className={panel.emptyTitle}>{filling ? "Scanning your niche…" : "Nothing here yet."}</div>
+              <p>
+                {filling
+                  ? "Pulling the posts blowing up in your lane right now."
+                  : "Daily spotlights on posts that broke out in your niche land here, with an angle for you."}
+              </p>
             </div>
           ) : (
             virals.map((v) => (

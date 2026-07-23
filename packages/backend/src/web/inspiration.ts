@@ -4,7 +4,8 @@
  * delivered to Telegram, from the `surfacings` ledger. Read-only; delivery
  * itself is unchanged (jobs/trend-match.ts, jobs/viral-benchmark.ts).
  */
-import { query } from "../db/pool.js";
+import { query, queryOne } from "../db/pool.js";
+import { seedInspirationForUser } from "../jobs/inspiration-seed.js";
 
 export interface TrendInspiration {
   id: string;
@@ -64,6 +65,29 @@ export async function listTrendInspiration(userId: string, limit = 20): Promise<
     buzz: typeof r.payload?.buzz === "number" ? r.payload.buzz : null,
     reaction: r.user_reaction,
   }));
+}
+
+/**
+ * On-demand fill for the web Inspiration page. When the user's feed is empty or
+ * stale, run the same seed pipeline the post-diagnosis job uses (trends match +
+ * viral pool, persisted with channel 'web'). Stale-guarded so page loads can't
+ * spam paid search: a no-op unless the newest trend_take/viral_benchmark
+ * surfacing is older than `minAgeHours` (or absent).
+ */
+export async function refreshInspirationForWeb(
+  userId: string,
+  minAgeHours = 6,
+): Promise<{ ran: boolean }> {
+  const latest = await queryOne<{ latest: string | null }>(
+    `SELECT max(delivered_at)::text AS latest FROM surfacings
+     WHERE user_id = $1 AND type IN ('trend_take','viral_benchmark')`,
+    [userId],
+  );
+  if (latest?.latest && Date.now() - new Date(latest.latest).getTime() < minAgeHours * 3_600_000) {
+    return { ran: false };
+  }
+  await seedInspirationForUser(userId);
+  return { ran: true };
 }
 
 interface ViralPayload {

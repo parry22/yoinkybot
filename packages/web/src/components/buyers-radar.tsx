@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Search01Icon, Bookmark01Icon, Comment01Icon, RadarIcon } from "@hugeicons/core-free-icons";
+import { UpgradeCTA } from "./upgrade-cta";
 import panel from "./panel.module.css";
 import styles from "./buyers-radar.module.css";
 
@@ -24,8 +25,8 @@ interface Status {
   enabled: boolean;
   hasIcp: boolean;
   used: number;
-  cap: number;
-  remaining: number;
+  cap: number | null;
+  remaining: number | null;
 }
 interface IcpView {
   productOneliner: string;
@@ -58,6 +59,7 @@ export function BuyersRadar({
   const [editing, setEditing] = useState(!status.hasIcp);
   const [scanning, setScanning] = useState(false);
   const [scanMsg, setScanMsg] = useState<string | null>(null);
+  const [locked, setLocked] = useState(false);
 
   function relTime(iso: string | null): string {
     if (!iso) return "";
@@ -75,6 +77,11 @@ export function BuyersRadar({
     try {
       const res = await fetch("/api/buyers-radar/scan", { method: "POST" });
       const data = await res.json();
+      if (res.status === 402 || res.status === 429) {
+        setLocked(true);
+        setScanMsg(null);
+        return;
+      }
       if (!res.ok) {
         setScanMsg(data.error ?? "scan failed");
         return;
@@ -151,12 +158,17 @@ export function BuyersRadar({
             {scanning ? "Scanning X…" : "Scan now"}
           </button>
           <span className={styles.quota}>
-            {used}/{status.cap} signals this month
+            {used}/{status.cap === null ? "∞" : status.cap} signals this month
           </span>
           <button className={styles.editBtn} onClick={() => setEditing(true)}>
             Edit targeting
           </button>
         </div>
+        {locked && (
+          <div style={{ marginTop: 12 }}>
+            <UpgradeCTA message="Buyer Radar is a paid feature — or you've hit your monthly signal cap." />
+          </div>
+        )}
         {scanMsg && !scanning && <div className={styles.scanMsg}>{scanMsg}</div>}
 
         {scanning ? (

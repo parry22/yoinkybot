@@ -6,6 +6,7 @@
  */
 import { config } from "../config.js";
 import { query } from "../db/pool.js";
+import { entitlementsFor } from "../billing/entitlements.js";
 import { assertClean, ModerationError } from "../moderation/filter.js";
 import {
   listAutomations,
@@ -123,6 +124,12 @@ function sanitize(input: AutomationFormInput): AutomationInput {
 
 export async function saveAutomationFromWeb(userId: string, input: AutomationFormInput, id?: string): Promise<AutomationView> {
   const clean = sanitize(input);
+  // Hands-off AUTO mode is a Scale entitlement. Growth can build approval-mode
+  // automations but not ones that post on their own. Surfaced as a ModerationError
+  // so the web route's existing 400 handler shows the reason.
+  if (clean.delivery_mode === "auto" && !(await entitlementsFor(userId)).autoAgent) {
+    throw new ModerationError("Hands-off auto mode is a Scale feature — pick “Asks you first”, or upgrade to Scale.");
+  }
   const saved = id
     ? await updateAutomation(id, userId, clean)
     : await createAutomation(userId, clean, config.AUTOMATION_DEFAULT_MONTHLY_CAP);

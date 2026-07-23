@@ -6,6 +6,7 @@
  * is NEVER casualized; only the framing DM line is casual.
  */
 import { config } from "../config.js";
+import { entitlementsFor } from "../billing/entitlements.js";
 import { generateDraft } from "../drafting/draft.js";
 import { markUnlockDeveloped } from "../strategist/plan.js";
 import { moderateText } from "../moderation/filter.js";
@@ -41,9 +42,14 @@ export async function runAutomationOnce(automation: Automation, opts: { manual?:
   const isAuto = automation.delivery_mode === "auto";
 
   // The whole unattended path is DARK until the flag flips — auto automations
-  // produce nothing (and spend nothing) until then.
-  if (isAuto && !config.AUTOMATIONS_AUTO_ENABLED) {
-    return { status: "skipped", reason: "auto mode is disabled" };
+  // produce nothing (and spend nothing) until then. Hands-off AUTO mode is also
+  // a Scale-only entitlement: Growth may build approval-mode automations but not
+  // let them post on their own. (Runtime backstop; save-time gate is in web/automations.ts.)
+  if (isAuto) {
+    if (!config.AUTOMATIONS_AUTO_ENABLED) return { status: "skipped", reason: "auto mode is disabled" };
+    if (!(await entitlementsFor(userId)).autoAgent) {
+      return { status: "skipped", reason: "auto mode requires the Scale plan" };
+    }
   }
 
   // Caps BEFORE any paid/model work (buyer-radar doctrine).

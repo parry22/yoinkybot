@@ -123,16 +123,14 @@ export function Analytics({ data }: { data: Data }) {
         <div className={panel.head}>
           <div>
             <div className={panel.title}>Analytics</div>
-            <div className={panel.subtitle}>
-              {data.handle} · {data.postsAnalyzed} posts analyzed · times in {data.timezone}
-            </div>
+            <div className={panel.subtitle}>{data.handle}</div>
           </div>
         </div>
 
         {!data.hasMetrics ? (
           <div className={panel.empty}>
             <div className={panel.emptyTitle}>No post metrics yet.</div>
-            <p>Impression/engagement data comes from the twitterapi.io-backed connect. Reconnect your X handle to pull it in.</p>
+            <p>Reconnect your X in Settings to pull in fresh numbers.</p>
           </div>
         ) : (
           <>
@@ -140,7 +138,6 @@ export function Analytics({ data }: { data: Data }) {
               <div className={styles.tile}>
                 <div className={styles.tileLabel}>Followers</div>
                 <div className={styles.tileValue}>{fmt(data.followers)}</div>
-                <div className={styles.tileSub}>at last sync</div>
               </div>
               <div className={styles.tile}>
                 <div className={styles.tileLabel}>Median impressions</div>
@@ -150,12 +147,11 @@ export function Analytics({ data }: { data: Data }) {
               <div className={styles.tile}>
                 <div className={styles.tileLabel}>Median engagement</div>
                 <div className={styles.tileValue}>{fmt(data.medians.engagements)}</div>
-                <div className={styles.tileSub}>likes + replies + RT + quotes + bookmarks</div>
+                <div className={styles.tileSub}>per post</div>
               </div>
               <div className={styles.tile}>
-                <div className={styles.tileLabel}>Median engagement rate</div>
+                <div className={styles.tileLabel}>Engagement rate</div>
                 <div className={styles.tileValue}>{pct(data.medians.engagementRate)}</div>
-                <div className={styles.tileSub}>engagements ÷ impressions</div>
               </div>
             </div>
 
@@ -209,15 +205,12 @@ export function Analytics({ data }: { data: Data }) {
             <div className={panel.section}>
               <div className={panel.sectionLabel}>What shape of post works for you</div>
               {data.formats.length === 0 ? (
-                <div className={panel.sectionBody}>Not enough posts yet to break down by format — keep posting and this fills in.</div>
+                <div className={panel.sectionBody}>Keep posting — this fills in as your history grows.</div>
               ) : (
                 <div className={styles.formatList}>
                   {data.formats.map((f) => (
                     <div key={f.key} className={styles.formatRow}>
-                      <div className={styles.formatLabel}>
-                        {f.label}
-                        <span className={styles.formatCount}>{f.posts} posts</span>
-                      </div>
+                      <div className={styles.formatLabel}>{f.label}</div>
                       <div className={styles.formatMetrics}>
                         <span>
                           <b>{pct(f.medianEngagementRate)}</b> eng rate
@@ -232,10 +225,6 @@ export function Analytics({ data }: { data: Data }) {
                   ))}
                 </div>
               )}
-              <div className={styles.note}>
-                The same posts sliced by shape, each against your own median engagement rate — the read native analytics
-                never gives you.
-              </div>
             </div>
 
             <div className={panel.section}>
@@ -275,8 +264,7 @@ export function Analytics({ data }: { data: Data }) {
               </div>
               {data.bestWindow && (
                 <div className={styles.note}>
-                  Your strongest slot so far: <b style={{ color: "var(--accent)" }}>{DOW[data.bestWindow.day]} around {data.bestWindow.hour}:00</b>, weighted by
-                  the engagement your posts actually earned there (not just when you happened to post).
+                  Your strongest slot: <b style={{ color: "var(--accent)" }}>{DOW[data.bestWindow.day]} around {data.bestWindow.hour}:00</b>.
                 </div>
               )}
             </div>
@@ -312,7 +300,7 @@ export function Analytics({ data }: { data: Data }) {
                   </div>
                 ))}
               </div>
-              <div className={styles.note}>Consistency compounds. Bars are posts per week; hover for impressions.</div>
+              <div className={styles.note}>Posts per week.</div>
             </div>
           </>
         )}
@@ -342,36 +330,30 @@ export function Analytics({ data }: { data: Data }) {
               <div className={styles.tile}>
                 <div className={styles.tileLabel}>Avg edits / draft</div>
                 <div className={styles.tileValue}>{data.agent.avgEdits.toFixed(1)}</div>
-                <div className={styles.tileSub}>lower = more on-voice</div>
               </div>
             </div>
           )}
         </div>
 
-        {/* Reply-level performance - the native-analytics blind spot. On-demand (live pull). */}
+        {/* Reply-level performance - on-demand (live pull). */}
         <div className={panel.section}>
           <div className={panel.sectionLabel}>Reply-level performance</div>
           {!replies ? (
             <>
               <div className={panel.sectionBody} style={{ marginBottom: 10 }}>
-                Native analytics ignore your replies. Yoinky pulls impressions + engagement rate on the replies you
-                send - the data reply-driven growth usually flies blind on.
+                See how the replies you send actually perform.
               </div>
               <button className="btnGhost" onClick={loadReplies} disabled={loadingReplies}>
                 {loadingReplies ? "Pulling replies…" : "Load reply performance"}
               </button>
             </>
           ) : !replies.available ? (
-            <div className={panel.sectionBody}>{replies.reason ?? "Not available."}</div>
+            <div className={panel.sectionBody}>Couldn&apos;t pull replies right now — try again in a bit.</div>
           ) : replies.count === 0 ? (
-            <div className={panel.sectionBody}>No recent replies found in your latest timeline pull.</div>
+            <div className={panel.sectionBody}>No recent replies found.</div>
           ) : (
             <>
               <div className={styles.tiles}>
-                <div className={styles.tile}>
-                  <div className={styles.tileLabel}>Replies analyzed</div>
-                  <div className={styles.tileValue}>{replies.count}</div>
-                </div>
                 <div className={styles.tile}>
                   <div className={styles.tileLabel}>Median impressions</div>
                   <div className={styles.tileValue}>{fmt(replies.medianImpressions)}</div>
@@ -393,18 +375,8 @@ export function Analytics({ data }: { data: Data }) {
                   </div>
                 </div>
               ))}
-              <div className={styles.note}>Profile clicks on replies aren&apos;t exposed by X - see below.</div>
             </>
           )}
-        </div>
-
-        <div className={panel.section}>
-          <div className={panel.sectionLabel}>Not shown - and why</div>
-          <ul className={styles.unavail}>
-            {data.unavailable.map((u, i) => (
-              <li key={i}>{u}</li>
-            ))}
-          </ul>
         </div>
       </div>
     </div>

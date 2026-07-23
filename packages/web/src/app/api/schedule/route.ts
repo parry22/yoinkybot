@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/session";
+import { requirePaid } from "@/lib/entitlements";
 import { createWebScheduledPost, ModerationError } from "@yoink/backend/web";
 
 export const runtime = "nodejs";
@@ -8,6 +9,8 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!(await requirePaid(user)))
+    return NextResponse.json({ error: "upgrade_required" }, { status: 402 });
 
   const body = (await req.json().catch(() => ({}))) as { content?: unknown; scheduledFor?: unknown };
   const content = typeof body.content === "string" ? body.content.trim() : "";
@@ -16,7 +19,17 @@ export async function POST(req: Request) {
 
   try {
     const res = await createWebScheduledPost(user.id, content, scheduledFor);
-    if (!res.ok) return NextResponse.json({ error: res.reason ?? "could not schedule" }, { status: 400 });
+    if (!res.ok) {
+      // The monthly cap → 429 + Scale CTA; every other rejection (links, bad
+      // time) stays a plain 400.
+      if (res.capReached) {
+        return NextResponse.json(
+          { error: "cap_reached", reason: res.reason, upgradeTo: "scale" },
+          { status: 429 },
+        );
+      }
+      return NextResponse.json({ error: res.reason ?? "could not schedule" }, { status: 400 });
+    }
     return NextResponse.json({ ok: true, id: res.id });
   } catch (err) {
     if (err instanceof ModerationError) return NextResponse.json({ error: err.reason }, { status: 400 });

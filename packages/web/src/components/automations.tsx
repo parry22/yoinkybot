@@ -86,9 +86,12 @@ const BLANK: FormState = {
 export function Automations({
   initialAutomations,
   initialApprovals,
+  canAutoAgent,
 }: {
   initialAutomations: AutomationView[];
   initialApprovals: ApprovalView[];
+  /** Scale-only: whether the user's plan allows hands-off AUTO delivery. */
+  canAutoAgent: boolean;
 }) {
   const [automations, setAutomations] = useState(initialAutomations);
   const [approvals, setApprovals] = useState(initialApprovals);
@@ -215,6 +218,7 @@ export function Automations({
       {editing && (
         <ConfigModal
           initial={editing}
+          canAutoAgent={canAutoAgent}
           onClose={() => setEditing(null)}
           onSaved={(view) => {
             setAutomations((list) => {
@@ -305,10 +309,12 @@ function ApprovalCard({
 
 function ConfigModal({
   initial,
+  canAutoAgent,
   onClose,
   onSaved,
 }: {
   initial: FormState;
+  canAutoAgent: boolean;
   onClose: () => void;
   onSaved: (view: AutomationView) => void;
 }) {
@@ -336,6 +342,10 @@ function ConfigModal({
         body: JSON.stringify(form),
       });
       const data = await res.json();
+      if (res.status === 402) {
+        setErr("Automations are a paid feature — upgrade to continue.");
+        return;
+      }
       if (!res.ok) {
         setErr(data.error ?? "could not save");
         return;
@@ -414,7 +424,11 @@ function ConfigModal({
             <span className={styles.label}>How it delivers</span>
             <select className={styles.input} value={form.deliveryMode} onChange={(e) => set("deliveryMode", e.target.value as FormState["deliveryMode"])}>
               <option value="approval">Ask me first</option>
-              <option value="auto">Post on its own</option>
+              {canAutoAgent ? (
+                <option value="auto">Post on its own</option>
+              ) : (
+                <option value="auto" disabled>Post on its own (Scale)</option>
+              )}
             </select>
           </label>
           <label className={styles.optionCol}>

@@ -46,13 +46,6 @@ type Data = {
   milestones: Milestone[];
 };
 
-const KIND_TAG: Record<Quest["kind"], string> = {
-  setup: "Setup",
-  habit: "Habit",
-  idea: "Idea",
-  reach: "Reach",
-};
-
 function fmt(n: number): string {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
   if (n >= 1_000) return (n / 1_000).toFixed(1) + "k";
@@ -82,7 +75,7 @@ export function Growth({ data }: { data: Data }) {
         <div className={panel.head}>
           <div>
             <div className={panel.title}>Growth</div>
-            <div className={panel.subtitle}>Your brand, as a game you win by posting. Clear the quests, keep the streak.</div>
+            <div className={panel.subtitle}>Clear the quests. Keep the streak.</div>
           </div>
         </div>
 
@@ -106,7 +99,6 @@ export function Growth({ data }: { data: Data }) {
                 <div className={styles.xpBar}>
                   <i style={{ width: `${xpPct}%` }} />
                 </div>
-                <div className={styles.xpMeta}>{fmt(data.xp)} XP total</div>
               </div>
             </div>
           </div>
@@ -170,7 +162,6 @@ export function Growth({ data }: { data: Data }) {
                     <div className={styles.questDetail}>{q.detail}</div>
                   </div>
                   <div className={styles.questRight}>
-                    <span className={`${styles.kindTag} ${styles[`kind_${q.kind}`]}`}>{KIND_TAG[q.kind]}</span>
                     <span className={styles.xpChip}>+{q.xp} XP</span>
                     {q.cta && (
                       <a href={q.cta.href} className={styles.questCta}>
@@ -214,7 +205,6 @@ export function Growth({ data }: { data: Data }) {
               return (
                 <div key={m.key} className={styles.milestone}>
                   <div className={styles.msTop}>
-                    <span className={styles.msIcon}>{m.icon}</span>
                     <span className={styles.msLabel}>{m.label}</span>
                   </div>
                   <div className={styles.msValue}>
@@ -245,28 +235,16 @@ export function Growth({ data }: { data: Data }) {
                 <div className={styles.tlText}>{data.throughline}</div>
               </div>
             )}
-            <div className={styles.idGrid}>
-              {data.identity.ownedPositions.length > 0 && (
-                <div className={styles.idCol}>
-                  <div className={styles.idColLabel}>Positions that are yours</div>
-                  <ul className={styles.idList}>
-                    {data.identity.ownedPositions.map((s, i) => (
-                      <li key={i}>{s}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {data.identity.unsaid.length > 0 && (
-                <div className={styles.idCol}>
-                  <div className={styles.idColLabel}>💎 Your highest-value territory</div>
-                  <ul className={styles.idList}>
-                    {data.identity.unsaid.map((s, i) => (
-                      <li key={i}>{s}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
+            {data.identity.unsaid.length > 0 && (
+              <div>
+                <div className={styles.idColLabel}>💎 Your highest-value territory</div>
+                <ul className={styles.idList}>
+                  {data.identity.unsaid.map((s, i) => (
+                    <li key={i}>{s}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </section>
         ) : (
           <section className={styles.section}>

@@ -1,6 +1,7 @@
 import { getBoss, QUEUES } from "../jobs/boss.js";
 import { query, queryOne } from "../db/pool.js";
 import type { Platform } from "../lib/types.js";
+import { entitlementsFor, withinCap, remainingFor } from "../billing/entitlements.js";
 
 /**
  * A link ANYWHERE in a scheduled post's body is refused outright — not stripped,
@@ -38,6 +39,8 @@ export interface ScheduleResult {
   ok: boolean;
   id?: string;
   reason?: string;
+  /** True when the rejection was the per-plan monthly cap (web maps this to 429 + upgrade). */
+  capReached?: boolean;
 }
 
 /** Queue a post for publishing at `scheduledFor`. Rejects past/invalid times. */
@@ -57,6 +60,19 @@ export async function schedulePost(
   if (Number.isNaN(when.getTime())) return { ok: false, reason: "couldn't read that time" };
   // A small grace window absorbs clock skew / "post it now" phrasing.
   if (when.getTime() < Date.now() - 60_000) return { ok: false, reason: "that time is in the past" };
+
+  // Per-plan monthly cap (Growth = 30/mo, Scale = unlimited). Checked centrally
+  // here so web, the Telegram schedule tool, and automation auto-scheduling all
+  // inherit it. Scale's null cap never blocks. The `CAP_REACHED:` prefix lets the
+  // web boundary map this to a 429 + upgrade CTA (other reasons stay 400).
+  const ent = await entitlementsFor(userId);
+  if (!withinCap(await monthlyScheduledCount(userId), ent.scheduledPostsPerMonth)) {
+    return {
+      ok: false,
+      capReached: true,
+      reason: `you've used all ${ent.scheduledPostsPerMonth} scheduled posts this month — upgrade to Scale for unlimited.`,
+    };
+  }
 
   const row = await queryOne<{ id: string }>(
     `INSERT INTO scheduled_posts (user_id, platform, content, draft_id, scheduled_for)
@@ -84,6 +100,32 @@ export async function listScheduled(userId: string): Promise<ScheduledPost[]> {
      LIMIT 25`,
     [userId],
   );
+}
+
+/** Posts scheduled this calendar month (canceled ones don't count — canceling
+ *  frees the slot; failed/published still consume it). Drives the monthly cap. */
+export async function monthlyScheduledCount(userId: string): Promise<number> {
+  const row = await queryOne<{ n: string }>(
+    `SELECT count(*)::text AS n FROM scheduled_posts
+     WHERE user_id = $1 AND status <> 'canceled' AND created_at >= date_trunc('month', now())`,
+    [userId],
+  );
+  return Number(row?.n ?? 0);
+}
+
+export interface ScheduledStatus {
+  used: number;
+  /** null = unlimited (Scale). */
+  cap: number | null;
+  /** null = unlimited. */
+  remaining: number | null;
+}
+
+/** Monthly scheduling usage for the current plan — for the Scheduled screen. */
+export async function scheduledStatus(userId: string): Promise<ScheduledStatus> {
+  const ent = await entitlementsFor(userId);
+  const used = await monthlyScheduledCount(userId);
+  return { used, cap: ent.scheduledPostsPerMonth, remaining: remainingFor(used, ent.scheduledPostsPerMonth) };
 }
 
 /** Cancel a pending scheduled post. The due job re-checks status, so this alone

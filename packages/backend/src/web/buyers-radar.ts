@@ -6,6 +6,7 @@
  */
 import { config } from "../config.js";
 import { query, queryOne } from "../db/pool.js";
+import { entitlementsFor, remainingFor } from "../billing/entitlements.js";
 import { getIcp, saveIcp, prefillIcp, icpComplete, type IcpInput, type IcpPrefill } from "../buyer/icp.js";
 import { scanForUser, monthlySurfacedCount, type ScanStatus, type ScanResult } from "../buyer/scan.js";
 import { recalibrateUser } from "../buyer/calibration.js";
@@ -31,8 +32,10 @@ export interface BuyerRadarStatus {
   enabled: boolean;
   hasIcp: boolean;
   used: number;
-  cap: number;
-  remaining: number;
+  /** null = unlimited (Scale). */
+  cap: number | null;
+  /** null = unlimited. */
+  remaining: number | null;
 }
 
 export interface BuyerIcpView {
@@ -103,13 +106,13 @@ export async function listBuyerSignals(userId: string, limit = 30): Promise<Buye
 export async function buyerRadarStatus(userId: string): Promise<BuyerRadarStatus> {
   const icp = await getIcp(userId);
   const used = await monthlySurfacedCount(userId);
-  const cap = config.BUYER_MONTHLY_SIGNAL_CAP;
+  const cap = (await entitlementsFor(userId)).buyerIntentsPerMonth; // number | null (Scale = null)
   return {
     enabled: config.BUYER_RADAR_ENABLED && Boolean(config.TWITTERAPI_IO_KEY),
     hasIcp: icpComplete(icp),
     used,
     cap,
-    remaining: Math.max(0, cap - used),
+    remaining: remainingFor(used, cap),
   };
 }
 
@@ -177,15 +180,15 @@ function emptyReason(result: ScanResult): string | null {
     return "Nobody on X matched your category this round. If that keeps happening, widen what you sell in Edit targeting — a broad category finds more than a precise one.";
   }
   if (s.intentPassed === 0) {
-    return `Read ${s.candidates} posts in your category, but none of them were actually asking for anything. That's a quiet week, not a problem.`;
+    return "People are talking in your category, but nobody was actually asking for anything. That's a quiet week, not a problem.";
   }
   if (s.nichePassed === 0) {
-    return `${s.intentPassed} people were asking for something, but none were close enough to what you sell. Sharpening "who buys it" in Edit targeting helps here.`;
+    return `People were asking for things, but none close enough to what you sell. Sharpening "who buys it" in Edit targeting helps here.`;
   }
   if (s.composeFailed > 0 && s.composeFailed === s.composed) {
     return "Found candidates but couldn't draft replies for them — that's on my side, they'll still be here next scan.";
   }
-  return `Looked at ${s.candidates} posts and none were a real buyer. Yoinky will keep looking.`;
+  return "No real buyers this round. Yoinky will keep looking.";
 }
 
 /** On-demand scan (the "Scan now" button). Budget-gated inside scanForUser. */

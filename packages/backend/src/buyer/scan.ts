@@ -11,6 +11,7 @@
  */
 import { config } from "../config.js";
 import { query, queryOne } from "../db/pool.js";
+import { entitlementsFor } from "../billing/entitlements.js";
 import { getIcp, icpComplete } from "./icp.js";
 import { discoverCandidates } from "./discovery.js";
 import { intentScore, type IntentComponents } from "./scoring.js";
@@ -133,10 +134,13 @@ export async function scanForUser(userId: string): Promise<ScanResult> {
   const icp = await getIcp(userId);
   if (!icpComplete(icp) || !icp) return empty("no_icp");
 
-  // Budget FIRST, before any paid search.
+  // Budget FIRST, before any paid search. Per-plan monthly cap (Growth = 25,
+  // Scale = unlimited). A null cap means no monthly ceiling — the scan is then
+  // bounded only by MAX_COMPOSE_PER_SCAN and candidate supply.
+  const cap = (await entitlementsFor(userId)).buyerIntentsPerMonth;
   const used = await monthlySurfacedCount(userId);
-  let remaining = config.BUYER_MONTHLY_SIGNAL_CAP - used;
-  if (remaining <= 0) return empty("budget_exhausted", 0);
+  let remaining = cap === null ? MAX_COMPOSE_PER_SCAN : cap - used;
+  if (cap !== null && remaining <= 0) return empty("budget_exhausted", 0);
 
   // Per-user calibrated gates (falls back to config defaults) — recalibrated
   // from the user's verdicts (buyer/calibration.ts).
@@ -226,6 +230,6 @@ export async function scanForUser(userId: string): Promise<ScanResult> {
 
   stages.composed = composed;
   stages.composeFailed = composeFailed;
-  remaining = Math.max(0, config.BUYER_MONTHLY_SIGNAL_CAP - (used + surfaced));
+  remaining = cap === null ? MAX_COMPOSE_PER_SCAN : Math.max(0, cap - (used + surfaced));
   return { status: "ok", surfaced, declined, remaining, stages };
 }

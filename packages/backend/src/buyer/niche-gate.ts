@@ -53,6 +53,18 @@ function parseVector(raw: string | null | undefined): number[] | null {
   return nums.length > 1 && nums.every(Number.isFinite) ? nums : null;
 }
 
+/**
+ * When nothing clears the absolute threshold, rescue the top-K nearest
+ * candidates inside a hard ceiling instead of returning an empty radar. A short
+ * tweet and a paragraph-length ICP rarely land inside a tight fixed distance
+ * (verified live 2026-07-24: every on-topic candidate sat just above the old
+ * 0.55 cliff, so ZERO signals ever surfaced) — and the composition agent
+ * downstream researches each candidate and declines off-fit ones anyway, so the
+ * cliff was doing the agent's job badly. K stays small so the rescue can't
+ * flood composition with noise.
+ */
+const RESCUE_TOP_K = 3;
+
 export async function applyNicheGate(
   userId: string,
   candidates: BuyerCandidate[],
@@ -71,14 +83,21 @@ export async function applyNicheGate(
     candidates.map((c) => c.tweet.text.slice(0, 500)),
     userId,
   );
-  const passed: GatedCandidate[] = [];
+  const scored: Array<{ candidate: BuyerCandidate; dist: number }> = [];
   for (let i = 0; i < candidates.length; i++) {
     const vec = vecs[i];
     const candidate = candidates[i];
     if (!vec || !candidate) continue;
-    const dist = cosineDistance(vec, icpVec);
-    if (dist >= threshold) continue;
-    passed.push({ ...candidate, nicheSimilarity: Math.round((1 - dist) * 1000) / 1000 });
+    scored.push({ candidate, dist: cosineDistance(vec, icpVec) });
   }
-  return { passed, hasVector: true };
+  scored.sort((a, b) => a.dist - b.dist);
+
+  let kept = scored.filter((s) => s.dist < threshold);
+  if (kept.length === 0) {
+    kept = scored.filter((s) => s.dist < config.BUYER_NICHE_CEILING).slice(0, RESCUE_TOP_K);
+  }
+  return {
+    passed: kept.map((s) => ({ ...s.candidate, nicheSimilarity: Math.round((1 - s.dist) * 1000) / 1000 })),
+    hasVector: true,
+  };
 }

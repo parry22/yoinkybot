@@ -24,6 +24,51 @@ which is where it's most useful. Both share one Postgres and one `users` row.
 
 <!-- Keep newest-first. Update this whenever a change ships that a reader of the repo should know about. -->
 
+- **2026-07-24 — Pre-launch fix sweep: Grok 4.5, Buyer Radar unblocked, Inspiration
+  for web users, culturally-aware drafts, cleaner UI.** Five fixes from live-prod
+  diagnosis: (1) **Model switch** — `MODEL_CHAT` default (and env on both deploys) is
+  now `x-ai/grok-4.5` (was `z-ai/glm-5.2`): native X/cultural awareness for drafts,
+  trend takes, and buyer outreach; PRICE map updated ($2/M in, $6/M out, verified on
+  OpenRouter). (2) **Buyer Radar surfaced ZERO intents, ever** — root-caused by
+  replaying the funnel against prod data: discovery found 60 candidates, 41 passed
+  intent, and the semantic niche gate rejected 100% (best cosine distance 0.569 vs
+  the 0.55 cliff under Qwen embedding geometry). Fix: threshold recalibrated to 0.62
+  + a top-K rescue pass (`BUYER_NICHE_CEILING` 0.78, K=3) so the nearest plausible
+  candidates still reach the composition agent (which researches + declines off-fit
+  ones) instead of an empty radar forever. (3) **Inspiration was Telegram-only** —
+  the recurring trend/viral jobs selected `WHERE telegram_id IS NOT NULL`, so
+  web-only users never got surfacings (prod: 37 surfacings, all for the two Telegram
+  accounts, zero for the web account). Both jobs now include users with a connected
+  X and persist for them in seed mode (channel 'web', no DM); plus a stale-guarded
+  on-demand fill (`refreshInspirationForWeb`, `POST /api/inspiration/refresh`) that
+  the page auto-triggers when empty ("Scanning your niche…"). (4) **Drafts are now
+  culturally grounded** — `generateDraft` embeds the request and pulls the nearest
+  fresh fleet trends (48h window, one pgvector query) into a new `LIVE ON X RIGHT
+  NOW` prompt block (use only if it genuinely sharpens the post). (5) **UI cleanup**
+  — internals removed from user-facing copy (post-scan counts, "Not shown - and
+  why", vendor names, formula subs); Growth page decluttered (no kind tags, single
+  identity column, lighter milestones). See INTERNAL §2 / §3j / §3i.
+
+- **2026-07-24 — Growth vs Scale are now REAL (enforced caps, web + Telegram).**
+  Until now every non-free plan shared one `PAID` entitlements bundle — the tiers
+  were cosmetic. `Entitlements` (`billing/entitlements.ts`) gains numeric caps
+  (`null` = unlimited) + an `autoAgent` flag, split into `GROWTH`, `SCALE`, `FREE`:
+  Growth = 30 scheduled posts/mo · 25 buyer intents/mo · 1 viral/day · 3
+  resurfaces/wk · **no** hands-off auto-agent; Scale = all of those **unlimited** +
+  auto-agent + 5 resurfaces/wk. `entitlementsFor` maps `paid→GROWTH`,
+  `scale`/`founding`/`trialing`→`SCALE` (the trial is the full Scale experience);
+  paywall-off dev stays uncapped. Caps are enforced in the **shared domain layer**
+  so web + Telegram inherit them: `schedulePost` (new `monthlyScheduledCount`),
+  `buyer/scan.ts`, `automations/run.ts` + `saveAutomationFromWeb` (AUTO mode is
+  Scale-only), `jobs/viral-benchmark.ts`. Also **closed the web paywall gap**: a
+  new `lib/entitlements.requirePaid` gates the chat / buyer-scan / automations /
+  schedule routes (402 upgrade_required, 429 cap_reached) — previously free/expired
+  web users could spend real twitterapi.io + LLM budget. UI: `<UpgradeCTA>` on
+  402/429, the AUTO option disabled for Growth, and used/cap shown on Scheduled +
+  Buyer Radar (∞ for Scale). No migration (plan values already allowed). NOTE:
+  "consistency on every post" (auto) advertised for Scale is a *separate* feature,
+  not built here — manual `/check` stays on both paid tiers. See INTERNAL §3i.
+
 - **2026-07-24 — Growth: a gamified board that fuses Diagnosis + Plan.** New sidebar
   page `/app/growth` (top of "Grow") that combines the two previously-unlinked
   strategist surfaces into one board built to actually pull a user back to post,

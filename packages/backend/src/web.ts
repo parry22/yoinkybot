@@ -27,11 +27,16 @@ export {
   setIntendedPlan,
   entitlementsFor,
   isPaidOrExempt,
+  withinCap,
+  remainingFor,
   type TrialInfo,
   type BillingOverview,
+  type Entitlements,
   type Plan,
 } from "./billing/entitlements.js";
 export { createCheckout, createCustomerPortal } from "./billing/dodo.js";
+// Read model for the Settings/Scheduled cap display.
+export { scheduledStatus, type ScheduledStatus } from "./scheduling/service.js";
 
 // "Sign in with X" / "Connect X" finalizer + status (web runs the OAuth itself)
 export { finalizeXConnect, getXConnectStatus, type XConnectStatus } from "./web/x-signin.js";
@@ -56,6 +61,7 @@ export {
 export {
   listTrendInspiration,
   listViralInspiration,
+  refreshInspirationForWeb,
   type TrendInspiration,
   type ViralInspiration,
 } from "./web/inspiration.js";

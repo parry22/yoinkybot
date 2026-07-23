@@ -49,6 +49,8 @@ Entry point: `src/index.ts` (Fastify + bot bootstrap, migrations on boot).
 
 ## 2. LLM gateway — one model, one path
 
+> **2026-07-24: the one model is now `x-ai/grok-4.5`** (was `z-ai/glm-5.2`) — set via `MODEL_CHAT` env on both deploys and as the config default. Chosen for native X/cultural awareness (drafts, trend takes, buyer outreach). The GLM-era JSON recovery ladder, provider-ignore list, and reasoning-field fallback in `llm/gateway.ts` are model-agnostic and stay.
+
 **Every model call routes through `src/llm/gateway.ts`. No module calls a provider
 directly.** As of 2026-07-10 this is deliberately simple:
 
@@ -997,6 +999,21 @@ update card) so we never mint a duplicate subscription. `<TrialPill>` reads from
 `trialInfo`; a card-on-file (active) subscription shows no pill. Gating bites only when
 `PAYWALL_ENABLED=true`; landing `?plan=` is recorded on `subscriptions.intended_plan`
 (`setIntendedPlan`). See §3b's paywall + `entitlementsFor`.
+
+**Plan tiers are real (Growth vs Scale), enforced on both surfaces.** `Entitlements`
+carries numeric caps (`null` = unlimited) + `autoAgent`; `entitlementsForPlan()` (pure,
+unit-tested) maps `paid→GROWTH` (30 scheduled/mo · 25 buyer intents/mo · 1 viral/day ·
+3 resurfaces/wk · no auto-agent), `scale`/`founding`/`trialing`→`SCALE` (all unlimited +
+auto-agent + 5 resurfaces/wk). Caps live in the **shared domain layer** so web +
+Telegram inherit one gate: `schedulePost` (`monthlyScheduledCount`, returns
+`capReached`), `buyer/scan.ts`, `automations/run.ts` + `saveAutomationFromWeb` (AUTO is
+Scale-only), `jobs/viral-benchmark.ts`; `withinCap`/`remainingFor` handle the `null`
+case everywhere. The **web paywall gap is closed**: `lib/entitlements.requirePaid`
+(mirrors Telegram `isPaidOrExempt`) guards the chat / buyer-scan / automations /
+schedule routes → **402** `upgrade_required` (free/expired) or **429** `cap_reached`
+(plan limit); `<UpgradeCTA>` links to `/api/billing/checkout?plan=scale`. Not built:
+"consistency on every post" (auto) — a separate Scale feature; manual `/check` stays on
+both paid tiers.
 
 **Env.** The web runs backend code in-process, so it needs the backend's env
 (`DATABASE_URL`, `OPENROUTER_API_KEY`, embeddings keys, …). `packages/web/.env.local`

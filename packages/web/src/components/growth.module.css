@@ -97,11 +97,6 @@
   transition: width 500ms ease;
 }
 
-.xpMeta {
-  font-size: 11.5px;
-  color: var(--ink-500);
-  margin-top: 6px;
-}
 
 /* score */
 .scoreRow {
@@ -301,32 +296,7 @@
   flex: 0 0 auto;
 }
 
-.kindTag {
-  font-size: 10.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding: 2px 8px;
-  border-radius: 999px;
-  border: 0.5px solid var(--stroke);
-  color: var(--ink-500);
-}
 
-.kind_setup {
-  color: #8a6dd6;
-  border-color: color-mix(in srgb, #8a6dd6 40%, transparent);
-}
-.kind_habit {
-  color: #d97a2b;
-  border-color: color-mix(in srgb, #d97a2b 40%, transparent);
-}
-.kind_idea {
-  color: var(--accent);
-  border-color: var(--accent-border);
-}
-.kind_reach {
-  color: #2ba36e;
-  border-color: color-mix(in srgb, #2ba36e 40%, transparent);
-}
 
 .xpChip {
   font-size: 12px;
@@ -406,9 +376,6 @@
   gap: 8px;
 }
 
-.msIcon {
-  font-size: 16px;
-}
 
 .msLabel {
   font-size: 12.5px;
@@ -473,11 +440,6 @@
   color: var(--ink-900);
 }
 
-.idGrid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
 
 .idColLabel {
   font-size: 12.5px;
@@ -546,7 +508,4 @@
     flex-wrap: wrap;
     justify-content: flex-end;
   }
-  .idGrid {
-    grid-template-columns: 1fr;
   }
-}

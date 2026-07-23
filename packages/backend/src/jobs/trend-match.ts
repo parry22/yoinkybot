@@ -86,14 +86,20 @@ export interface TrendCandidate {
  * single position gate → angle offer).
  */
 export async function handleTrendMatch(): Promise<void> {
-  const users = await query<{ id: string; settings: UserSettings }>(
-    `SELECT id, settings FROM users WHERE telegram_id IS NOT NULL`,
+  // Telegram users get the DM delivery; web-only users (connected X, no
+  // Telegram) get the same surfacings in seed mode (channel 'web', no DM) so the
+  // web Inspiration feed fills and stays fresh for them too — it used to only
+  // ever populate for Telegram-linked accounts.
+  const users = await query<{ id: string; settings: UserSettings; has_tg: boolean }>(
+    `SELECT id, settings, telegram_id IS NOT NULL AS has_tg FROM users
+     WHERE telegram_id IS NOT NULL
+        OR EXISTS (SELECT 1 FROM connected_accounts ca WHERE ca.user_id = users.id AND ca.platform = 'x')`,
   );
   for (const u of users) {
     try {
       const ent = await entitlementsFor(u.id);
       if (!ent.macroMatching) continue;
-      await trendMatchForUser(u.id, u.settings ?? {});
+      await trendMatchForUser(u.id, u.settings ?? {}, { seed: !u.has_tg });
     } catch (err) {
       console.error(`trend match failed for ${u.id}`, err);
     }

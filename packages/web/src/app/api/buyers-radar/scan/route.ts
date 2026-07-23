@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/session";
+import { requirePaid } from "@/lib/entitlements";
 import { scanBuyerSignals } from "@yoink/backend/web";
 
 export const runtime = "nodejs";
@@ -10,6 +11,10 @@ export const maxDuration = 300;
 export async function POST() {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  // Paid-only — a scan spends real twitterapi.io + LLM budget. The per-plan
+  // monthly cap (Growth 25 / Scale ∞) is enforced inside scanBuyerSignals.
+  if (!(await requirePaid(user)))
+    return NextResponse.json({ error: "upgrade_required" }, { status: 402 });
   try {
     const res = await scanBuyerSignals(user.id);
     return NextResponse.json(res);

@@ -59,14 +59,18 @@ export async function handleViralBenchmark(): Promise<void> {
   const pool = await fetchViralPool(themes);
   if (pool.length === 0) return;
 
-  const users = await query<{ id: string; settings: UserSettings }>(
-    `SELECT id, settings FROM users WHERE telegram_id IS NOT NULL`,
+  // Web-only users (connected X, no Telegram) get the same case studies in seed
+  // mode (channel 'web', no DM) so their Inspiration feed fills too.
+  const users = await query<{ id: string; settings: UserSettings; has_tg: boolean }>(
+    `SELECT id, settings, telegram_id IS NOT NULL AS has_tg FROM users
+     WHERE telegram_id IS NOT NULL
+        OR EXISTS (SELECT 1 FROM connected_accounts ca WHERE ca.user_id = users.id AND ca.platform = 'x')`,
   );
   for (const u of users) {
     try {
       const ent = await entitlementsFor(u.id);
       if (!ent.macroMatching) continue;
-      await viralBenchmarkForUser(u.id, pool, u.settings ?? {});
+      await viralBenchmarkForUser(u.id, pool, u.settings ?? {}, { viralPerDay: ent.viralPerDay, seed: !u.has_tg });
     } catch (err) {
       console.error(`viral benchmark failed for ${u.id}`, err);
     }
@@ -77,22 +81,25 @@ export async function viralBenchmarkForUser(
   userId: string,
   pool: XTweet[],
   settings: UserSettings = {},
-  opts: { skipGates?: boolean; seed?: boolean } = {},
+  opts: { skipGates?: boolean; seed?: boolean; viralPerDay?: number | null } = {},
 ): Promise<boolean> {
   // seed mode: web-only pre-population (no Telegram). Persist the surfacing with
   // channel 'web' and skip the send-and-delete tail so a Telegram-less web user
   // gets inspiration to look at right after connecting.
   const seed = opts.seed === true;
   if (!opts.skipGates && !seed) {
-    // Own once-a-day budget — NOT the shared proactive cadence cap. This is a
-    // different kind of value (an external reference example), so it gets its
-    // own slot rather than competing with resurfacing/trend_take.
-    const today = await queryOne<{ n: string }>(
-      `SELECT count(*)::text AS n FROM viral_benchmarks
-       WHERE user_id = $1 AND sent_at > date_trunc('day', now())`,
-      [userId],
-    );
-    if (Number(today?.n ?? 0) > 0) return false;
+    // Per-plan daily budget (Growth = 1/day, Scale = unlimited) — NOT the shared
+    // proactive cadence cap. A different kind of value (an external reference
+    // example), so it gets its own slot rather than competing with resurfacing.
+    const cap = opts.viralPerDay !== undefined ? opts.viralPerDay : (await entitlementsFor(userId)).viralPerDay;
+    if (cap !== null) {
+      const today = await queryOne<{ n: string }>(
+        `SELECT count(*)::text AS n FROM viral_benchmarks
+         WHERE user_id = $1 AND sent_at > date_trunc('day', now())`,
+        [userId],
+      );
+      if (Number(today?.n ?? 0) >= cap) return false;
+    }
     if (inQuietHours(settings)) return false;
   }
 

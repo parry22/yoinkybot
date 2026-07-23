@@ -21,7 +21,14 @@ const MONTHS = [
 
 const dayKey = (d: Date): string => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 
-export function ScheduledCalendar({ posts: initial }: { posts: Post[] }) {
+export function ScheduledCalendar({
+  posts: initial,
+  usage,
+}: {
+  posts: Post[];
+  /** This month's scheduling usage — cap null = unlimited (Scale). */
+  usage: { used: number; cap: number | null };
+}) {
   const [posts, setPosts] = useState<Post[]>(initial);
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -71,7 +78,11 @@ export function ScheduledCalendar({ posts: initial }: { posts: Post[] }) {
         <div className={panel.head}>
           <div>
             <div className={panel.title}>Scheduled</div>
-            <div className={panel.subtitle}>Your posting calendar. Tap any day to queue a post.</div>
+            <div className={panel.subtitle}>
+              Your posting calendar. Tap any day to queue a post.
+              {" · "}
+              {usage.cap === null ? "Unlimited this month" : `${usage.used}/${usage.cap} this month`}
+            </div>
           </div>
         </div>
 
@@ -189,6 +200,14 @@ function AddPostModal({
         body: JSON.stringify({ content: text, scheduledFor: when.toISOString() }),
       });
       const data = await res.json();
+      if (res.status === 402) {
+        setErr("Scheduling is a paid feature — upgrade to continue.");
+        return;
+      }
+      if (res.status === 429) {
+        setErr(data.reason ?? "You've hit this month's scheduling limit — upgrade to Scale for unlimited.");
+        return;
+      }
       if (!res.ok) {
         setErr(data.error ?? "could not schedule");
         return;
