@@ -4,8 +4,10 @@ const schema = z.object({
   DATABASE_URL: z.string().default("postgres://localhost:5432/yoink"),
   PORT: z.coerce.number().default(3001),
   PUBLIC_URL: z.string().default("http://localhost:3001"),
-  // Where Dodo sends users after checkout — no web app, so default to the bot.
-  CHECKOUT_RETURN_URL: z.string().default("https://t.me"),
+  // Where Dodo sends users after checkout. Web-first: default to the app's
+  // Settings (Plan & billing), where the subscription state now lives. Override
+  // per deployment if needed.
+  CHECKOUT_RETURN_URL: z.string().default("https://app.meetyoinky.com/app/settings"),
   // The web app's own origin (packages/web) — a trusted allowlist for the
   // OAuth connect flow's optional `redirect` param (routes/oauth.ts), so a web
   // user lands back in Settings instead of the Telegram-flavored static page.

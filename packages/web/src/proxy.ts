@@ -1,12 +1,17 @@
+import { NextResponse } from "next/server";
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
 // Everything under /app requires a signed-in Clerk session. Unauthenticated
-// visitors are redirected to the sign-in page (NEXT_PUBLIC_CLERK_SIGN_IN_URL).
-// Presence-only replaced the old cookie sniff — Clerk validates the real session.
+// visitors are redirected to our branded /sign-in explicitly (rather than relying
+// on NEXT_PUBLIC_CLERK_SIGN_IN_URL / Clerk's hosted portal), so the redirect is
+// deterministic with no extra env config. Clerk still validates the real session.
 const isProtected = createRouteMatcher(["/app(.*)"]);
 
 export default clerkMiddleware(async (auth, req) => {
-  if (isProtected(req)) await auth.protect();
+  if (isProtected(req)) {
+    const { userId } = await auth();
+    if (!userId) return NextResponse.redirect(new URL("/sign-in", req.url));
+  }
 });
 
 export const config = {
