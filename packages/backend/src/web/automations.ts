@@ -6,7 +6,7 @@
  */
 import { config } from "../config.js";
 import { query } from "../db/pool.js";
-import { assertClean } from "../moderation/filter.js";
+import { assertClean, ModerationError } from "../moderation/filter.js";
 import {
   listAutomations,
   getAutomation,
@@ -29,6 +29,7 @@ export interface AutomationView {
   monthlyCap: number;
   respectQuietHours: boolean;
   pillarScope: string[] | null;
+  brief: string | null;
   enabled: boolean;
   pendingApprovals: number;
   lastRunAt: string | null;
@@ -62,6 +63,7 @@ function toView(a: Automation, pending = 0): AutomationView {
     monthlyCap: a.monthly_cap,
     respectQuietHours: a.respect_quiet_hours,
     pillarScope: a.pillar_scope,
+    brief: a.brief ?? null,
     enabled: a.enabled,
     pendingApprovals: pending,
     lastRunAt: a.last_run_at,
@@ -86,9 +88,10 @@ export async function getAutomationForWeb(userId: string, id: string): Promise<A
 /** The web form posts raw JSON; sanitize reads each field defensively. */
 export type AutomationFormInput = Record<string, unknown>;
 
-const SOURCE_TYPES: SourceType[] = ["trend_ride", "unlock_backlog"];
+const SOURCE_TYPES: SourceType[] = ["trend_ride", "unlock_backlog", "custom"];
 const DELIVERY_MODES: DeliveryMode[] = ["approval", "auto"];
 const CADENCE_KINDS: CadenceKind[] = ["daily", "weekly", "manual"];
+const BRIEF_MAX = 1000;
 
 function sanitize(input: AutomationFormInput): AutomationInput {
   const name = typeof input.name === "string" ? input.name.trim() : "";
@@ -99,8 +102,14 @@ function sanitize(input: AutomationFormInput): AutomationInput {
   const pillarScope = Array.isArray(input.pillarScope)
     ? input.pillarScope.map((s) => String(s)).filter(Boolean)
     : null;
+  const brief = typeof input.brief === "string" ? input.brief.trim().slice(0, BRIEF_MAX) : "";
+  if (brief) assertClean(brief); // the free-text brief goes through the same gate
+  // A 'custom' automation is defined entirely by its brief — reject an empty one.
+  if (sourceType === "custom" && !brief) {
+    throw new ModerationError("Describe what this automation should do.");
+  }
   return {
-    name: name || "Untitled automation",
+    name: name || (brief ? brief.slice(0, 60) : "Untitled automation"),
     source_type: sourceType,
     delivery_mode: deliveryMode,
     cadence_kind: cadenceKind,
@@ -108,6 +117,7 @@ function sanitize(input: AutomationFormInput): AutomationInput {
     monthly_cap: typeof input.monthlyCap === "number" ? input.monthlyCap : config.AUTOMATION_DEFAULT_MONTHLY_CAP,
     respect_quiet_hours: input.respectQuietHours !== false,
     pillar_scope: pillarScope,
+    brief: brief || null,
   };
 }
 

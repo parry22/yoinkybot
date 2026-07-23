@@ -8,9 +8,9 @@ export const maxDuration = 60;
 
 /**
  * Start a Dodo checkout for the signed-in user and redirect to the hosted
- * checkout page. Reached from the trial banner's "Upgrade" link. `plan` mirrors
- * the landing plans — anything that isn't the founding cohort maps to the paid
- * product (the only two subscription products Dodo has configured today).
+ * checkout page. Reached from the trial pill's "Upgrade" link and Settings.
+ * `plan` mirrors the landing plans — founding, scale, or (default) the paid
+ * Growth product.
  */
 export async function GET(req: Request) {
   const origin = new URL(req.url).origin;
@@ -18,7 +18,8 @@ export async function GET(req: Request) {
   if (!user) return NextResponse.redirect(new URL("/sign-in", origin));
 
   const planParam = new URL(req.url).searchParams.get("plan");
-  const plan: "paid" | "founding" = planParam === "founding" ? "founding" : "paid";
+  const plan: "paid" | "scale" | "founding" =
+    planParam === "founding" ? "founding" : planParam === "scale" ? "scale" : "paid";
 
   try {
     const { url } = await createCheckout(user.id, user.email, plan);

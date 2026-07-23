@@ -2,20 +2,23 @@
 
 import { useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Add01Icon } from "@hugeicons/core-free-icons";
+import { Add01Icon, AiMagicIcon, FireIcon, ArchiveIcon } from "@hugeicons/core-free-icons";
 import panel from "./panel.module.css";
 import styles from "./automations.module.css";
+
+type SourceType = "trend_ride" | "unlock_backlog" | "custom";
 
 interface AutomationView {
   id: string;
   name: string;
-  sourceType: "trend_ride" | "unlock_backlog";
+  sourceType: SourceType;
   deliveryMode: "approval" | "auto";
   cadenceKind: "daily" | "weekly" | "manual";
   cadenceMeta: Record<string, unknown>;
   monthlyCap: number;
   respectQuietHours: boolean;
   pillarScope: string[] | null;
+  brief: string | null;
   enabled: boolean;
   pendingApprovals: number;
   lastRunAt: string | null;
@@ -28,9 +31,10 @@ interface ApprovalView {
   createdAt: string;
 }
 
-const SOURCE_LABEL: Record<AutomationView["sourceType"], string> = {
+const SOURCE_LABEL: Record<SourceType, string> = {
   trend_ride: "Rides trends in your niche",
   unlock_backlog: "Posts from your backlog",
+  custom: "Your own brief",
 };
 const DELIVERY_LABEL: Record<AutomationView["deliveryMode"], string> = {
   approval: "Asks you first",
@@ -42,22 +46,41 @@ const CADENCE_LABEL: Record<AutomationView["cadenceKind"], string> = {
   manual: "Manual",
 };
 
+// The three ways to start an agent. Custom is the free-form, govork-style path
+// and is the default; the two presets are deterministic sources that can still
+// take the brief as extra guidance.
+const MODES: { type: SourceType; icon: typeof AiMagicIcon; title: string; blurb: string }[] = [
+  { type: "custom", icon: AiMagicIcon, title: "Describe it myself", blurb: "Free-form. Say exactly what to post, in your words." },
+  { type: "trend_ride", icon: FireIcon, title: "Ride trends", blurb: "Yoinky watches your niche and rides what's moving." },
+  { type: "unlock_backlog", icon: ArchiveIcon, title: "From my backlog", blurb: "Works through the ideas already in your plan." },
+];
+
+// Quick prompts that drop a starting sentence into the brief.
+const EXAMPLES = [
+  "Turn the biggest story in my niche into a punchy take in my voice.",
+  "Share one lesson from what I shipped this week.",
+  "Take a spicy opinion I'd stand behind and make it a short thread.",
+  "Reframe a customer question I keep getting as a helpful post.",
+];
+
 interface FormState {
   id: string;
   name: string;
-  sourceType: AutomationView["sourceType"];
+  sourceType: SourceType;
   deliveryMode: AutomationView["deliveryMode"];
   cadenceKind: AutomationView["cadenceKind"];
   monthlyCap: number;
+  brief: string;
 }
 
 const BLANK: FormState = {
   id: "",
   name: "",
-  sourceType: "trend_ride",
+  sourceType: "custom",
   deliveryMode: "approval",
   cadenceKind: "daily",
   monthlyCap: 30,
+  brief: "",
 };
 
 export function Automations({
@@ -69,7 +92,7 @@ export function Automations({
 }) {
   const [automations, setAutomations] = useState(initialAutomations);
   const [approvals, setApprovals] = useState(initialApprovals);
-  const [editing, setEditing] = useState<null | typeof BLANK>(null);
+  const [editing, setEditing] = useState<null | FormState>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   function flash(msg: string) {
@@ -118,6 +141,7 @@ export function Automations({
       deliveryMode: a.deliveryMode,
       cadenceKind: a.cadenceKind,
       monthlyCap: a.monthlyCap,
+      brief: a.brief ?? "",
     });
   }
 
@@ -126,12 +150,12 @@ export function Automations({
       <div className={panel.inner}>
         <div className={panel.head}>
           <div>
-            <div className={panel.title}>Automations</div>
-            <div className={panel.subtitle}>Set one up once and Yoinky runs it. You stay in control.</div>
+            <div className={panel.title}>Auto Agent</div>
+            <div className={panel.subtitle}>Describe an agent once and Yoinky runs it. You stay in control.</div>
           </div>
           <button className="btnPrimary" onClick={() => setEditing({ ...BLANK })}>
             <HugeiconsIcon icon={Add01Icon} size={16} strokeWidth={2} />
-            New automation
+            New agent
           </button>
         </div>
 
@@ -156,7 +180,7 @@ export function Automations({
         <section className={styles.section}>
           {automations.length === 0 ? (
             <div className={styles.empty}>
-              No automations yet. Create one and Yoinky will draft posts for you, on your cadence, in your voice.
+              No agents yet. Describe one in your own words and Yoinky will draft posts for you, on your cadence, in your voice.
             </div>
           ) : (
             automations.map((a) => (
@@ -284,18 +308,23 @@ function ConfigModal({
   onClose,
   onSaved,
 }: {
-  initial: typeof BLANK;
+  initial: FormState;
   onClose: () => void;
   onSaved: (view: AutomationView) => void;
 }) {
   const [form, setForm] = useState(initial);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const set = <K extends keyof typeof BLANK>(k: K, v: (typeof BLANK)[K]) => setForm((f) => ({ ...f, [k]: v }));
+  const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setForm((f) => ({ ...f, [k]: v }));
+  const isCustom = form.sourceType === "custom";
+
+  function appendExample(text: string) {
+    setForm((f) => ({ ...f, brief: f.brief.trim() ? `${f.brief.trim()} ${text}` : text }));
+  }
 
   async function save() {
-    if (!form.name.trim()) {
-      setErr("give it a name");
+    if (isCustom && !form.brief.trim()) {
+      setErr("Tell the agent what to do — describe it in the box above.");
       return;
     }
     setSaving(true);
@@ -321,59 +350,107 @@ function ConfigModal({
 
   return (
     <div className={styles.overlay} onClick={onClose}>
-      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-        <div className={styles.modalTitle}>{form.id ? "Edit automation" : "New automation"}</div>
+      <div className={`${styles.modal} ${styles.modalWide}`} onClick={(e) => e.stopPropagation()}>
+        <div className={styles.modalTitle}>{form.id ? "Edit agent" : "New Auto Agent"}</div>
+
+        {/* Conversational lead-in — the brief is the hero, options support it. */}
+        <div className={styles.assistantRow}>
+          <span className={styles.assistantAvatar}>
+            <HugeiconsIcon icon={AiMagicIcon} size={16} strokeWidth={1.8} />
+          </span>
+          <div className={styles.assistantBubble}>
+            Tell me what this agent should do — in your own words. Or pick a starting point.
+          </div>
+        </div>
+
+        <div className={styles.modeGrid}>
+          {MODES.map((m) => {
+            const active = form.sourceType === m.type;
+            return (
+              <button
+                key={m.type}
+                type="button"
+                className={`${styles.modeCard} ${active ? styles.modeCardActive : ""}`}
+                onClick={() => set("sourceType", m.type)}
+              >
+                <span className={styles.modeIcon}>
+                  <HugeiconsIcon icon={m.icon} size={16} strokeWidth={1.8} />
+                </span>
+                <span className={styles.modeTitle}>{m.title}</span>
+                <span className={styles.modeBlurb}>{m.blurb}</span>
+              </button>
+            );
+          })}
+        </div>
 
         <label className={styles.field}>
-          <span className={styles.label}>Name</span>
+          <span className={styles.label}>{isCustom ? "What should it do?" : "Extra guidance (optional)"}</span>
+          <textarea
+            className={styles.briefArea}
+            value={form.brief}
+            onChange={(e) => set("brief", e.target.value)}
+            rows={isCustom ? 4 : 2}
+            maxLength={1000}
+            autoFocus
+            placeholder={
+              isCustom
+                ? "e.g. Every morning, turn the most interesting AI-infra story into a punchy take in my voice, and tie it back to what we're building at Acme."
+                : "Anything to steer it — angle, hook, topics to favor or avoid…"
+            }
+          />
+          {isCustom && (
+            <div className={styles.exampleChips}>
+              {EXAMPLES.map((ex) => (
+                <button key={ex} type="button" className={styles.exampleChip} onClick={() => appendExample(ex)}>
+                  {ex.length > 42 ? ex.slice(0, 42) + "…" : ex}
+                </button>
+              ))}
+            </div>
+          )}
+        </label>
+
+        <div className={styles.optionsRow}>
+          <label className={styles.optionCol}>
+            <span className={styles.label}>How it delivers</span>
+            <select className={styles.input} value={form.deliveryMode} onChange={(e) => set("deliveryMode", e.target.value as FormState["deliveryMode"])}>
+              <option value="approval">Ask me first</option>
+              <option value="auto">Post on its own</option>
+            </select>
+          </label>
+          <label className={styles.optionCol}>
+            <span className={styles.label}>How often</span>
+            <select className={styles.input} value={form.cadenceKind} onChange={(e) => set("cadenceKind", e.target.value as FormState["cadenceKind"])}>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="manual">When I run it</option>
+            </select>
+          </label>
+          <label className={styles.optionCol}>
+            <span className={styles.label}>Cap / month</span>
+            <input
+              className={styles.input}
+              type="number"
+              min={1}
+              max={200}
+              value={form.monthlyCap}
+              onChange={(e) => set("monthlyCap", Number(e.target.value) || 30)}
+            />
+          </label>
+        </div>
+
+        {form.deliveryMode === "auto" && (
+          <span className={styles.hint}>
+            The first few still come to you first, and every post lands in your queue where you can cancel it before it goes out.
+          </span>
+        )}
+
+        <label className={styles.field}>
+          <span className={styles.label}>Name (optional)</span>
           <input
             className={styles.input}
             value={form.name}
             onChange={(e) => set("name", e.target.value)}
-            placeholder="e.g. AI trends to X"
-            autoFocus
-          />
-        </label>
-
-        <label className={styles.field}>
-          <span className={styles.label}>What it posts</span>
-          <select className={styles.input} value={form.sourceType} onChange={(e) => set("sourceType", e.target.value as typeof BLANK.sourceType)}>
-            <option value="trend_ride">Rides trends in your niche</option>
-            <option value="unlock_backlog">Posts from your backlog</option>
-          </select>
-        </label>
-
-        <label className={styles.field}>
-          <span className={styles.label}>How it delivers</span>
-          <select className={styles.input} value={form.deliveryMode} onChange={(e) => set("deliveryMode", e.target.value as typeof BLANK.deliveryMode)}>
-            <option value="approval">Ask me first (I approve each post)</option>
-            <option value="auto">Post on its own</option>
-          </select>
-          {form.deliveryMode === "auto" && (
-            <span className={styles.hint}>
-              The first few still come to you first, and every post lands in your queue where you can cancel it before it goes out.
-            </span>
-          )}
-        </label>
-
-        <label className={styles.field}>
-          <span className={styles.label}>How often</span>
-          <select className={styles.input} value={form.cadenceKind} onChange={(e) => set("cadenceKind", e.target.value as typeof BLANK.cadenceKind)}>
-            <option value="daily">Daily</option>
-            <option value="weekly">Weekly</option>
-            <option value="manual">Only when I run it</option>
-          </select>
-        </label>
-
-        <label className={styles.field}>
-          <span className={styles.label}>Max posts per month</span>
-          <input
-            className={styles.input}
-            type="number"
-            min={1}
-            max={200}
-            value={form.monthlyCap}
-            onChange={(e) => set("monthlyCap", Number(e.target.value) || 30)}
+            placeholder="We'll name it from your brief if you leave this blank"
           />
         </label>
 
@@ -383,7 +460,7 @@ function ConfigModal({
             Cancel
           </button>
           <button className="btnPrimary" onClick={save} disabled={saving}>
-            {saving ? "Saving…" : "Save"}
+            {saving ? "Saving…" : "Save agent"}
           </button>
         </div>
       </div>

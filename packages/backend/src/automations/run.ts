@@ -76,7 +76,12 @@ export async function runAutomationOnce(automation: Automation, opts: { manual?:
   }
 
   // Compose via the existing draft path (feed voice, metered, voice+pillars+reach).
-  const seed = automation.pillar_scope?.length ? `${item.seed}\n\nStay within: ${automation.pillar_scope.join(", ")}.` : item.seed;
+  let seed = automation.pillar_scope?.length ? `${item.seed}\n\nStay within: ${automation.pillar_scope.join(", ")}.` : item.seed;
+  // The brief is the seed itself for a 'custom' automation; for the preset
+  // sources it layers on as the user's own extra guidance.
+  if (automation.source_type !== "custom" && automation.brief?.trim()) {
+    seed = `${seed}\n\nExtra guidance from me: ${automation.brief.trim()}`;
+  }
   const draft = await generateDraft(userId, seed, automation.platform);
   if (!draft.ok) {
     const run = await createRun(automation.id, userId, "skipped", {

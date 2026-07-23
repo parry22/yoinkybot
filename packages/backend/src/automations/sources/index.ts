@@ -8,8 +8,10 @@ import type { SourceType } from "../types.js";
 import type { SourceSelector, CostProfile } from "./types.js";
 import { selectTrendRide } from "./trend-ride.js";
 import { selectUnlockBacklog } from "./unlock-backlog.js";
+import { selectCustom } from "./custom.js";
 
 export const SOURCES: Record<SourceType, { select: SourceSelector; costProfile: CostProfile }> = {
   trend_ride: { select: selectTrendRide, costProfile: "shared_pool" },
   unlock_backlog: { select: selectUnlockBacklog, costProfile: "free_local" },
+  custom: { select: selectCustom, costProfile: "free_local" },
 };

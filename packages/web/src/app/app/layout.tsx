@@ -3,7 +3,6 @@ import { getSessionUser } from "@/lib/session";
 import { config, getXConnectStatus, trialInfo } from "@yoink/backend/web";
 import { Sidebar } from "@/components/sidebar";
 import { TopBar } from "@/components/topbar";
-import { TrialBanner } from "@/components/trial-banner";
 import { ConnectXGate } from "@/components/connect-x-gate";
 import styles from "./shell.module.css";
 
@@ -25,8 +24,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <div className={styles.platform}>
         <Sidebar user={{ email, initials }} />
         <main className={styles.workspace}>
-          <TopBar telegramUrl={config.TELEGRAM_BOT_URL} />
-          {trial && <TrialBanner trial={trial} />}
+          <TopBar telegramUrl={config.TELEGRAM_BOT_URL} trial={trial} />
           <div className={styles.content}>{children}</div>
         </main>
       </div>

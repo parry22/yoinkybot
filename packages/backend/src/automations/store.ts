@@ -29,14 +29,15 @@ export interface AutomationInput {
   respect_quiet_hours?: boolean;
   monthly_cap?: number;
   pillar_scope?: string[] | null;
+  brief?: string | null;
 }
 
 export async function createAutomation(userId: string, input: AutomationInput, defaultMonthlyCap: number): Promise<Automation> {
   const row = await queryOne<Automation>(
     `INSERT INTO automations
        (user_id, profile_id, name, source_type, delivery_mode, cadence_kind, cadence_meta,
-        respect_quiet_hours, monthly_cap, pillar_scope)
-     VALUES ($1,$1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+        respect_quiet_hours, monthly_cap, pillar_scope, brief)
+     VALUES ($1,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
     [
       userId,
       input.name,
@@ -47,6 +48,7 @@ export async function createAutomation(userId: string, input: AutomationInput, d
       input.respect_quiet_hours ?? true,
       input.monthly_cap ?? defaultMonthlyCap,
       input.pillar_scope ? JSON.stringify(input.pillar_scope) : null,
+      input.brief?.trim() || null,
     ],
   );
   return row!;
@@ -56,7 +58,7 @@ export async function updateAutomation(id: string, userId: string, input: Automa
   return (
     (await queryOne<Automation>(
       `UPDATE automations SET name=$3, source_type=$4, delivery_mode=$5, cadence_kind=$6,
-         cadence_meta=$7, respect_quiet_hours=$8, monthly_cap=$9, pillar_scope=$10, updated_at=now()
+         cadence_meta=$7, respect_quiet_hours=$8, monthly_cap=$9, pillar_scope=$10, brief=$11, updated_at=now()
        WHERE id=$1 AND user_id=$2 RETURNING *`,
       [
         id,
@@ -69,6 +71,7 @@ export async function updateAutomation(id: string, userId: string, input: Automa
         input.respect_quiet_hours ?? true,
         input.monthly_cap ?? 30,
         input.pillar_scope ? JSON.stringify(input.pillar_scope) : null,
+        input.brief?.trim() || null,
       ],
     )) ?? null
   );

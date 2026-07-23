@@ -5,25 +5,27 @@ import { usePathname } from "next/navigation";
 import { SignOutButton } from "@clerk/nextjs";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  SparklesIcon,
+  BotIcon,
   QuillWrite02Icon,
   Calendar03Icon,
   FireIcon,
   RadarIcon,
   Analytics01Icon,
+  Target01Icon,
   Settings05Icon,
   Logout01Icon,
 } from "@hugeicons/core-free-icons";
 import styles from "./sidebar.module.css";
 
-type NavItem = { href: string; label: string; icon: typeof SparklesIcon };
+type NavItem = { href: string; label: string; icon: typeof BotIcon };
 
 const AGENT_NAV: NavItem[] = [
   { href: "/app/compose", label: "Compose", icon: QuillWrite02Icon },
-  { href: "/app/automations", label: "Automations", icon: SparklesIcon },
+  { href: "/app/automations", label: "Auto Agent", icon: BotIcon },
 ];
 
 const GROW_NAV: NavItem[] = [
+  { href: "/app/growth", label: "Growth", icon: Target01Icon },
   { href: "/app/inspiration", label: "Inspiration", icon: FireIcon },
   { href: "/app/buyers-radar", label: "Buyers Radar", icon: RadarIcon },
   { href: "/app/analytics", label: "Analytics", icon: Analytics01Icon },

@@ -24,6 +24,43 @@ which is where it's most useful. Both share one Postgres and one `users` row.
 
 <!-- Keep newest-first. Update this whenever a change ships that a reader of the repo should know about. -->
 
+- **2026-07-24 — Growth: a gamified board that fuses Diagnosis + Plan.** New sidebar
+  page `/app/growth` (top of "Grow") that combines the two previously-unlinked
+  strategist surfaces into one board built to actually pull a user back to post,
+  using behavioural-economics levers grounded entirely in **real stored data (no fake
+  XP)**: an **XP/level** ladder (Ghost→Landmark) and a **Brand Score /100** (Foundation
+  · Consistency · Depth · Momentum) for goal-gradient pull; a **weekly posting streak**
+  (with a grace week so it never scare-drops) for loss aversion; an ordered **quest**
+  list (setup → habit → your actual plan-backlog ideas, each with XP + a deep-link CTA)
+  for the Zeigarnik effect; **milestones** (followers / posts / streak / ideas) with
+  auto-nearest thresholds; and a locked **identity** panel (headline, throughline,
+  owned positions, "unsaid" territory) that unlocks once the diagnosis exists. Pure
+  read model `web/growth.ts#getGrowthState` (one Promise.all over captures / unlock_items
+  / automation_runs / scheduled_posts) → `components/growth.tsx`. No new tables/migration.
+  See INTERNAL §3m.
+
+- **2026-07-24 — Auto Agent free-form briefs, subtler trial pill, Scale plan, richer
+  analytics.** Five UI/product changes across `packages/web` (+ small backend):
+  (1) **Trial notice moved into the top nav bar** as a subtle `<TrialPill>` ("N days
+  left · Add card"), replacing the full-width `<TrialBanner>` strip. (2) **Sidebar
+  "Automations" → "Auto Agent"** with a bot icon. (3) **Free-form automation briefs
+  (govork-style).** The New-agent modal is now brief-first and chat-styled: a big
+  free-text box where you describe the agent in your own words (a new `custom` source
+  whose brief IS the drafting seed), plus mode cards for the two presets (trend-ride /
+  backlog) and example-prompt chips; a brief on a preset layers on as extra guidance.
+  Backend: migration `0026` (widens `source_type` to `custom`, adds `automations.brief`),
+  `sources/custom.ts`, brief moderated on save. (4) **Scale plan is now first-class.**
+  Settings → Plan & billing shows a Growth-vs-Scale `<PlanPicker>` with an explicit path
+  onto Scale; `DODO_PRODUCT_SCALE` (`pdt_0NjfwWTz5IVGf2I07R6Vd`) is a distinct product,
+  `?plan=scale` maps to it, migration `0027` widens `subscriptions.plan` to allow
+  `scale` (full paid entitlements for now). (5) **Analytics beyond X-premium**, tied to
+  our own data: *Yoinky's impact* (posts shipped through Yoinky vs your baseline —
+  engagement-rate lift + impressions earned, matched via `scheduled_posts.external_url`),
+  a *Format lab* (which shape of post — question / link / short / long / thread — earns
+  the most, vs your own median), *posting momentum* (last 8 weeks), and an *Auto Agent
+  scorecard* (drafts written / shipped / awaiting / avg edits, from `automation_runs`).
+  **Note for you:** set `DODO_PRODUCT_SCALE` on both deploys. See INTERNAL §3l / §3i / §4.
+
 - **2026-07-23 — Clerk auth + a real 7-day free trial.** Identity for the web app
   is now **Clerk** (`@clerk/nextjs` v7). The custom Google/X/email sign-in routes and
   the `yoink_session` cookie are gone; `clerkMiddleware` (in `src/proxy.ts`) protects

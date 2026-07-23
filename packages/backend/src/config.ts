@@ -220,6 +220,9 @@ const schema = z.object({
   DODO_WEBHOOK_SECRET: z.string().optional(),
   DODO_ENV: z.enum(["test_mode", "live_mode"]).default("test_mode"),
   DODO_PRODUCT_PAID: z.string().optional(),
+  // "Scale" tier — the higher landing plan (?plan=scale). Full paid entitlements
+  // today; distinct product so billing/telemetry can tell Growth from Scale.
+  DODO_PRODUCT_SCALE: z.string().optional(),
   DODO_PRODUCT_FOUNDING: z.string().optional(),
   // Human-readable price shown in /upgrade copy + the checkout button. Keep it in
   // sync with the actual Dodo product price ($24.99/mo for "Growth Plan" today).

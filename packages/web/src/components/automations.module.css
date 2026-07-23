@@ -202,6 +202,151 @@
   box-shadow: var(--shadow-drawer);
   padding: 22px;
 }
+.modalWide {
+  width: min(580px, 100%);
+}
+
+/* ── conversational composer ── */
+.assistantRow {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+.assistantAvatar {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  border: 0.5px solid var(--accent-border);
+  color: var(--accent);
+}
+.assistantBubble {
+  flex: 1;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink-700);
+  background: var(--surface);
+  border: 0.5px solid var(--stroke);
+  border-radius: 4px 12px 12px 12px;
+  padding: 10px 13px;
+}
+
+.modeGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.modeCard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  padding: 11px 12px;
+  border-radius: var(--radius-md);
+  border: 0.5px solid var(--stroke);
+  background: var(--surface);
+  color: var(--ink-700);
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.modeCard:hover {
+  border-color: var(--accent-border);
+}
+.modeCardActive {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.modeIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--chat-bg);
+  border: 0.5px solid var(--stroke);
+  color: var(--accent);
+}
+.modeCardActive .modeIcon {
+  border-color: var(--accent-border);
+}
+.modeTitle {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-900);
+}
+.modeBlurb {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--ink-500);
+}
+
+.briefArea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  min-height: 64px;
+  padding: 11px 13px;
+  border: 0.5px solid var(--stroke);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--ink-900);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.briefArea:focus {
+  outline: none;
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.exampleChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.exampleChip {
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink-600);
+  background: var(--surface);
+  border: 0.5px solid var(--stroke);
+  border-radius: 999px;
+  padding: 5px 11px;
+  cursor: pointer;
+  transition: border-color 120ms ease, color 120ms ease;
+}
+.exampleChip:hover {
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+
+.optionsRow {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.optionCol {
+  display: flex;
+  flex-direction: column;
+}
+
+@media (max-width: 560px) {
+  .modeGrid,
+  .optionsRow {
+    grid-template-columns: 1fr;
+  }
+}
 .modalTitle {
   font-size: 17px;
   font-weight: 470;

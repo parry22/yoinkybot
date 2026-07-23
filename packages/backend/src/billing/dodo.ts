@@ -11,6 +11,7 @@ function apiBase(): string {
 
 export function planForProduct(productId: string): Plan | undefined {
   if (productId === config.DODO_PRODUCT_FOUNDING) return "founding";
+  if (productId === config.DODO_PRODUCT_SCALE) return "scale";
   if (productId === config.DODO_PRODUCT_PAID) return "paid";
   return undefined;
 }
@@ -37,11 +38,12 @@ export async function foundingSeatsLeft(): Promise<number> {
 export async function createCheckout(
   userId: string,
   email: string | null,
-  plan: "paid" | "founding",
+  plan: "paid" | "scale" | "founding",
   opts: { trialDays?: number } = {},
 ): Promise<{ url: string }> {
   if (!config.DODO_API_KEY) throw new Error("DODO_API_KEY not configured");
-  const productId = plan === "founding" ? config.DODO_PRODUCT_FOUNDING : config.DODO_PRODUCT_PAID;
+  const productId =
+    plan === "founding" ? config.DODO_PRODUCT_FOUNDING : plan === "scale" ? config.DODO_PRODUCT_SCALE : config.DODO_PRODUCT_PAID;
   if (!productId) throw new Error(`Dodo product id for plan "${plan}" not configured`);
 
   if (plan === "founding" && (await foundingSeatsLeft()) <= 0) {

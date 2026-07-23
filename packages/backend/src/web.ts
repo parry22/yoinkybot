@@ -80,6 +80,15 @@ export { currentDiagnosis } from "./strategist/diagnosis.js";
 export type { Diagnosis } from "./strategist/diagnosis.js";
 export { getPlan } from "./strategist/plan.js";
 export type { PlanView } from "./strategist/plan.js";
+
+// Growth — gamified board fusing diagnosis + plan into next-best-actions
+export {
+  getGrowthState,
+  type GrowthState,
+  type GrowthQuest,
+  type GrowthMilestone,
+  type ScorePart,
+} from "./web/growth.js";
 export { activePositions } from "./memory/positions.js";
 export type { Position } from "./memory/positions.js";
 
@@ -99,6 +108,10 @@ export {
   type AnalyticsData,
   type AnalyticsPost,
   type HeatCell,
+  type FormatStat,
+  type WeeklyPoint,
+  type YoinkImpact,
+  type AgentScorecard,
   type ReplyAnalytics,
 } from "./web/analytics.js";
 

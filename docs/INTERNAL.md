@@ -964,7 +964,9 @@ INSIDE the app.** Sign-up takes no card: `forceRedirectUrl` = `/app?plan=…`, a
 `getSessionUser` → `startTrial` mints a local `status='trialing'` + `trial_ends_at`
 row on first sign-in, so the user has instant full access. Card capture is a
 separate, later step, done from:
-- the **`<TrialBanner>`** ("Add payment") or **Settings → Plan & billing** →
+- the **`<TrialPill>`** ("Add card") — a subtle pill in the top **nav bar**
+  (`components/topbar.tsx`; replaced the old full-width `<TrialBanner>` strip) — or
+  **Settings → Plan & billing** →
   `GET /api/billing/start-trial` → `createCheckout(..., { trialDays })` posts to
   Dodo `/checkouts` with `subscription_data.trial_period_days`. Critically,
   `trialDays` = the user's **remaining** local trial days (`trialInfo().daysLeft`),
@@ -977,8 +979,8 @@ separate, later step, done from:
   same local row to the Dodo-backed subscription.
 - **Abandonment fallback.** No card / Dodo unconfigured → the 7 days still run on the
   local row, then the wall when it lapses (day count cleared to 0, no auto-charge).
-- **No second free trial.** The post-trial upgrade paths — `<TrialBanner>` (expired)
-  + Settings "Upgrade" → `GET /api/billing/checkout`, and the Telegram `bill:*`
+- **No second free trial.** The post-trial upgrade paths — `<TrialPill>` (expired)
+  + Settings plan cards → `GET /api/billing/checkout`, and the Telegram `bill:*`
   buttons — call `createCheckout` **without** `trialDays`, so a lapsed user is charged
   immediately.
 
@@ -986,11 +988,13 @@ separate, later step, done from:
 without leaving the app: **Account** — `<ManageAccountButton>` opens Clerk's
 `openUserProfile()` modal (email, password, connected social logins, active sessions,
 delete account). **Plan & billing** — status line from `billingOverview(userId)` (the
-trial/plan state + whether a Dodo subscription exists), then either "Manage plan" →
-`GET /api/billing/portal` → Dodo **customer portal** (`createCustomerPortal`, self-serve
-change/upgrade/cancel + update card) when a Dodo subscription is on file, or
-"Add payment"/"Upgrade" checkout otherwise. `<TrialBanner>` reads from `trialInfo`;
-a card-on-file (active) subscription shows no banner. Gating bites only when
+trial/plan state + whether a Dodo subscription exists), then a **`<PlanPicker>`**
+(Growth vs Scale cards, current one badged): before a card is on file each card
+starts the right checkout with `?plan=growth|scale`; once a Dodo subscription
+exists, plan changes route through the Dodo **customer portal**
+(`GET /api/billing/portal` → `createCustomerPortal`, self-serve change/cancel +
+update card) so we never mint a duplicate subscription. `<TrialPill>` reads from
+`trialInfo`; a card-on-file (active) subscription shows no pill. Gating bites only when
 `PAYWALL_ENABLED=true`; landing `?plan=` is recorded on `subscriptions.intended_plan`
 (`setIntendedPlan`). See §3b's paywall + `entitlementsFor`.
 
@@ -1003,15 +1007,16 @@ for the web app to boot. Dev port is **3002** (backend stays 3001).
 
 **Screens** (`src/app/app/*`, real `/app` segment — not a route group). `/app`
 is a redirect to `/app/agent` (chat lives there now, see below — there is no
-more standalone chat page). Sidebar groups: **Workspace** — `/app/agent`,
-`/app/compose` (X-only draft composer → `/api/draft` → `runWebDraft`→`runDraft`,
-respects the paywall/allowance and the voice-profile gate; lists persisted
-drafts), `/app/scheduled`. **Grow** — `/app/inspiration`, `/app/buyers-radar`
-(UI-only preview, see below), `/app/analytics`. **Account** — `/app/settings`
-(account info, editable stated profile, connect X, Telegram connect button,
-appearance toggle — see below). `/app/onboarding` is the gamified popup wizard
-(see below); `/app/diagnosis`, `/app/plan`, `/app/beliefs` exist as routes but
-aren't linked in the sidebar. `/sign-in` + `/sign-up` are public (Clerk); `/` redirects.
+more standalone chat page). Sidebar groups: **Agent** — `/app/compose` (X-only
+draft composer → `/api/draft` → `runWebDraft`→`runDraft`, respects the
+paywall/allowance and the voice-profile gate; lists persisted drafts), `/app/automations`
+("Auto Agent"). **Grow** — `/app/growth` (see §3m), `/app/inspiration`,
+`/app/buyers-radar` (UI-only preview, see below), `/app/analytics`. **Account** —
+`/app/scheduled`, `/app/settings` (account info, editable stated profile, connect X,
+Telegram connect button, appearance toggle — see below). `/app/onboarding` is the
+gamified popup wizard (see below); `/app/diagnosis`, `/app/plan`, `/app/beliefs`
+still exist as standalone routes (now largely fused into `/app/growth`) but aren't
+linked in the sidebar. `/sign-in` + `/sign-up` are public (Clerk); `/` redirects.
 
 **Design.** Ported from the WeaveOS reference (Geist, warm off-white canvas,
 hairline `0.5px` strokes, `20px` radii, sidebar + workspace). The reference's
@@ -1162,6 +1167,20 @@ posts, follower snapshot. `getReplyAnalytics` is on-demand (`/api/analytics/repl
 computes reply-level impressions + engagement rate. Honesty: profile clicks,
 per-post follower attribution, and revenue/RPM are reported as unavailable (not
 exposed by any scrape/public API), never faked.
+
+**Beyond-native cuts (tie X metrics to our own data, all from stored data — no
+model, no extra API):**
+- **Yoinky's impact** (`impact`) — posts shipped through Yoinky's scheduler
+  (`scheduled_posts.external_url`, matched back to `captures` by tweet id) vs the
+  rest: assisted-vs-baseline median engagement-rate **lift** + impressions earned.
+  This is the differentiated headline: *"posts you shipped through Yoinky run +X%."*
+- **Format lab** (`formats`) — the same posts sliced by deterministic shape
+  (question / link / short / long / thread-or-list), each with median eng-rate and
+  **lift vs your own median**. X shows numbers per post, never per *shape*.
+- **Momentum** (`weekly`) — posts/impressions per week over the last 8 weeks.
+- **Auto Agent scorecard** (`agent`) — operational counts from `automation_runs`
+  (drafts written, shipped/queued, awaiting you, avg edits/draft). Shown even
+  without X metrics since it's our own data.
 
 **Scrape cap.** Every pull of a user's own tweets is hard-clamped to
 `MAX_OWN_TWEETS = 100` (`capture/imports/twitterapi-io.ts`), enforced in both
@@ -1371,8 +1390,10 @@ one `unlock_backlog` auto automation.
 reuses `selectEligibleTrends` (extracted from `trendMatchForUser` so the proactive
 `⚡` nudge and the automation share ONE niche→buzz→rank selector; a pure read, no
 moment creation), deduped against the automation's own prior runs. `unlock_backlog`
-uses `topPendingUnlock` + `markUnlockDeveloped` (the old autopilot's source). A
-third source is one selector + one registry entry; any `per_user_paid` type must
+uses `topPendingUnlock` + `markUnlockDeveloped` (the old autopilot's source).
+`custom` (added `0026`) is the govork-style "define it freely" path: no external
+search, the user's own **`brief`** text IS the seed handed to drafting. A third/
+fourth source is one selector + one registry entry; any `per_user_paid` type must
 add its own budget gate first.
 
 **Run pipeline (`automations/run.ts`).** Cap check BEFORE any paid/model call
@@ -1380,7 +1401,8 @@ add its own budget gate first.
 select → moderate the seed (`assertClean`) → compose via `generateDraft` (feed
 voice, metered, voice+pillars+reach) → persist an `automation_runs` row → deliver.
 The seed leads with the user's nearest position so `generateDraft`'s memory
-retrieval hits (it declines on empty). Every gating transition is an atomic claim
+retrieval hits (it declines on empty). A `brief` on a **preset** source is
+appended as "Extra guidance from me"; on a `custom` source it is the seed itself. Every gating transition is an atomic claim
 (`store.claimRun`: `UPDATE … WHERE id=$1 AND status=$expected RETURNING`), so a
 duplicate tick / double tap / redelivered job can't double-draft/DM/post.
 
@@ -1403,19 +1425,62 @@ the first `AUTOMATION_AUTO_WARMUP` posts of a new auto automation through approv
 first. Outcome DMs come from the existing `jobs/scheduled-post.ts`. All gates still
 run.
 
-**Web (`/app/automations`, replaces the old page).** `web/automations.ts` read
-model → `/api/automations/{list,save,toggle,run,approvals,verdict}` → a lean
-Cowork-style `components/automations.tsx`: automation cards (name · source ·
-cadence · mode, pause toggle, "run now", pending badge), a config modal, and an
-Approvals inbox mirroring the Telegram cards. Automation name is moderated on save.
+**Web (`/app/automations`, sidebar label "Auto Agent").** `web/automations.ts`
+read model → `/api/automations/{list,save,toggle,run,approvals,verdict}` → a lean
+`components/automations.tsx`: automation cards (name · source · cadence · mode,
+pause toggle, "run now", pending badge), a **brief-first, chat-styled config
+modal**, and an Approvals inbox mirroring the Telegram cards. The modal leads with
+a free-text brief (the `custom` default) plus mode cards for the two presets and
+example-prompt chips; the structured options (delivery, cadence, monthly cap, name)
+sit below. Both the name and the brief are moderated on save (`assertClean`); a
+`custom` automation with an empty brief is rejected.
+
+---
+
+## 3m. Growth — gamified board (Diagnosis + Plan fused) (2026-07-24)
+
+`/app/growth` (sidebar "Growth", top of the Grow group) fuses the two previously
+unlinked strategist surfaces — Diagnosis (who you are) and Plan (what to do) — into
+one board designed to actually move a user to post. `web/growth.ts#getGrowthState`
+is a pure read model; `components/growth.tsx` renders it.
+
+**Everything is computed from real stored data — no invented XP.** One `Promise.all`
+gathers `currentDiagnosis`, `getPlan`, `getProfile`/`isProfileComplete`, the X
+`connected_accounts` row (handle + `meta.followers`), a single counts query
+(`captures` where `source='x_import'` for posts shipped + last-4-weeks; `unlock_items`
+developed/pending; `automation_runs` drafts; `scheduled_posts` published; `automations`
+count), and the last 600 `x_import` `captured_at` values for the streak.
+
+**Game layer = behavioural levers over that data:**
+- **XP + level** — XP only from things that happened (connect 50, profile 50,
+  diagnosis 100, +40/developed idea, +15/agent draft, +4/post, +25/best-streak-week);
+  a 7-rung `LEVELS` ladder (Ghost→Landmark) gives level, title, and the XP-to-next bar.
+- **Brand Score /100** — four 25-pt pillars from measurable signal: Foundation
+  (connect/profile/diagnosis), Consistency (weekly streak, 5wk = full), Depth (ideas
+  developed), Momentum (posts last 4wk, ~2/wk = full). *Goal-gradient.*
+- **Weekly posting streak** — consecutive weeks with ≥1 post; a not-yet-posted
+  current week is grace (counts from last week, flagged "at risk"), never a scare-drop
+  to 0. *Loss aversion.*
+- **Quests** — an ordered next-best-action list (setup → habit → concrete plan-backlog
+  ideas), each with XP, done state, and a CTA deep-link; completed ones collapse.
+  *Zeigarnik / endowed progress.*
+- **Milestones** — followers / posts / streak / ideas, each auto-picking the nearest
+  unreached threshold with a progress bar.
+- **Identity** — headline, throughline, owned positions, and the "unsaid" territory
+  from the diagnosis; locked behind the setup quests until a diagnosis exists.
+
+Additive only — no new tables, no migration. The standalone `/app/diagnosis` and
+`/app/plan` routes still exist but Growth is the surfaced home for both.
 
 ---
 
 ## 4. Data model
 
-Schema is a linear migration chain in `src/db/migrations/` (`0001`…`0025`),
+Schema is a linear migration chain in `src/db/migrations/` (`0001`…`0027`),
 applied on boot and via `pnpm db:migrate` (`src/db/migrate.ts`). pgvector is
-required for embedding columns.
+required for embedding columns. (`0026` widens `automations.source_type` to allow
+`custom` and adds `automations.brief`; `0027` widens `subscriptions.plan` to allow
+`scale`.)
 
 Design invariants:
 - **Identity** — `users` can be keyed by `telegram_id`, `email`, `x_user_id`, or
@@ -1424,8 +1489,11 @@ Design invariants:
 - **Trial** — a new signup gets a `subscriptions` row with `status='trialing'` +
   `trial_ends_at = now()+TRIAL_DAYS` (`0025` also adds `intended_plan`). The trial
   is a paid-tier grant resolved at read in `entitlementsFor`/`trialInfo`; `'trialing'`
-  is never written to `plan` (whose CHECK stays free/paid/founding). Once past
-  `trial_ends_at` the plan falls to free — no sweep, computed on read.
+  is never written to `plan` (whose CHECK is free/paid/**scale**/founding since
+  `0027`). Once past `trial_ends_at` the plan falls to free — no sweep, computed on
+  read. **Scale** is a distinct billable product (`DODO_PRODUCT_SCALE`) with the
+  same paid entitlements today; Settings → Plan & billing offers the explicit
+  move onto it.
 - **Captures are immutable**; memories are derived and re-derivable from captures.
 - **Forget is hard deletion**, not a tombstone.
 - `brand_profiles` is the stated profile (one row/user, `0013`); it is user-stated

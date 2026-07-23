@@ -26,7 +26,8 @@ export async function GET(req: Request) {
   if (!user) return NextResponse.redirect(new URL("/sign-in", origin));
 
   const planParam = new URL(req.url).searchParams.get("plan");
-  const plan: "paid" | "founding" = planParam === "founding" ? "founding" : "paid";
+  const plan: "paid" | "scale" | "founding" =
+    planParam === "founding" ? "founding" : planParam === "scale" ? "scale" : "paid";
   if (planParam) await setIntendedPlan(user.id, planParam).catch(() => {});
 
   try {

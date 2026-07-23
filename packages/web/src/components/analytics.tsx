@@ -16,6 +16,23 @@ type Post = {
   engagementRate: number | null;
 };
 type HeatCell = { day: number; hour: number; posts: number; impressions: number; engagements: number };
+type FormatStat = {
+  key: string;
+  label: string;
+  posts: number;
+  medianEngagementRate: number | null;
+  medianImpressions: number | null;
+  liftPct: number | null;
+};
+type WeeklyPoint = { weeksAgo: number; posts: number; impressions: number };
+type YoinkImpact = {
+  assistedPosts: number;
+  assistedImpressions: number;
+  assistedMedianEngagementRate: number | null;
+  baselineMedianEngagementRate: number | null;
+  liftPct: number | null;
+};
+type AgentScorecard = { drafted: number; shipped: number; awaiting: number; rejected: number; avgEdits: number };
 type Data = {
   connected: boolean;
   handle: string | null;
@@ -27,6 +44,10 @@ type Data = {
   topPosts: Post[];
   heatmap: HeatCell[];
   bestWindow: { day: number; hour: number } | null;
+  formats: FormatStat[];
+  weekly: WeeklyPoint[];
+  impact: YoinkImpact;
+  agent: AgentScorecard;
   unavailable: string[];
 };
 type Replies = {
@@ -48,6 +69,14 @@ function fmt(n: number | null): string {
 }
 function pct(r: number | null): string {
   return r === null || r === undefined ? "-" : (r * 100).toFixed(1) + "%";
+}
+function signPct(r: number | null): string {
+  if (r === null || r === undefined) return "–";
+  return (r >= 0 ? "+" : "") + Math.round(r) + "%";
+}
+function liftColor(r: number | null): string | undefined {
+  if (r === null || r === undefined) return undefined;
+  return r >= 0 ? "var(--accent)" : "#d3455b";
 }
 
 export function Analytics({ data }: { data: Data }) {
@@ -86,6 +115,7 @@ export function Analytics({ data }: { data: Data }) {
   }
 
   const maxEng = Math.max(1, ...data.heatmap.map((c) => c.engagements));
+  const maxWeekPosts = Math.max(1, ...data.weekly.map((w) => w.posts));
 
   return (
     <div className={panel.page}>
@@ -126,6 +156,85 @@ export function Analytics({ data }: { data: Data }) {
                 <div className={styles.tileLabel}>Median engagement rate</div>
                 <div className={styles.tileValue}>{pct(data.medians.engagementRate)}</div>
                 <div className={styles.tileSub}>engagements ÷ impressions</div>
+              </div>
+            </div>
+
+            {/* Yoinky's impact — the differentiated cut: posts shipped through
+                Yoinky vs your own baseline. Ties X metrics to our own data. */}
+            <div className={panel.section}>
+              <div className={panel.sectionLabel}>Yoinky's impact — posts you shipped through Yoinky</div>
+              {data.impact.assistedPosts === 0 ? (
+                <div className={panel.sectionBody}>
+                  Approve an Auto Agent draft or schedule from Compose, and we&apos;ll track how your
+                  Yoinky-shipped posts perform against your own baseline — right here.
+                </div>
+              ) : (
+                <>
+                  <div className={styles.tiles}>
+                    <div className={styles.tile}>
+                      <div className={styles.tileLabel}>Yoinky-shipped posts</div>
+                      <div className={styles.tileValue}>{data.impact.assistedPosts}</div>
+                      <div className={styles.tileSub}>{fmt(data.impact.assistedImpressions)} impressions earned</div>
+                    </div>
+                    <div className={styles.tile}>
+                      <div className={styles.tileLabel}>Assisted eng rate</div>
+                      <div className={styles.tileValue}>{pct(data.impact.assistedMedianEngagementRate)}</div>
+                      <div className={styles.tileSub}>median</div>
+                    </div>
+                    <div className={styles.tile}>
+                      <div className={styles.tileLabel}>Your baseline</div>
+                      <div className={styles.tileValue}>{pct(data.impact.baselineMedianEngagementRate)}</div>
+                      <div className={styles.tileSub}>everything else</div>
+                    </div>
+                    <div className={styles.tile}>
+                      <div className={styles.tileLabel}>Lift</div>
+                      <div className={styles.tileValue} style={{ color: liftColor(data.impact.liftPct) }}>
+                        {signPct(data.impact.liftPct)}
+                      </div>
+                      <div className={styles.tileSub}>vs your baseline</div>
+                    </div>
+                  </div>
+                  {data.impact.liftPct !== null && (
+                    <div className={styles.note}>
+                      Posts you shipped through Yoinky run{" "}
+                      <b style={{ color: liftColor(data.impact.liftPct) }}>{signPct(data.impact.liftPct)}</b> on engagement
+                      rate versus everything else you post.
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Format lab — which shape of post earns you the most. */}
+            <div className={panel.section}>
+              <div className={panel.sectionLabel}>What shape of post works for you</div>
+              {data.formats.length === 0 ? (
+                <div className={panel.sectionBody}>Not enough posts yet to break down by format — keep posting and this fills in.</div>
+              ) : (
+                <div className={styles.formatList}>
+                  {data.formats.map((f) => (
+                    <div key={f.key} className={styles.formatRow}>
+                      <div className={styles.formatLabel}>
+                        {f.label}
+                        <span className={styles.formatCount}>{f.posts} posts</span>
+                      </div>
+                      <div className={styles.formatMetrics}>
+                        <span>
+                          <b>{pct(f.medianEngagementRate)}</b> eng rate
+                        </span>
+                        {f.liftPct !== null && (
+                          <span className={styles.formatLift} style={{ color: liftColor(f.liftPct) }}>
+                            {signPct(f.liftPct)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className={styles.note}>
+                The same posts sliced by shape, each against your own median engagement rate — the read native analytics
+                never gives you.
               </div>
             </div>
 
@@ -188,8 +297,56 @@ export function Analytics({ data }: { data: Data }) {
                 </div>
               ))}
             </div>
+
+            {/* Momentum — posting consistency over the last 8 weeks. */}
+            <div className={panel.section}>
+              <div className={panel.sectionLabel}>Posting momentum — last 8 weeks</div>
+              <div className={styles.spark}>
+                {data.weekly.map((w) => (
+                  <div key={w.weeksAgo} className={styles.sparkCol} title={`${w.posts} posts, ${fmt(w.impressions)} impressions`}>
+                    <div className={styles.sparkBarWrap}>
+                      <div className={styles.sparkBar} style={{ height: `${Math.max(4, Math.round((w.posts / maxWeekPosts) * 100))}%` }} />
+                    </div>
+                    <div className={styles.sparkVal}>{w.posts}</div>
+                    <div className={styles.sparkLabel}>{w.weeksAgo === 0 ? "now" : `${w.weeksAgo}w`}</div>
+                  </div>
+                ))}
+              </div>
+              <div className={styles.note}>Consistency compounds. Bars are posts per week; hover for impressions.</div>
+            </div>
           </>
         )}
+
+        {/* Auto Agent scorecard — operational, from automation_runs. Shown even
+            without X metrics, since it's our own data, not X's. */}
+        <div className={panel.section}>
+          <div className={panel.sectionLabel}>Auto Agent scorecard</div>
+          {data.agent.drafted === 0 ? (
+            <div className={panel.sectionBody}>
+              Your Auto Agent hasn&apos;t drafted anything yet. Set one up on the Auto Agent page and its output shows up here.
+            </div>
+          ) : (
+            <div className={styles.tiles}>
+              <div className={styles.tile}>
+                <div className={styles.tileLabel}>Drafts written</div>
+                <div className={styles.tileValue}>{data.agent.drafted}</div>
+              </div>
+              <div className={styles.tile}>
+                <div className={styles.tileLabel}>Shipped / queued</div>
+                <div className={styles.tileValue}>{data.agent.shipped}</div>
+              </div>
+              <div className={styles.tile}>
+                <div className={styles.tileLabel}>Waiting on you</div>
+                <div className={styles.tileValue}>{data.agent.awaiting}</div>
+              </div>
+              <div className={styles.tile}>
+                <div className={styles.tileLabel}>Avg edits / draft</div>
+                <div className={styles.tileValue}>{data.agent.avgEdits.toFixed(1)}</div>
+                <div className={styles.tileSub}>lower = more on-voice</div>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Reply-level performance - the native-analytics blind spot. On-demand (live pull). */}
         <div className={panel.section}>

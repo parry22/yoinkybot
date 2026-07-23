@@ -5,7 +5,7 @@ import { config } from "../config.js";
 // — it maps to the full paid feature set. It is never written to
 // subscriptions.plan (whose CHECK is free/paid/founding); the trial is stored as
 // status='trialing' + trial_ends_at. See startTrial / trialInfo below.
-export type Plan = "free" | "trialing" | "paid" | "founding";
+export type Plan = "free" | "trialing" | "paid" | "scale" | "founding";
 
 export interface Entitlements {
   plan: Plan;

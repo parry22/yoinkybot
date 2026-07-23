@@ -34,6 +34,42 @@ export interface HeatCell {
   engagements: number;
 }
 
+/** Median engagement of a content *format* (question, link, thread…) vs your own baseline. */
+export interface FormatStat {
+  key: string;
+  label: string;
+  posts: number;
+  medianEngagementRate: number | null;
+  medianImpressions: number | null;
+  /** % above/below your own overall median engagement rate. */
+  liftPct: number | null;
+}
+
+/** One 7-day bucket of posting momentum (oldest → newest). */
+export interface WeeklyPoint {
+  weeksAgo: number; // 7 … 0 (0 = this week)
+  posts: number;
+  impressions: number;
+}
+
+/** How posts shipped THROUGH Yoinky perform vs the rest — the differentiated metric. */
+export interface YoinkImpact {
+  assistedPosts: number;
+  assistedImpressions: number;
+  assistedMedianEngagementRate: number | null;
+  baselineMedianEngagementRate: number | null;
+  liftPct: number | null;
+}
+
+/** What the Auto Agent has actually produced (operational, from automation_runs). */
+export interface AgentScorecard {
+  drafted: number;
+  shipped: number;
+  awaiting: number;
+  rejected: number;
+  avgEdits: number;
+}
+
 export interface AnalyticsData {
   connected: boolean;
   handle: string | null;
@@ -47,7 +83,63 @@ export interface AnalyticsData {
   recentPosts: AnalyticsPost[];
   heatmap: HeatCell[];
   bestWindow: { day: number; hour: number } | null;
+  formats: FormatStat[];
+  weekly: WeeklyPoint[];
+  impact: YoinkImpact;
+  agent: AgentScorecard;
   unavailable: string[];
+}
+
+const EMPTY_IMPACT: YoinkImpact = {
+  assistedPosts: 0, assistedImpressions: 0, assistedMedianEngagementRate: null, baselineMedianEngagementRate: null, liftPct: null,
+};
+const EMPTY_AGENT: AgentScorecard = { drafted: 0, shipped: 0, awaiting: 0, rejected: 0, avgEdits: 0 };
+
+// Deterministic content-format lenses. A post can match several — each is a
+// separate way of slicing the same posts, computed from the text we already
+// store (no model, no extra API). This is the "beyond native analytics" cut:
+// X shows you numbers per post, not which *shape* of post earns you the most.
+const FORMAT_BUCKETS: { key: string; label: string; test: (p: AnalyticsPost) => boolean }[] = [
+  { key: "question", label: "Asks a question", test: (p) => /\?/.test(p.text) },
+  { key: "link", label: "Includes a link", test: (p) => /https?:\/\//i.test(p.text) },
+  { key: "short", label: "Short & punchy (≤120 chars)", test: (p) => p.text.length <= 120 },
+  { key: "long", label: "Longer takes (≥240 chars)", test: (p) => p.text.length >= 240 },
+  { key: "multiline", label: "Threads & lists", test: (p) => /\n/.test(p.text) },
+];
+
+function tweetId(url: string | null): string | null {
+  if (!url) return null;
+  const m = url.match(/status\/(\d+)/);
+  return m ? m[1]! : null;
+}
+
+function formatStats(posts: AnalyticsPost[]): FormatStat[] {
+  const overall = median(posts.filter((p) => p.engagementRate !== null).map((p) => p.engagementRate as number));
+  const out: FormatStat[] = [];
+  for (const b of FORMAT_BUCKETS) {
+    const inb = posts.filter(b.test);
+    if (inb.length < 3) continue; // too few to be a signal
+    const medRate = median(inb.filter((p) => p.engagementRate !== null).map((p) => p.engagementRate as number));
+    const liftPct = medRate !== null && overall !== null && overall > 0 ? ((medRate - overall) / overall) * 100 : null;
+    out.push({ key: b.key, label: b.label, posts: inb.length, medianEngagementRate: medRate, medianImpressions: median(inb.map((p) => p.impressions)), liftPct });
+  }
+  return out.sort((a, b) => (b.liftPct ?? -Infinity) - (a.liftPct ?? -Infinity));
+}
+
+function weeklyMomentum(posts: AnalyticsPost[]): WeeklyPoint[] {
+  const WEEKS = 8;
+  const now = Date.now();
+  const wk = 7 * 24 * 60 * 60 * 1000;
+  const buckets = Array.from({ length: WEEKS }, () => ({ posts: 0, impressions: 0 }));
+  for (const p of posts) {
+    const t = new Date(p.createdAt).getTime();
+    if (!Number.isFinite(t)) continue;
+    const idx = Math.floor((now - t) / wk);
+    if (idx < 0 || idx >= WEEKS) continue;
+    buckets[idx]!.posts += 1;
+    buckets[idx]!.impressions += p.impressions;
+  }
+  return buckets.map((b, i) => ({ weeksAgo: i, posts: b.posts, impressions: b.impressions })).reverse();
 }
 
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -138,7 +230,8 @@ export async function getAnalytics(userId: string): Promise<AnalyticsData> {
       connected: false, handle: null, followers: null, timezone: tz, postsAnalyzed: 0, hasMetrics: false,
       totals: { impressions: 0, engagements: 0, likes: 0, replies: 0, retweets: 0, bookmarks: 0 },
       medians: { impressions: null, engagements: null, engagementRate: null },
-      topPosts: [], recentPosts: [], heatmap: [], bestWindow: null, unavailable: UNAVAILABLE,
+      topPosts: [], recentPosts: [], heatmap: [], bestWindow: null,
+      formats: [], weekly: [], impact: EMPTY_IMPACT, agent: EMPTY_AGENT, unavailable: UNAVAILABLE,
     };
   }
 
@@ -187,6 +280,54 @@ export async function getAnalytics(userId: string): Promise<AnalyticsData> {
   const ranked = [...heatmap].sort((a, b) => b.engagements / b.posts - a.engagements / a.posts);
   const best = ranked.find((c) => c.posts >= 2) ?? ranked[0] ?? null;
 
+  // ── Yoinky's own-data cuts ─────────────────────────────────────────────
+  // 1) Posts shipped THROUGH Yoinky (published scheduler) → match back to their
+  //    captured metrics by tweet id, so we can show assisted-vs-baseline lift.
+  const shipped = await query<{ external_url: string | null }>(
+    `SELECT external_url FROM scheduled_posts WHERE user_id = $1 AND status = 'published' AND external_url IS NOT NULL`,
+    [userId],
+  );
+  const shippedIds = new Set(shipped.map((r) => tweetId(r.external_url)).filter((x): x is string => !!x));
+  const isAssisted = (p: AnalyticsPost) => {
+    const id = tweetId(p.url);
+    return !!id && shippedIds.has(id);
+  };
+  const assisted = posts.filter(isAssisted);
+  const baseline = posts.filter((p) => !isAssisted(p));
+  const impact: YoinkImpact = {
+    assistedPosts: assisted.length,
+    assistedImpressions: assisted.reduce((a, p) => a + p.impressions, 0),
+    assistedMedianEngagementRate: median(assisted.filter((p) => p.engagementRate !== null).map((p) => p.engagementRate as number)),
+    baselineMedianEngagementRate: median(baseline.filter((p) => p.engagementRate !== null).map((p) => p.engagementRate as number)),
+    liftPct: null,
+  };
+  if (
+    impact.assistedMedianEngagementRate !== null &&
+    impact.baselineMedianEngagementRate !== null &&
+    impact.baselineMedianEngagementRate > 0
+  ) {
+    impact.liftPct = ((impact.assistedMedianEngagementRate - impact.baselineMedianEngagementRate) / impact.baselineMedianEngagementRate) * 100;
+  }
+
+  // 2) Auto Agent scorecard — operational counts straight from automation_runs.
+  const agentRow = await queryOne<{ drafted: string; shipped: string; awaiting: string; rejected: string; avg_edits: string }>(
+    `SELECT
+       count(*) FILTER (WHERE draft_body IS NOT NULL)::text AS drafted,
+       count(*) FILTER (WHERE status IN ('scheduled','posted','approved'))::text AS shipped,
+       count(*) FILTER (WHERE status = 'awaiting_approval')::text AS awaiting,
+       count(*) FILTER (WHERE status = 'rejected')::text AS rejected,
+       COALESCE(round(avg(edit_count) FILTER (WHERE draft_body IS NOT NULL), 2), 0)::text AS avg_edits
+     FROM automation_runs WHERE user_id = $1`,
+    [userId],
+  );
+  const agent: AgentScorecard = {
+    drafted: Number(agentRow?.drafted ?? 0),
+    shipped: Number(agentRow?.shipped ?? 0),
+    awaiting: Number(agentRow?.awaiting ?? 0),
+    rejected: Number(agentRow?.rejected ?? 0),
+    avgEdits: Number(agentRow?.avg_edits ?? 0),
+  };
+
   return {
     connected: true,
     handle: acct.handle,
@@ -204,6 +345,10 @@ export async function getAnalytics(userId: string): Promise<AnalyticsData> {
     recentPosts: posts.slice(0, 25),
     heatmap,
     bestWindow: best ? { day: best.day, hour: best.hour } : null,
+    formats: formatStats(posts),
+    weekly: weeklyMomentum(posts),
+    impact,
+    agent,
     unavailable: UNAVAILABLE,
   };
 }

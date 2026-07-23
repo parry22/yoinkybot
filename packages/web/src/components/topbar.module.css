@@ -34,3 +34,76 @@
   border-color: var(--accent-border);
   background: var(--accent-soft);
 }
+
+/* ── trial pill: subtle nav-bar trial clock + card-capture CTA ── */
+.trialPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 6px 0 11px;
+  border: 0.5px solid var(--accent-border);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--ink-700);
+  font-size: 12.5px;
+  font-weight: 450;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.trialPill:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.trialDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  flex: 0 0 auto;
+}
+
+.trialText {
+  color: var(--ink-700);
+}
+
+.trialCta {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* Expired: firmer, but still a compact nav pill (never a full-width strip). */
+.trialPillExpired {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.trialPillExpired .trialDot {
+  background: #fff;
+}
+
+.trialPillExpired .trialText {
+  color: #fff;
+}
+
+.trialPillExpired .trialCta {
+  background: #fff;
+  color: var(--accent);
+}
+
+@media (max-width: 620px) {
+  .trialText {
+    display: none;
+  }
+}

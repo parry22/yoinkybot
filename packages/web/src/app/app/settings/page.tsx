@@ -1,12 +1,26 @@
 import { redirect } from "next/navigation";
 import { SignOutButton } from "@clerk/nextjs";
 import { getSessionUser } from "@/lib/session";
-import { listConnectedAccounts, billingOverview } from "@yoink/backend/web";
+import { listConnectedAccounts, billingOverview, config } from "@yoink/backend/web";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { TelegramConnectButton } from "@/components/telegram-connect";
 import { XConnectRow } from "@/components/connect-accounts";
 import { ManageAccountButton } from "@/components/account-manage";
+import { PlanPicker } from "@/components/plan-picker";
 import styles from "@/components/panel.module.css";
+
+type PlanKey = "growth" | "scale" | "founding";
+
+/** Resolve which plan card to highlight: the active plan, else the one picked at signup. */
+function currentPlanKey(activePlan: string | null, intended: string | null): PlanKey {
+  if (activePlan === "scale") return "scale";
+  if (activePlan === "founding") return "founding";
+  if (activePlan === "paid") return "growth";
+  const i = (intended ?? "").toLowerCase();
+  if (i === "scale") return "scale";
+  if (i === "founding") return "founding";
+  return "growth";
+}
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +42,6 @@ export default async function SettingsPage({
   const x = accounts.find((a) => a.platform === "x") ?? null;
 
   const t = billing?.trial;
-  const planQ = t?.intendedPlan ? `?plan=${encodeURIComponent(t.intendedPlan)}` : "";
   const planLabel = t?.plan && t.plan !== "trialing" && t.plan !== "free" ? ` (${t.plan})` : "";
   const billingStatus =
     !t || t.status === "none"
@@ -63,18 +76,24 @@ export default async function SettingsPage({
               Something went wrong opening billing. Please try again.
             </div>
           )}
-          {billing?.hasDodoSubscription ? (
-            <a href="/api/billing/portal" className="btnGhost" style={linkBtn}>
-              Manage plan — change, update card, or cancel
-            </a>
-          ) : t?.onTrial ? (
-            <a href={`/api/billing/start-trial${planQ}`} className="btnPrimary" style={linkBtn}>
-              Add payment method
-            </a>
+
+          {t?.plan === "founding" ? (
+            <div className={styles.sectionBody}>You're on the Founding plan — thank you for being early.</div>
           ) : (
-            <a href={`/api/billing/checkout${planQ}`} className="btnPrimary" style={linkBtn}>
-              Upgrade
-            </a>
+            <PlanPicker
+              currentKey={currentPlanKey(t?.status === "active" ? t.plan : null, t?.intendedPlan ?? null)}
+              onTrial={Boolean(t?.onTrial)}
+              hasSubscription={Boolean(billing?.hasDodoSubscription)}
+              growthPrice={config.PAID_PRICE_LABEL}
+            />
+          )}
+
+          {billing?.hasDodoSubscription && (
+            <div style={{ marginTop: 14 }}>
+              <a href="/api/billing/portal" className="btnGhost" style={linkBtn}>
+                Manage plan — update card, switch, or cancel
+              </a>
+            </div>
           )}
         </div>
 

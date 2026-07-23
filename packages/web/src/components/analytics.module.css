@@ -139,3 +139,100 @@
   margin-top: 8px;
   line-height: 1.5;
 }
+
+/* ── format lab ── */
+.formatList {
+  display: flex;
+  flex-direction: column;
+}
+
+.formatRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 0.5px solid var(--stroke);
+}
+
+.formatRow:first-child {
+  border-top: none;
+}
+
+.formatLabel {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--ink-900);
+}
+
+.formatCount {
+  font-size: 12px;
+  color: var(--ink-500);
+}
+
+.formatMetrics {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 13px;
+  color: var(--ink-600);
+  white-space: nowrap;
+}
+
+.formatMetrics b {
+  color: var(--ink-900);
+  font-weight: 500;
+}
+
+.formatLift {
+  font-size: 13px;
+  font-weight: 500;
+  min-width: 44px;
+  text-align: right;
+}
+
+/* ── momentum sparkline ── */
+.spark {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  height: 120px;
+  padding-top: 8px;
+}
+
+.sparkCol {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+}
+
+.sparkBarWrap {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.sparkBar {
+  width: 60%;
+  max-width: 34px;
+  min-height: 4px;
+  border-radius: 4px 4px 0 0;
+  background: linear-gradient(180deg, var(--accent), var(--accent-2, var(--accent)));
+}
+
+.sparkVal {
+  font-size: 12px;
+  color: var(--ink-700);
+}
+
+.sparkLabel {
+  font-size: 11px;
+  color: var(--ink-500);
+}
