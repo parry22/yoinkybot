@@ -237,6 +237,10 @@ const schema = z.object({
   // promise (a post in your voice) is felt before the ask, instead of the
   // paywall landing on /draft before they've ever seen output.
   FREE_DRAFT_ALLOWANCE: z.coerce.number().default(3),
+  // Length of the free trial every new signup gets (full paid-tier access).
+  // After it lapses, entitlements fall to free and the upgrade wall applies on
+  // both web and Telegram. Enforcement requires PAYWALL_ENABLED=true.
+  TRIAL_DAYS: z.coerce.number().default(7),
 
   NODE_ENV: z.string().default("development"),
 });

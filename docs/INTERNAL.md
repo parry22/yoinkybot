@@ -918,9 +918,11 @@ specifiers, so the web depends on a built backend. `packages/web` runs
 `pnpm --filter @yoink/backend build` on `predev`/`prebuild`; editing backend
 code during web dev needs a rebuild.
 
-**What the barrel exposes** (keep this the only web surface): auth
-(`userForSession`, `createSession`, `findOrCreateUserByEmail`,
-`createLoginToken`, `consumeLoginToken`, `createTelegramLinkToken`), the
+**What the barrel exposes** (keep this the only web surface): auth + identity
+(`findUserByClerkId`, `findOrCreateUserByClerkId`, `createTelegramLinkToken`,
+plus the legacy `findOrCreateUserByEmail`/`findOrCreateUserByXId`), trial + billing
+(`trialInfo`, `startTrial`, `setIntendedPlan`, `createCheckout`, `entitlementsFor`,
+`isPaidOrExempt`), the
 web-flavored chat brain (`runWebChatTurn` in `src/web/chat.ts`, which wraps the
 same `converseWithUser`/`deliverTurnOutput` the bot uses but swaps in a
 *collecting* `Channel` — `src/web/channel.ts` — so a turn's messages come back
@@ -931,28 +933,46 @@ see below), plus read models (`getStage`, `getState`, `getProfile`,
 `activePositions`, `loadChatHistory`, `listTrendInspiration`,
 `listViralInspiration`).
 
-**Auth — Google OAuth + email magic-link.** Two paths, both landing on
-`findOrCreateUserByEmail` + `createSession` (reusing the `sessions` table from
-`0001`) and an httpOnly `yoink_session` cookie:
-- **Google** (primary CTA): `GET /api/auth/google/start` → redirects to Google's
-  consent screen with a CSRF `state` (stored in a `g_state` cookie);
-  `GET /api/auth/google/callback` verifies state, exchanges the code at
-  `oauth2.googleapis.com/token`, reads the email from `userinfo`, and signs in.
-  Needs `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`; unset → the button routes to
-  `/login?error=google_unconfigured`. Redirect URI: `${origin}/api/auth/google/callback`.
-- **Magic-link**: `POST /api/auth/request` mints a single-use, 30-minute token
-  (`login_tokens`, migration `0020`) and emails a link (Resend if
-  `RESEND_API_KEY`, else the link is logged **and** returned inline in dev).
-  `GET /api/auth/verify` consumes it and signs in.
+**Auth — Clerk (since 2026-07-23).** Identity is now **Clerk** (`@clerk/nextjs`
+v7 / Core 3). The old custom Google/X/magic-link sign-in routes and the
+`yoink_session` cookie are **removed**; social logins (Google, X) are configured
+as connections in the Clerk dashboard for app `app_3GuEglSCyTcG11r4RQTo89Ve9O3`.
+Wiring:
+- `src/proxy.ts` exports `clerkMiddleware`; `createRouteMatcher(["/app(.*)"])` +
+  `await auth.protect()` gate the app (the matcher also runs on `/(api|trpc)` and
+  `/__clerk`). Unauthed hits redirect to `NEXT_PUBLIC_CLERK_SIGN_IN_URL`.
+- `<ClerkProvider signInUrl signUpUrl afterSignOutUrl>` wraps the tree **inside
+  `<body>`** (Core 3 / cache-components rule) in `src/app/layout.tsx`.
+- Catch-all `src/app/sign-in/[[...sign-in]]` and `sign-up/[[...sign-up]]` render
+  Clerk's `<SignIn>` / `<SignUp>`. Sign-up reads `?plan=` and forwards it to
+  `/app?plan=…`. `<UserButton>` sits in the topbar; the sidebar sign-out uses
+  `<SignOutButton redirectUrl="/sign-in">`. `/` redirects to `/app` or `/sign-in`.
+- **The bridge that kept the blast radius tiny:** `getSessionUser()`
+  (`src/lib/session.ts`) still returns `User | null`, so every server component /
+  route that used it is unchanged. Internally it now does `await auth()` →
+  `findUserByClerkId(userId)` (fast path), and on first sight fetches
+  `currentUser()` for the email and calls `findOrCreateUserByClerkId`, which maps
+  Clerk → our `users` row by **`clerk_user_id`** (migration `0025`; carries over a
+  pre-Clerk row with the same email) and **starts the 7-day trial** on a genuine
+  new signup.
+- **The X posting-connect is separate and unchanged** — `/api/auth/x/*` (PKCE,
+  `tweet.write`) is now **connect-only**: it requires a Clerk session and attaches
+  the posting token via `finalizeXConnect` (identity is Clerk's job).
 
-`src/proxy.ts` (Next 16's renamed middleware) gates `/app/*` on cookie presence;
-server components validate the token via `getSessionUser` (`src/lib/session.ts`).
+**Trial + upgrade (web side).** `trialInfo(userId)` drives a slim `<TrialBanner>`
+in the app layout: a soft "N days left" countdown while trialing, a firm "trial
+ended — upgrade" strip once it lapses (the day count clears to 0). Its Upgrade
+link hits `GET /api/billing/checkout?plan=…` → `createCheckout` → the hosted Dodo
+checkout. The chosen landing plan is stored on `subscriptions.intended_plan` (via
+`setIntendedPlan`, from the `?plan=` param) so the CTA is preselected. Gating only
+bites when `PAYWALL_ENABLED=true`. See §3b's paywall and §billing (`entitlementsFor`).
 
 **Env.** The web runs backend code in-process, so it needs the backend's env
 (`DATABASE_URL`, `OPENROUTER_API_KEY`, embeddings keys, …). `packages/web/.env.local`
-is a **symlink to `packages/backend/.env`** — one source of truth; web-only keys
-(`GOOGLE_*`, `RESEND_API_KEY`, `MAIL_FROM`) live there too. Dev port is **3002**
-(backend stays 3001; :3000 was already taken on the dev machine).
+is a **symlink to `packages/backend/.env`** — one source of truth. Clerk keys
+(`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`,
+`NEXT_PUBLIC_CLERK_SIGN_IN_URL`/`SIGN_UP_URL`) live there too and are **required**
+for the web app to boot. Dev port is **3002** (backend stays 3001).
 
 **Screens** (`src/app/app/*`, real `/app` segment — not a route group). `/app`
 is a redirect to `/app/agent` (chat lives there now, see below — there is no
@@ -964,7 +984,7 @@ drafts), `/app/scheduled`. **Grow** — `/app/inspiration`, `/app/buyers-radar`
 (account info, editable stated profile, connect X, Telegram connect button,
 appearance toggle — see below). `/app/onboarding` is the gamified popup wizard
 (see below); `/app/diagnosis`, `/app/plan`, `/app/beliefs` exist as routes but
-aren't linked in the sidebar. `/login` is public; `/` redirects.
+aren't linked in the sidebar. `/sign-in` + `/sign-up` are public (Clerk); `/` redirects.
 
 **Design.** Ported from the WeaveOS reference (Geist, warm off-white canvas,
 hairline `0.5px` strokes, `20px` radii, sidebar + workspace). The reference's
@@ -1366,11 +1386,19 @@ Approvals inbox mirroring the Telegram cards. Automation name is moderated on sa
 
 ## 4. Data model
 
-Schema is a linear migration chain in `src/db/migrations/` (`0001`…`0024`),
+Schema is a linear migration chain in `src/db/migrations/` (`0001`…`0025`),
 applied on boot and via `pnpm db:migrate` (`src/db/migrate.ts`). pgvector is
 required for embedding columns.
 
 Design invariants:
+- **Identity** — `users` can be keyed by `telegram_id`, `email`, `x_user_id`, or
+  (since `0025`) **`clerk_user_id`** (Clerk is the web identity provider). All are
+  additive, nullable, unique.
+- **Trial** — a new signup gets a `subscriptions` row with `status='trialing'` +
+  `trial_ends_at = now()+TRIAL_DAYS` (`0025` also adds `intended_plan`). The trial
+  is a paid-tier grant resolved at read in `entitlementsFor`/`trialInfo`; `'trialing'`
+  is never written to `plan` (whose CHECK stays free/paid/founding). Once past
+  `trial_ends_at` the plan falls to free — no sweep, computed on read.
 - **Captures are immutable**; memories are derived and re-derivable from captures.
 - **Forget is hard deletion**, not a tombstone.
 - `brand_profiles` is the stated profile (one row/user, `0013`); it is user-stated
@@ -1403,7 +1431,11 @@ Keys that matter most:
   *posting* (§3e), distinct from the read-ingestion keys above. Unset →
   onboarding falls back to the typed-handle ask, scheduling works but
   publishing fails closed. X posting needs a paid X tier.
-- `DODO_*`, `PAYWALL_ENABLED`.
+- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`,
+  `NEXT_PUBLIC_CLERK_SIGN_IN_URL`/`SIGN_UP_URL` — **required** for the web app
+  (Clerk auth). Social logins are configured in the Clerk dashboard, not here.
+- `DODO_*`, `PAYWALL_ENABLED` (must be `true` for the trial to actually gate once
+  it lapses), `TRIAL_DAYS` (default 7).
 - `POSTHOG_API_KEY` / `POSTHOG_HOST` — server-side product analytics (§3g).
   Optional; unset = no-op.
 

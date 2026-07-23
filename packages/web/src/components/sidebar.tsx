@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { SignOutButton } from "@clerk/nextjs";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   SparklesIcon,
@@ -74,11 +75,11 @@ export function Sidebar({ user }: { user: { email: string; initials: string } })
           <span className={styles.userName}>{user.email}</span>
         </div>
         <div className={styles.actions}>
-          <form action="/api/auth/logout" method="post">
-            <button type="submit" className={styles.iconButton} aria-label="Sign out" title="Sign out">
+          <SignOutButton redirectUrl="/sign-in">
+            <button type="button" className={styles.iconButton} aria-label="Sign out" title="Sign out">
               <HugeiconsIcon icon={Logout01Icon} size={18} strokeWidth={1.8} />
             </button>
-          </form>
+          </SignOutButton>
         </div>
       </div>
     </aside>

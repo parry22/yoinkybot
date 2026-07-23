@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 export default async function AutomationsPage() {
   const user = await getSessionUser();
-  if (!user) redirect("/login");
+  if (!user) redirect("/sign-in");
   const [automations, approvals] = await Promise.all([
     listAutomationsForWeb(user.id).catch(() => []),
     listPendingApprovalsWeb(user.id).catch(() => []),

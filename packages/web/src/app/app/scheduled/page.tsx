@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 export default async function ScheduledPage() {
   const user = await getSessionUser();
-  if (!user) redirect("/login");
+  if (!user) redirect("/sign-in");
   const posts = await listScheduled(user.id).catch(() => []);
   return (
     <ScheduledCalendar

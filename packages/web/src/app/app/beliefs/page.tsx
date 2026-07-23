@@ -13,7 +13,7 @@ function fmt(d: string): string {
 
 export default async function BeliefsPage() {
   const user = await getSessionUser();
-  if (!user) redirect("/login");
+  if (!user) redirect("/sign-in");
 
   const positions = await activePositions(user.id).catch(() => []);
 

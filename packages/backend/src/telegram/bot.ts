@@ -26,7 +26,7 @@ import {
   type ProfileField,
 } from "../strategist/profile.js";
 import { buildVoiceProfile } from "../voice/profile.js";
-import { entitlementsFor, isPaidOrExempt } from "../billing/entitlements.js";
+import { entitlementsFor, isPaidOrExempt, trialInfo } from "../billing/entitlements.js";
 import { buildUpgradeOffer, WALL_PROMPT } from "../billing/upgrade-offer.js";
 import { createCheckout } from "../billing/dodo.js";
 import { resetUserData } from "../strategist/state.js";
@@ -903,22 +903,30 @@ const TELEGRAM_WELCOME =
   "you're in ✅\n\n" + CAPABILITIES;
 
 // Shown to anyone who opens the bot without a linked web account. The bot is
-// web-account-gated now: sign in on the web (Google/email), then link Telegram.
+// web-account-gated now: sign in on the web (Clerk), then link Telegram.
 const NOT_LINKED_MSG =
   "hey — you'll need to sign in first.\n\n" +
-  `1. open ${config.WEB_APP_URL} and sign in with your google account\n` +
+  `1. open ${config.WEB_APP_URL} and sign in (that starts your free trial)\n` +
   "2. go to Settings → Connect Telegram\n\n" +
   "that links this chat to your account, and i'll pick things up right here.";
 
 /** Auth + subscription welcome, sent after linking or on /start for a linked user. */
 async function sendTelegramWelcome(ctx: Context, user: User): Promise<void> {
   if (await isPaidOrExempt(user)) {
+    // On the trial? Say so, with the day count — so the clock is never a surprise.
+    const trial = await trialInfo(user.id).catch(() => null);
+    if (trial?.onTrial) {
+      const days = trial.daysLeft === 1 ? "1 day" : `${trial.daysLeft} days`;
+      await ctx.reply(`${TELEGRAM_WELCOME}\n\nyou're on the free trial — ${days} left. upgrade anytime in the app.`);
+      return;
+    }
     await ctx.reply(TELEGRAM_WELCOME);
     return;
   }
+  // Trial over (or never subscribed): the bot's default is now the upgrade ask.
   const offer = await buildUpgradeOffer();
   await ctx.reply(
-    `you're signed in ✅ — one thing left: a subscription unlocks everything here.\n\n${offer.text}`,
+    `you're signed in ✅ — your free trial has ended. a subscription keeps everything here (and in the app) unlocked.\n\n${offer.text}`,
     { reply_markup: offer.keyboard },
   );
 }

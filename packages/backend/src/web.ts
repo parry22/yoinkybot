@@ -12,10 +12,24 @@ export {
   createSession,
   findOrCreateUserByEmail,
   findOrCreateUserByXId,
+  findUserByClerkId,
+  findOrCreateUserByClerkId,
   createLoginToken,
   consumeLoginToken,
   createTelegramLinkToken,
 } from "./lib/auth.js";
+
+// Trial + billing (7-day free trial → upgrade wall)
+export {
+  trialInfo,
+  startTrial,
+  setIntendedPlan,
+  entitlementsFor,
+  isPaidOrExempt,
+  type TrialInfo,
+  type Plan,
+} from "./billing/entitlements.js";
+export { createCheckout } from "./billing/dodo.js";
 
 // "Sign in with X" / "Connect X" finalizer + status (web runs the OAuth itself)
 export { finalizeXConnect, getXConnectStatus, type XConnectStatus } from "./web/x-signin.js";

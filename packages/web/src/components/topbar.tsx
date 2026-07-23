@@ -2,6 +2,7 @@
 
 import { HugeiconsIcon } from "@hugeicons/react";
 import { TelegramIcon } from "@hugeicons/core-free-icons";
+import { UserButton } from "@clerk/nextjs";
 import styles from "./topbar.module.css";
 
 export function TopBar({ telegramUrl }: { telegramUrl: string }) {
@@ -17,6 +18,7 @@ export function TopBar({ telegramUrl }: { telegramUrl: string }) {
         <HugeiconsIcon icon={TelegramIcon} size={18} strokeWidth={1.8} />
         <span>Telegram</span>
       </a>
+      <UserButton />
     </header>
   );
 }

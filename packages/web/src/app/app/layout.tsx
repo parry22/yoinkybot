@@ -1,8 +1,9 @@
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/session";
-import { config, getXConnectStatus } from "@yoink/backend/web";
+import { config, getXConnectStatus, trialInfo } from "@yoink/backend/web";
 import { Sidebar } from "@/components/sidebar";
 import { TopBar } from "@/components/topbar";
+import { TrialBanner } from "@/components/trial-banner";
 import { ConnectXGate } from "@/components/connect-x-gate";
 import styles from "./shell.module.css";
 
@@ -10,11 +11,14 @@ export const dynamic = "force-dynamic";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await getSessionUser();
-  if (!user) redirect("/login");
+  if (!user) redirect("/sign-in");
 
   const email = user.email ?? "your account";
   const initials = (email.trim()[0] ?? "y").toUpperCase();
-  const x = await getXConnectStatus(user.id).catch(() => ({ connected: false, status: null, postCount: 0 }));
+  const [x, trial] = await Promise.all([
+    getXConnectStatus(user.id).catch(() => ({ connected: false, status: null, postCount: 0 })),
+    trialInfo(user.id).catch(() => null),
+  ]);
 
   return (
     <div className={styles.shell}>
@@ -22,6 +26,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <Sidebar user={{ email, initials }} />
         <main className={styles.workspace}>
           <TopBar telegramUrl={config.TELEGRAM_BOT_URL} />
+          {trial && <TrialBanner trial={trial} />}
           <div className={styles.content}>{children}</div>
         </main>
       </div>

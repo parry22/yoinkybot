@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export default async function PlanPage() {
   const user = await getSessionUser();
-  if (!user) redirect("/login");
+  if (!user) redirect("/sign-in");
 
   const plan = await getPlan(user.id).catch(() => null);
 

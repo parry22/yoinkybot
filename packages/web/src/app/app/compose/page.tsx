@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 export default async function ComposePage() {
   const user = await getSessionUser();
-  if (!user) redirect("/login");
+  if (!user) redirect("/sign-in");
 
   const drafts = await listDrafts(user.id).catch(() => []);
   return (

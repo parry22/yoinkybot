@@ -11,15 +11,15 @@ function b64url(buf: Buffer): string {
 }
 
 /**
- * Kick off X OAuth (PKCE) from the web. Doubles as sign-in and connect: the
- * callback checks for an existing session - if none, it signs the user in by
- * their X id; either way it stores the token and starts the history read. The
- * PKCE verifier rides an httpOnly cookie so this works on serverless.
+ * Kick off X OAuth (PKCE) from the web. This is the "connect X" flow (identity
+ * is Clerk's job now): the signed-in user authorizes X, and the callback stores
+ * the posting token and starts the history read. The PKCE verifier rides an
+ * httpOnly cookie so this works on serverless.
  */
 export async function GET(req: Request) {
   const origin = new URL(req.url).origin;
   const clientId = process.env.X_CLIENT_ID;
-  if (!clientId) return NextResponse.redirect(new URL("/login?error=x_unconfigured", origin));
+  if (!clientId) return NextResponse.redirect(new URL("/app?connect_error=1", origin));
 
   const state = b64url(randomBytes(16));
   const verifier = b64url(randomBytes(32));

@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 export default async function BuyersRadarPage() {
   const user = await getSessionUser();
-  if (!user) redirect("/login");
+  if (!user) redirect("/sign-in");
   const [status, signals, icp, prefill] = await Promise.all([
     buyerRadarStatus(user.id),
     listBuyerSignals(user.id),

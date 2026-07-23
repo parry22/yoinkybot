@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 export default async function InspirationPage() {
   const user = await getSessionUser();
-  if (!user) redirect("/login");
+  if (!user) redirect("/sign-in");
 
   const [trends, virals] = await Promise.all([
     listTrendInspiration(user.id).catch(() => []),

@@ -1,11 +1,13 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { query, queryOne } from "../db/pool.js";
 import { track, identify } from "../analytics/posthog.js";
+import { startTrial } from "../billing/entitlements.js";
 
 export interface User {
   id: string;
   telegram_id: string | null;
   email: string | null;
+  clerk_user_id: string | null;
   settings: Record<string, unknown>;
   created_at: string;
 }
@@ -150,4 +152,57 @@ export async function findOrCreateUserByEmail(email: string): Promise<User> {
   const existing = (await queryOne(`SELECT * FROM users WHERE email = $1`, [email])) as User | undefined;
   if (existing) return existing;
   return (await queryOne(`INSERT INTO users (email) VALUES ($1) RETURNING *`, [email])) as unknown as User;
+}
+
+/** Read-only lookup by Clerk user id — the web app's fast path on every request. */
+export async function findUserByClerkId(clerkUserId: string): Promise<User | undefined> {
+  return (await queryOne(`SELECT * FROM users WHERE clerk_user_id = $1`, [clerkUserId])) as User | undefined;
+}
+
+/**
+ * Map a Clerk-authenticated identity to our user row. Clerk is now the web app's
+ * identity provider, so this is called on the first request of a session:
+ *   1. Already mapped by clerk id → return it (backfilling a newly-known email).
+ *   2. A pre-Clerk row with the same email (old Google/magic-link/X user) → attach
+ *      the clerk id to it, so existing accounts carry over without duplication.
+ *   3. Otherwise a brand-new signup → create the row AND start the 7-day trial.
+ * The trial only starts on genuine account creation (step 3), never on carryover.
+ */
+export async function findOrCreateUserByClerkId(clerkUserId: string, email: string | null): Promise<User> {
+  const byClerk = await findUserByClerkId(clerkUserId);
+  if (byClerk) {
+    if (email && !byClerk.email) {
+      const updated = (await queryOne(`UPDATE users SET email = $2 WHERE id = $1 RETURNING *`, [
+        byClerk.id,
+        email.trim().toLowerCase(),
+      ])) as User | undefined;
+      return updated ?? byClerk;
+    }
+    return byClerk;
+  }
+
+  if (email) {
+    const byEmail = (await queryOne(`SELECT * FROM users WHERE email = $1`, [email.trim().toLowerCase()])) as
+      | User
+      | undefined;
+    if (byEmail) {
+      const linked = (await queryOne(`UPDATE users SET clerk_user_id = $2 WHERE id = $1 RETURNING *`, [
+        byEmail.id,
+        clerkUserId,
+      ])) as User | undefined;
+      // A returning account that predates the trial system still gets one on its
+      // first Clerk sign-in (idempotent: no-op if a subscription row exists).
+      if (linked) await startTrial(linked.id).catch((err) => console.error("startTrial (carryover) failed", err));
+      return linked ?? byEmail;
+    }
+  }
+
+  const created = (await queryOne(`INSERT INTO users (clerk_user_id, email) VALUES ($1, $2) RETURNING *`, [
+    clerkUserId,
+    email ? email.trim().toLowerCase() : null,
+  ])) as unknown as User;
+  await startTrial(created.id).catch((err) => console.error("startTrial (signup) failed", err));
+  identify(created.id, { source: "clerk", created_at: created.created_at });
+  track(created.id, "user_signed_up", { source: "clerk" });
+  return created;
 }

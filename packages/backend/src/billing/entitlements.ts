@@ -1,7 +1,11 @@
-import { queryOne } from "../db/pool.js";
+import { query, queryOne } from "../db/pool.js";
 import { config } from "../config.js";
 
-export type Plan = "free" | "paid" | "founding";
+// "trialing" is an in-memory plan LABEL for a user inside their 7-day free trial
+// — it maps to the full paid feature set. It is never written to
+// subscriptions.plan (whose CHECK is free/paid/founding); the trial is stored as
+// status='trialing' + trial_ends_at. See startTrial / trialInfo below.
+export type Plan = "free" | "trialing" | "paid" | "founding";
 
 export interface Entitlements {
   plan: Plan;
@@ -68,17 +72,87 @@ export async function isPaidOrExempt(user: { id: string; telegram_id: string | n
 }
 
 export async function entitlementsFor(userId: string): Promise<Entitlements> {
-  // Paywall is off during testing (PAYWALL_ENABLED=false) — everyone gets the
-  // full feature set. Flip the flag on to enforce plans; the logic below is ready.
-  if (!config.PAYWALL_ENABLED) {
-    const sub = await queryOne<{ plan: Plan }>(`SELECT plan FROM subscriptions WHERE user_id = $1`, [userId]);
-    return { plan: sub?.plan ?? "free", ...PAID };
-  }
-
-  const sub = await queryOne<{ plan: Plan; status: string }>(
-    `SELECT plan, status FROM subscriptions WHERE user_id = $1`,
+  const sub = await queryOne<{ plan: Plan; status: string; trial_ends_at: string | null }>(
+    `SELECT plan, status, trial_ends_at FROM subscriptions WHERE user_id = $1`,
     [userId],
   );
-  if (!sub || sub.status !== "active" || sub.plan === "free") return FREE;
-  return { plan: sub.plan, ...PAID };
+  const trialing =
+    !!sub && sub.status === "trialing" && !!sub.trial_ends_at && new Date(sub.trial_ends_at).getTime() > Date.now();
+  const paid = !!sub && sub.status === "active" && sub.plan !== "free";
+
+  // Paywall is off during testing (PAYWALL_ENABLED=false) — everyone gets the
+  // full feature set. Flip the flag on to enforce plans; the logic below is ready.
+  // We still report the true plan label so the UI/telemetry reflect trial vs paid.
+  if (!config.PAYWALL_ENABLED) {
+    const plan: Plan = trialing ? "trialing" : (sub?.plan ?? "free");
+    return { plan, ...PAID };
+  }
+
+  if (trialing) return { plan: "trialing", ...PAID };
+  if (paid) return { plan: sub!.plan, ...PAID };
+  return FREE;
+}
+
+/**
+ * Start a user's 7-day free trial (TRIAL_DAYS). Idempotent: a user who already
+ * has a subscription row — trialing, paid, or lapsed — is left untouched, so
+ * this never resets a clock or revives an expired trial. Called once, when the
+ * account is first created (lib/auth.findOrCreateUserByClerkId).
+ */
+export async function startTrial(userId: string, intendedPlan?: string | null): Promise<void> {
+  await query(
+    `INSERT INTO subscriptions (user_id, provider, plan, status, trial_ends_at, intended_plan, updated_at)
+     VALUES ($1, 'dodo', 'paid', 'trialing', now() + make_interval(days => $2::int), $3, now())
+     ON CONFLICT (user_id) DO NOTHING`,
+    [userId, config.TRIAL_DAYS, intendedPlan ?? null],
+  );
+}
+
+/**
+ * Record the plan the user picked on the landing page (growth/scale/founding),
+ * captured from the `?plan=` param at sign-up. Only fills an empty slot, so the
+ * first choice sticks and a later visit with a different param can't clobber it.
+ */
+export async function setIntendedPlan(userId: string, plan: string): Promise<void> {
+  const clean = plan.trim().slice(0, 40);
+  if (!clean) return;
+  await query(
+    `UPDATE subscriptions SET intended_plan = $2, updated_at = now()
+     WHERE user_id = $1 AND intended_plan IS NULL`,
+    [userId, clean],
+  );
+}
+
+export interface TrialInfo {
+  /** trialing = inside the trial window; active = paying; expired = trial lapsed, unpaid; none = no row yet. */
+  status: "trialing" | "active" | "expired" | "none";
+  /** True only while an unexpired trial is running. */
+  onTrial: boolean;
+  /** Whole days left in the trial, 0 once it has ended (the "cleared" state). */
+  daysLeft: number;
+  endsAt: string | null;
+  plan: Plan;
+  /** The plan the user picked on the landing page at sign-up, if any. */
+  intendedPlan: string | null;
+}
+
+/** The trial/subscription state for a user, for the web banner + Telegram copy. */
+export async function trialInfo(userId: string): Promise<TrialInfo> {
+  const sub = await queryOne<{ plan: Plan; status: string; trial_ends_at: string | null; intended_plan: string | null }>(
+    `SELECT plan, status, trial_ends_at, intended_plan FROM subscriptions WHERE user_id = $1`,
+    [userId],
+  );
+  if (!sub) return { status: "none", onTrial: false, daysLeft: 0, endsAt: null, plan: "free", intendedPlan: null };
+  if (sub.status === "active" && sub.plan !== "free") {
+    return { status: "active", onTrial: false, daysLeft: 0, endsAt: null, plan: sub.plan, intendedPlan: sub.intended_plan };
+  }
+  const ends = sub.trial_ends_at ? new Date(sub.trial_ends_at).getTime() : 0;
+  const now = Date.now();
+  if (sub.status === "trialing" && ends > now) {
+    const daysLeft = Math.max(0, Math.ceil((ends - now) / (24 * 60 * 60 * 1000)));
+    return { status: "trialing", onTrial: true, daysLeft, endsAt: sub.trial_ends_at, plan: "trialing", intendedPlan: sub.intended_plan };
+  }
+  // Trial started but has lapsed (or the sub is otherwise inactive): the trial is
+  // over and the day count is cleared to 0 — the upgrade wall now applies.
+  return { status: "expired", onTrial: false, daysLeft: 0, endsAt: sub.trial_ends_at, plan: "free", intendedPlan: sub.intended_plan };
 }

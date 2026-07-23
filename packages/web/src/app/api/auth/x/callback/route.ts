@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { findOrCreateUserByXId, createSession, finalizeXConnect } from "@yoink/backend/web";
-import { getSessionUser, SESSION_COOKIE } from "@/lib/session";
+import { finalizeXConnect } from "@yoink/backend/web";
+import { getSessionUser } from "@/lib/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,18 +9,24 @@ export const maxDuration = 60;
 
 const X_OAUTH_COOKIE = "x_oauth";
 
+/**
+ * X OAuth callback — connect only. Identity is Clerk's now, so this requires an
+ * existing Clerk session and attaches the X posting token to that account
+ * (finalizeXConnect also kicks the history read). An unauthenticated hit is
+ * bounced to sign-in.
+ */
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const origin = url.origin;
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
 
-  // Connect mode if already signed in (e.g. the mandatory popup); else sign-in.
   const existing = await getSessionUser();
-  const failTo = existing ? "/app?connect_error=1" : "/login?error=x_failed";
+  if (!existing) return NextResponse.redirect(new URL("/sign-in", origin));
+
   const fail = (reason: string) => {
     console.error("x oauth callback:", reason);
-    return NextResponse.redirect(new URL(failTo, origin));
+    return NextResponse.redirect(new URL("/app?connect_error=1", origin));
   };
 
   const jar = await cookies();
@@ -60,12 +66,10 @@ export async function GET(req: Request) {
     });
     if (!meRes.ok) return fail(`users/me ${meRes.status}`);
     const me = (await meRes.json()) as { data?: { id?: string; username?: string } };
-    const xId = me.data?.id;
     const username = me.data?.username;
-    if (!xId) return fail("no x id");
+    if (!me.data?.id) return fail("no x id");
 
-    const user = existing ?? (await findOrCreateUserByXId(xId));
-    await finalizeXConnect(user.id, {
+    await finalizeXConnect(existing.id, {
       handle: username ? `@${username}` : "connected",
       accessToken: tok.access_token,
       refreshToken: tok.refresh_token,
@@ -74,17 +78,7 @@ export async function GET(req: Request) {
     });
 
     // Land back in the app; the connect popup shows the "reading" animation.
-    const res = NextResponse.redirect(new URL(existing ? "/app?connected=x" : "/app", origin));
-    if (!existing) {
-      const sessionToken = await createSession(user.id);
-      res.cookies.set(SESSION_COOKIE, sessionToken, {
-        httpOnly: true,
-        sameSite: "lax",
-        secure: process.env.NODE_ENV === "production",
-        path: "/",
-        maxAge: 60 * 60 * 24 * 30,
-      });
-    }
+    const res = NextResponse.redirect(new URL("/app?connected=x", origin));
     res.cookies.set(X_OAUTH_COOKIE, "", { path: "/", maxAge: 0 });
     return res;
   } catch (err) {

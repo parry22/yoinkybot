@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { SignOutButton } from "@clerk/nextjs";
 import { getSessionUser } from "@/lib/session";
 import { listConnectedAccounts } from "@yoink/backend/web";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -10,7 +11,7 @@ export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
   const user = await getSessionUser();
-  if (!user) redirect("/login");
+  if (!user) redirect("/sign-in");
 
   const accounts = await listConnectedAccounts(user.id).catch(() => []);
   const x = accounts.find((a) => a.platform === "x") ?? null;
@@ -58,11 +59,11 @@ export default async function SettingsPage() {
           <ThemeToggle />
         </div>
 
-        <form action="/api/auth/logout" method="post">
-          <button type="submit" className="btnGhost">
+        <SignOutButton redirectUrl="/sign-in">
+          <button type="button" className="btnGhost">
             Sign out
           </button>
-        </form>
+        </SignOutButton>
       </div>
     </div>
   );

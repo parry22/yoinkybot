@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 export default async function AnalyticsPage() {
   const user = await getSessionUser();
-  if (!user) redirect("/login");
+  if (!user) redirect("/sign-in");
   const data = await getAnalytics(user.id);
   return <Analytics data={data} />;
 }

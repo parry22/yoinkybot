@@ -24,6 +24,27 @@ which is where it's most useful. Both share one Postgres and one `users` row.
 
 <!-- Keep newest-first. Update this whenever a change ships that a reader of the repo should know about. -->
 
+- **2026-07-23 — Clerk auth + a real 7-day free trial.** Identity for the web app
+  is now **Clerk** (`@clerk/nextjs` v7). The custom Google/X/email sign-in routes and
+  the `yoink_session` cookie are gone; `clerkMiddleware` (in `src/proxy.ts`) protects
+  `/app`, `<ClerkProvider>` wraps the tree inside `<body>`, and Clerk's `<SignIn>` /
+  `<SignUp>` / `<UserButton>` / `<SignOutButton>` replace the old login UI. Crucially,
+  `getSessionUser()` keeps its signature — it just resolves the Clerk session to our
+  `users` row via a new `clerk_user_id` (migration `0025`), so the ~30 callers are
+  untouched. Configure Google/X as **social logins in the Clerk dashboard** (app
+  `app_3GuEglSCyTcG11r4RQTo89Ve9O3`); the separate in-app **"Connect X"** posting flow
+  (`/api/auth/x/*`) is unchanged and now connect-only. **Trial:** every new signup
+  starts a 7-day, full-access trial (`subscriptions.status='trialing'` +
+  `trial_ends_at`, minted on first sign-in). While it runs, entitlements are paid-tier;
+  once it lapses, the day count clears to 0, entitlements fall to free, and the upgrade
+  wall applies on **both web** (a trial banner + `/api/billing/checkout` → Dodo) **and
+  Telegram** (the bot's default becomes "your trial ended, upgrade"). Enforcement
+  requires `PAYWALL_ENABLED=true`. Landing plan CTAs deep-link to `/sign-up?plan=…`
+  (growth/scale), forwarded into the app and recorded as the intended plan. **Note for
+  you:** set `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` + `CLERK_SECRET_KEY` (and the
+  `NEXT_PUBLIC_CLERK_SIGN_IN_URL`/`SIGN_UP_URL`) on Vercel, and `PAYWALL_ENABLED=true`
+  on both deploys, before the change is live. See INTERNAL §3i / §4 / §5.
+
 - **2026-07-23 — Automations (multi-automation "auto agent").** The single global
   autopilot is replaced by named, independent automations, each with its own source
   (rides trends in your niche, or posts from your backlog), cadence, and delivery
