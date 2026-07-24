@@ -295,3 +295,48 @@ Push to the connected branch (or `vercel --prod`). After it's live:
   move workers/cron to Vercel.
 - **Rollback:** Vercel keeps every deployment; promote a previous one from the
   dashboard. DNS stays pointed at Vercel throughout.
+
+---
+
+# LiteLLM proxy (Agent SDK runtime — docs/INTERNAL §3n)
+
+Only needed for the Claude Agent SDK migration. Until it's deployed and the
+Phase-0 spike passes, every `AGENT_RUNTIME_*` flag stays `legacy` and the app
+ignores all of this.
+
+## What it is
+A **separate Railway service** (its own container, same `yoinky` project) that
+serves the Anthropic Messages API (`/v1/messages` + `/v1/messages/count_tokens`)
+and translates to **OpenRouter → grok-4.5**. The backend's SDK subprocess points
+`ANTHROPIC_BASE_URL` at it over Railway's **private network** — never expose it
+publicly. Config lives in `litellm-config.yaml` (repo root).
+
+## Deploy
+1. New Railway service in the `yoinky` project from the `ghcr.io/berriai/litellm`
+   image. **Pin a clean version above 1.82.8** — PyPI `1.82.7`/`1.82.8` shipped
+   credential-stealing malware (BerriAI/litellm#24518). **Pinned: `1.93.0`** (use
+   the `-stable` Docker tag). Do not float `latest`.
+2. Region: any (OpenRouter handles provider routing, so grok-4.5's xAI EU-console
+   restriction doesn't apply here).
+3. Mount `litellm-config.yaml` and start with `--config /path/litellm-config.yaml`.
+4. Service env (NOT on the backend): `LITELLM_MASTER_KEY` (admin), `OPENROUTER_API_KEY`
+   (upstream — the same key the backend uses). If you ever add an Anthropic-direct
+   fallback, name that key something other than `ANTHROPIC_API_KEY` so a stray real
+   key can't silently bypass the proxy and bill the public Anthropic API.
+5. Mint a **virtual key** scoped to `yoinky-agent` + `yoinky-agent-fallback`; put
+   it on the **backend** as `LITELLM_API_KEY` (backend never gets the master key).
+6. Set the backend's `LITELLM_BASE_URL` to the private URL (e.g.
+   `http://litellm.railway.internal:4000`).
+
+## Verify (Phase 0 — the gate)
+`railway run --service backend pnpm --filter @yoink/backend exec tsx scripts/spike-agent-sdk.ts`
+must print `GATE OK`. Force a grok failure (temporarily break the primary model
+id) once to confirm the fallback engages. Paste the spike's results into
+INTERNAL §3n before building the adapter.
+
+## Rollback
+Flip the relevant `AGENT_RUNTIME_*` back to `legacy` on the backend (no deploy of
+the proxy needed). If the proxy is down, that flag flip IS the mitigation — there
+is no automatic runtime fallback by design (a silent degrade to a different model
+is exactly the failure class to avoid). The proxy can be torn down entirely with
+all flags on `legacy`.

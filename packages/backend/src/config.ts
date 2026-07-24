@@ -51,6 +51,35 @@ const schema = z.object({
   // before flipping LLM_TRANSPORT=xai — it may be "grok-4.5" or a dated variant.
   XAI_MODEL: z.string().default("grok-4.5"),
 
+  // ── Claude Agent SDK runtime (agent-runtime migration; docs/INTERNAL §3n) ──
+  // The bounded agent loops (+ eventually the chat brain) can run on the Claude
+  // Agent SDK instead of the bespoke llm/tool-loop.ts runner. The SDK spawns a
+  // subprocess and talks the Anthropic Messages format, so it is routed through a
+  // LiteLLM proxy → OpenRouter → grok-4.5 (any provider/key later). SDK mode is
+  // RAILWAY-ONLY (it needs a real filesystem/subprocess — never Vercel).
+  //   Per-feature runtime switch, default 'legacy' so nothing changes until a
+  //   feature is deliberately flipped AFTER the Phase-0 spike passes.
+  AGENT_RUNTIME_VIRAL: z.enum(["legacy", "sdk"]).default("legacy"),
+  AGENT_RUNTIME_TREND_TAKE: z.enum(["legacy", "sdk"]).default("legacy"),
+  AGENT_RUNTIME_CONSISTENCY: z.enum(["legacy", "sdk"]).default("legacy"),
+  AGENT_RUNTIME_BUYER: z.enum(["legacy", "sdk"]).default("legacy"),
+  AGENT_RUNTIME_REPLY: z.enum(["legacy", "sdk"]).default("legacy"),
+  AGENT_RUNTIME_CHAT: z.enum(["legacy", "sdk"]).default("legacy"),
+  //   LiteLLM proxy the SDK points at (ANTHROPIC_BASE_URL). Private Railway URL,
+  //   e.g. http://litellm.railway.internal:4000. Empty → SDK mode fails loud.
+  LITELLM_BASE_URL: z.string().default(""),
+  //   Virtual key scoped to the agent models (NOT the LiteLLM master key).
+  LITELLM_API_KEY: z.string().optional(),
+  //   The LiteLLM `model_name` the SDK sends, and its fallback (both resolve to
+  //   OpenRouter upstream in litellm-config.yaml).
+  AGENT_MODEL: z.string().default("yoinky-agent"),
+  AGENT_FALLBACK_MODEL: z.string().default("yoinky-agent-fallback"),
+  //   Max concurrent SDK subprocesses (~1 GiB each) — a semaphore in the adapter.
+  //   Railway is single-instance; raise only after confirming the plan can carry it.
+  AGENT_MAX_CONCURRENCY: z.coerce.number().default(2),
+  //   Per-loop hard cost ceiling (USD), independent of the turn cap → maxBudgetUsd.
+  AGENT_MAX_BUDGET_USD: z.coerce.number().default(0.5),
+
   // Embeddings are separate from the chat model (the chat model is chat-only):
   // OpenAI when OPENAI_API_KEY is set, else Qwen/DashScope (OpenAI-compatible mode).
   EMBEDDING_MODEL: z.string().default("text-embedding-3-large"),

@@ -1533,6 +1533,54 @@ Additive only — no new tables, no migration. The standalone `/app/diagnosis` a
 
 ---
 
+## 3n. Agent SDK runtime (2026-07-24, IN PROGRESS — Phase 0/1)
+
+Migrating the bounded agent loops (§3c) + eventually the chat brain (§3a) off the
+bespoke `llm/tool-loop.ts` runner onto the **Claude Agent SDK**
+(`@anthropic-ai/claude-agent-sdk`), with the SDK's Anthropic-Messages traffic
+routed through a **LiteLLM proxy → OpenRouter → grok-4.5** (any provider/key
+later). Spec + canonical guide: `docs/Claude-Agent-SDK-Canonical-Guide.md`.
+
+**Status: scaffolding only, gated on Phase 0.** Shipped so far: the SDK dep, the
+config flags (`AGENT_RUNTIME_*` per feature, default `legacy`; `LITELLM_*`;
+`AGENT_MODEL`/`AGENT_FALLBACK_MODEL`; `AGENT_MAX_CONCURRENCY`; `AGENT_MAX_BUDGET_USD`),
+`litellm-config.yaml`, and the verification spike `packages/backend/scripts/spike-agent-sdk.ts`.
+**Nothing routes through the SDK yet** — every feature is `legacy`, so this is
+inert in prod. The adapter (`src/agent-runtime/*`) is NOT built until Phase 0 passes.
+
+**Phase 0 is a HARD GATE.** Deploy the LiteLLM service, then run the spike against
+it; it proves (or disproves) that grok-4.5 *through LiteLLM's Anthropic→provider
+translation* handles a multi-step in-process MCP tool loop, parallel tool use,
+`outputFormat` structured output, `PreToolUse` deny, and `maxTurns`/`maxBudgetUsd`
+termination — and reports which auth env var LiteLLM accepts + token/latency
+numbers. If the multi-tool loop or parallel-tool test fails, the SDK is not a
+viable backend for grok-4.5-via-LiteLLM and the migration stops here. **Fill in
+the verified findings below once the spike has run.**
+
+- Phase 0 spike results: _pending — paste the spike's PASS/FAIL table + the
+  auth-var answer + token-vs-LiteLLM-spend cross-check here._
+
+**Hosting:** SDK mode is **Railway-only** — it spawns a Claude Code subprocess
+needing a real filesystem, which a Vercel serverless function is not (same
+`in-process import ≠ same process` lesson as §3i). Any web surface that needs an
+SDK loop (Buyer Radar "Scan now", which runs the loop synchronously in its Vercel
+route today) must move to pg-boss (enqueue → poll). Railway is single-instance
+Hobby and each SDK subprocess is ~1 GiB, so `AGENT_MAX_CONCURRENCY` caps concurrent
+subprocesses (default 2); the plan likely needs an upgrade before the interactive
+chat brain runs on the SDK.
+
+**Unverified (settle in Phase 0, per convention):** multi-turn tool-use fidelity
+and structured-output support through LiteLLM's translation; which of
+`ANTHROPIC_AUTH_TOKEN`/`ANTHROPIC_API_KEY` the SDK's bundled binary sends that
+LiteLLM accepts; whether LiteLLM serves `/v1/messages/count_tokens` for an
+OpenRouter-backed model; Railway concurrency headroom; the SDK's `total_cost_usd`
+is known-wrong for grok-4.5 (meter from our own `PRICE` map); prompt-caching
+economics against a non-Anthropic upstream. Also note the SDK peer-wants `zod@^4`
+but the repo is on `zod@3`; the SDK's `tool()` types accept `ZodRawShape | zod/v4`
+(both), so v3 raw shapes work — the warning is cosmetic.
+
+---
+
 ## 4. Data model
 
 Schema is a linear migration chain in `src/db/migrations/` (`0001`…`0027`),

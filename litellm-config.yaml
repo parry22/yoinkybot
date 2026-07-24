@@ -1,0 +1,44 @@
+# LiteLLM proxy config for the Yoinky Agent SDK runtime (docs/INTERNAL §3n).
+#
+# The Claude Agent SDK speaks the Anthropic Messages format. LiteLLM serves that
+# on /v1/messages (+ /v1/messages/count_tokens) and translates to any upstream.
+# Per the migration decision, upstream = OpenRouter (reuses the existing
+# OPENROUTER_API_KEY and sidesteps grok-4.5's xAI EU-region console restriction).
+#
+# Deploy as its OWN Railway service, private-network-reachable from the backend
+# (never public). PIN A CLEAN VERSION > 1.82.8 — PyPI 1.82.7/1.82.8 shipped
+# credential-stealing malware (BerriAI/litellm#24518). Current clean stable:
+# 1.93.0 (use the `-stable` Docker tag). Record the pinned version in DEPLOY.md.
+
+model_list:
+  # What the SDK sends as its `model` (config.AGENT_MODEL). grok-4.5 via OpenRouter.
+  - model_name: yoinky-agent
+    litellm_params:
+      model: openrouter/x-ai/grok-4.5
+      api_key: os.environ/OPENROUTER_API_KEY
+
+  # SDK `fallbackModel` (config.AGENT_FALLBACK_MODEL). A different model, still on
+  # OpenRouter (no new key). A Claude model gives the truest Anthropic-format tool
+  # behavior; swap the id to taste. NOT an automatic silent degrade of the primary
+  # — the app only reaches this when grok itself errors.
+  - model_name: yoinky-agent-fallback
+    litellm_params:
+      model: openrouter/anthropic/claude-sonnet-4.5
+      api_key: os.environ/OPENROUTER_API_KEY
+
+  # Optional (spec Phase 5): give the single-shot gateway.ts path one metering
+  # surface too. Unused until Phase 5.
+  - model_name: yoinky-chat
+    litellm_params:
+      model: openrouter/x-ai/grok-4.5
+      api_key: os.environ/OPENROUTER_API_KEY
+
+litellm_settings:
+  # OpenRouter/xAI reject some Anthropic-shaped params — let LiteLLM drop them
+  # rather than 400 the request.
+  drop_params: true
+
+general_settings:
+  # Admin key for the proxy. Issue a VIRTUAL KEY scoped to the two agent models
+  # for the backend (LITELLM_API_KEY) rather than handing it the master key.
+  master_key: os.environ/LITELLM_MASTER_KEY
