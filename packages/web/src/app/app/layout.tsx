@@ -1,8 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/session";
 import { config, getXConnectStatus, trialInfo } from "@yoink/backend/web";
-import { Sidebar } from "@/components/sidebar";
-import { TopBar } from "@/components/topbar";
+import { AppShell } from "@/components/app-shell";
 import { ConnectXGate } from "@/components/connect-x-gate";
 import styles from "./shell.module.css";
 
@@ -19,13 +18,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className={styles.shell}>
-      <div className={styles.platform}>
-        <Sidebar />
-        <main className={styles.workspace}>
-          <TopBar telegramUrl={config.TELEGRAM_BOT_URL} trial={trial} />
-          <div className={styles.content}>{children}</div>
-        </main>
-      </div>
+      <AppShell telegramUrl={config.TELEGRAM_BOT_URL} trial={trial}>
+        {children}
+      </AppShell>
       {/* Mandatory: users must connect X before using the app. */}
       <ConnectXGate connected={x.connected} />
     </div>

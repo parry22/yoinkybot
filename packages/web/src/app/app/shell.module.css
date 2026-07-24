@@ -39,19 +39,38 @@
   min-height: 0;
 }
 
+/* The mobile drawer's dimmed backdrop (click to close). Hidden by default —
+ * AppShell only mounts this element while the drawer is open, and the base
+ * `display: none` also guards a desktop viewport from ever showing it. */
+.backdrop {
+  display: none;
+}
+
 @media (max-width: 1000px) {
   .shell {
-    padding: 8px;
+    padding: 0;
     align-items: stretch;
   }
   .platform {
     flex-direction: column;
     height: auto;
-    min-height: calc(100vh - 16px);
+    min-height: 100vh;
   }
   .workspace {
+    /* The sidebar is now an off-canvas drawer (position: fixed), not an in-flow
+     * block above this one, so there's no gap to compensate for anymore. */
     margin-left: 0;
-    margin-top: 8px;
-    min-height: 70vh;
+    margin-top: 0;
+    min-height: 0;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+  }
+  .backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 55; /* below the drawer (60) and mobile header (65), above content */
+    background: rgba(0, 0, 0, 0.45);
   }
 }

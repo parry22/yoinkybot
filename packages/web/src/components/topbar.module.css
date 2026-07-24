@@ -107,3 +107,12 @@
     display: none;
   }
 }
+
+/* This whole bar is desktop-only. On mobile, MobileHeader (logo + Telegram icon
+ * + hamburger) is the persistent top strip; the trial pill moves into the
+ * sidebar drawer (sidebar.module.css .mobileTrial) instead of doubling up here. */
+@media (max-width: 1000px) {
+  .topbar {
+    display: none;
+  }
+}

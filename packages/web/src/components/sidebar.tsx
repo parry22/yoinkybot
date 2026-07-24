@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -15,6 +14,9 @@ import {
   Settings05Icon,
   TelegramIcon,
 } from "@hugeicons/core-free-icons";
+import type { TrialInfo } from "@yoink/backend/web";
+import { TrialPill } from "./trial-banner";
+import { useTelegramLink } from "./use-telegram-link";
 import styles from "./sidebar.module.css";
 
 type NavItem = { href: string; label: string; icon: typeof BotIcon };
@@ -36,26 +38,20 @@ const ACCOUNT_NAV: NavItem[] = [
   { href: "/app/settings", label: "Settings", icon: Settings05Icon },
 ];
 
-export function Sidebar() {
+export function Sidebar({
+  open,
+  trial,
+  onNavigate,
+}: {
+  /** Mobile drawer state — a no-op class on desktop, where the sidebar is always visible. */
+  open: boolean;
+  /** Shown as a mobile-only pill (the persistent top bar covers Telegram there instead). */
+  trial: TrialInfo | null;
+  /** Called after a nav link is tapped, so the mobile drawer closes on navigation. */
+  onNavigate: () => void;
+}) {
   const pathname = usePathname();
-  const [tgBusy, setTgBusy] = useState(false);
-
-  // Open the bot through a one-time link token so /start links this Clerk
-  // account to the Telegram chat (idempotent if already linked). A plain
-  // t.me link would arrive unlinked and the auth-gated bot would turn it away.
-  async function openTelegram() {
-    if (tgBusy) return;
-    setTgBusy(true);
-    try {
-      const res = await fetch("/api/telegram/link", { method: "POST" });
-      const data = await res.json();
-      if (data.url) window.open(data.url, "_blank", "noopener,noreferrer");
-    } catch {
-      /* transient failure — the user can tap again */
-    } finally {
-      setTgBusy(false);
-    }
-  }
+  const { open: openTelegram, busy: tgBusy } = useTelegramLink();
 
   function renderGroup(label: string, items: NavItem[]) {
     return (
@@ -64,7 +60,12 @@ export function Sidebar() {
         {items.map((item) => {
           const active = pathname.startsWith(item.href);
           return (
-            <Link key={item.href} href={item.href} className={`${styles.navItem} ${active ? styles.navItemActive : ""}`}>
+            <Link
+              key={item.href}
+              href={item.href}
+              onClick={onNavigate}
+              className={`${styles.navItem} ${active ? styles.navItemActive : ""}`}
+            >
               <HugeiconsIcon icon={item.icon} size={18} strokeWidth={1.8} />
               <span>{item.label}</span>
             </Link>
@@ -75,11 +76,19 @@ export function Sidebar() {
   }
 
   return (
-    <aside className={styles.sidebar} aria-label="Yoinky navigation">
+    <aside className={`${styles.sidebar} ${open ? styles.sidebarOpen : ""}`} aria-label="Yoinky navigation">
       <div className={styles.brandRow}>
         <img src="/favicon.png" alt="" className={styles.dot} />
         Yoinky
       </div>
+
+      {/* Mobile-only: the top bar's compact Telegram icon covers Telegram there,
+       *  but the trial "Add card" CTA lives here instead, under the menu. */}
+      {trial && (
+        <div className={styles.mobileTrial}>
+          <TrialPill trial={trial} />
+        </div>
+      )}
 
       <nav className={styles.nav}>
         {renderGroup("Agent", AGENT_NAV)}
@@ -90,7 +99,10 @@ export function Sidebar() {
       <button
         type="button"
         className={`${styles.navItem} ${styles.telegramItem}`}
-        onClick={openTelegram}
+        onClick={() => {
+          openTelegram();
+          onNavigate();
+        }}
         disabled={tgBusy}
         title="Open the Yoinky bot in Telegram"
       >
