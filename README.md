@@ -24,6 +24,15 @@ which is where it's most useful. Both share one Postgres and one `users` row.
 
 <!-- Keep newest-first. Update this whenever a change ships that a reader of the repo should know about. -->
 
+- **2026-07-24 — Sidebar: Telegram Bot launcher + profile-row cleanup.** Since
+  Clerk owns identity, the sidebar's redundant profile row (avatar/email/logout)
+  is gone — sign-out already lives in the topbar `<UserButton>` and on Settings.
+  In its place, a bottom-anchored **Telegram Bot** item that opens the bot through
+  the tokenized deep link (`POST /api/telegram/link` → `?start=<token>`), so it
+  both takes the user to Telegram **and** links their Clerk account on first open
+  (the auth-gated bot rejects an unlinked visitor, so a plain `t.me` link won't do).
+  Frontend-only; the backend link primitive already existed. See INTERNAL §3f.
+
 - **2026-07-24 — Grok 4.5 cost/cache optimization (phases 3–5).** Builds on 1–2;
   all safe-defaulted and correct at a 0% cache hit rate. (3) **Cache affinity wired
   (§3):** the chat turn carries one `cacheKey` (`chat:{hash(userId)}:{turnId}`) across

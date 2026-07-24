@@ -981,8 +981,10 @@ Wiring:
   `<body>`** (Core 3 / cache-components rule) in `src/app/layout.tsx`.
 - Catch-all `src/app/sign-in/[[...sign-in]]` and `sign-up/[[...sign-up]]` render
   Clerk's `<SignIn>` / `<SignUp>`. Sign-up reads `?plan=` and forwards it to
-  `/app?plan=…`. `<UserButton>` sits in the topbar; the sidebar sign-out uses
-  `<SignOutButton redirectUrl="/sign-in">`. `/` redirects to `/app` or `/sign-in`.
+  `/app?plan=…`. `<UserButton>` sits in the topbar (shows email + sign out on
+  click) and `<SignOutButton redirectUrl="/sign-in">` is on the Settings page, so
+  the old sidebar profile row (avatar/email/logout) was removed as redundant.
+  `/` redirects to `/app` or `/sign-in`.
 - **The bridge that kept the blast radius tiny:** `getSessionUser()`
   (`src/lib/session.ts`) still returns `User | null`, so every server component /
   route that used it is unchanged. Internally it now does `await auth()` →
@@ -1133,10 +1135,16 @@ boundary through actual HTTP, never a shared in-memory data structure.
 `/api/connect` and `runWebConnect` (the old typed-handle path) were
 dead-code-removed once this replaced them.
 
-**Telegram connect button (Settings).** Reuses the existing deep-link primitive:
-`POST /api/telegram/link` calls `createTelegramLinkToken(userId)` and returns
-`${TELEGRAM_BOT_URL}?start=${token}`; the button opens it in a new tab so the
-bot's `/start` consumes the token and attaches `telegram_id` to this user row.
+**Telegram connect button (Settings) + sidebar launcher.** Reuses the existing
+deep-link primitive: `POST /api/telegram/link` calls
+`createTelegramLinkToken(userId)` and returns `${TELEGRAM_BOT_URL}?start=${token}`;
+the caller opens it in a new tab so the bot's `/start` consumes the token and
+attaches `telegram_id` to this user row. Two entry points share this flow — the
+Settings "Go to Telegram" button (`components/telegram-connect.tsx`) and a
+bottom-anchored **Telegram Bot** item in the sidebar (`components/sidebar.tsx`).
+Both go through the tokenized link (never a plain `t.me` link), so opening from
+either place links the Clerk account before the auth-gated bot can turn an
+unlinked visitor away.
 
 **Structured onboarding — a gamified popup, not a chat (2026-07-20,
 `web/onboarding-form.ts`).** The web's onboarding intake is a **separate,
