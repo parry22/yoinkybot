@@ -1,7 +1,8 @@
 import { z } from "zod";
+import { randomUUID } from "node:crypto";
 import { query, queryOne } from "../db/pool.js";
 import { config } from "../config.js";
-import { llmCall, asObject } from "../llm/gateway.js";
+import { llmCall, asObject, hashForCacheKey } from "../llm/gateway.js";
 import { converse } from "../prompts/converse.v3.js";
 import { parseChatTool, type ChatTool } from "./chat-tools.js";
 import { activePositions } from "../memory/positions.js";
@@ -173,6 +174,13 @@ export async function converseWithUser(
   const maxToolCalls = opts.executeTool ? config.MAX_TOOL_CALLS_PER_TURN : 1;
   const toolNotes: string[] = [];
   const seenCalls = new Set<string>();
+  // Cache affinity (spec §3): all iterations of THIS turn carry one key, so the
+  // whole multi-tool turn lands on one server and iterations 2-N replay a warm
+  // prefix. `now` is computed ONCE here (not per iteration) so the front of the
+  // user message is byte-identical across the turn's iterations — only the
+  // appended tool notes at the tail change (spec §2/§6 prefix stability).
+  const cacheKey = `chat:${hashForCacheKey(userId)}:${randomUUID()}`;
+  const nowIso = new Date().toISOString();
   let forceFinal = false;
   let userTurnSaved = false;
   // The user's message is assessed on the first pass; later passes only digest
@@ -186,6 +194,7 @@ export async function converseWithUser(
       userId,
       eventType: "converse",
       tier: converse.tier,
+      cacheKey,
       system: converse.system,
       user:
         converse.render({
@@ -208,7 +217,7 @@ export async function converseWithUser(
           relationship,
           toolNotes,
           toolCallsRemaining: Math.max(0, maxToolCalls - toolNotes.length),
-          now: new Date().toISOString(),
+          now: nowIso,
         }) +
         (outOfCalls
           ? "\n\nNo more tool calls this turn. Give your final reply now (tool must be null)."

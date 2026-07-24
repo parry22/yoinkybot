@@ -66,7 +66,18 @@ directly.** As of 2026-07-10 this is deliberately simple:
   opportunistic. `tier` now maps to `reasoning_effort` (`frontier→high`, everything
   else→`low`); reasoning tokens bill at the output rate, so this is the biggest
   per-call lever. On xAI it's the `x-grok-conv-id` header + `reasoning_effort`; on
-  OpenRouter it's `session_id` + `reasoning:{effort}`.
+  OpenRouter it's `session_id` + `reasoning:{effort}`. **Wired (2026-07-24):** the
+  chat turn passes one `cacheKey` across all its tool-loop iterations (`converse` +
+  `runToolLoop`), and `converse` computes `now` once per turn so the user-message
+  front is byte-stable across iterations (only appended tool notes vary). Loop
+  context is append-only (`toolNotes` push-only); `reasoning_content` replay is N/A
+  — the gateway sends a fresh system+user pair per iteration, not a replayed
+  assistant transcript. **Native structured output (§5):** `LlmRequest.jsonSchema`
+  → `response_format: json_schema` (opt-in per call); on a 400 the degrade drops it
+  and the JSON ladder still runs (kept as fallback). `ladderEntryCounts()` /
+  `json-ladder-entry` logs track which prompts still hit the ladder — a prompt that
+  never does under a schema can drop it; one that keeps doing signals a too-tight
+  `max_tokens`, not a flaky model.
 - `llmCall(req)` does: per-user daily cap check → single provider call with
   retries (`withRetries`, 3 attempts, backoff on 429/5xx/timeout) → for
   `json: true`, a **bounded JSON recovery ladder** (2026-07-13 — GLM's flaky

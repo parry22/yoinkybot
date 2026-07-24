@@ -31,6 +31,14 @@ export interface LlmRequest {
   /** When true, the prompt must instruct JSON output; the response is parsed and returned. */
   json?: boolean;
   /**
+   * Native structured output (spec §5). When set alongside `json`, the request
+   * uses constrained decoding (`response_format: json_schema`) instead of the
+   * looser `json_object` mode — the model can't emit wrong-shape JSON. On a
+   * provider that rejects it, the 400 degrade path drops it and the JSON recovery
+   * ladder still runs, so this is a pure optimization: safe to attach anywhere.
+   */
+  jsonSchema?: { name: string; schema: Record<string, unknown> };
+  /**
    * Cache-affinity routing tag (spec §3). Same key → same upstream server → warm
    * prefix cache. MUST NOT be a raw user id/email (it leaves our system as a
    * routing tag) — build it with `hashForCacheKey`. Optional; omitting it just
@@ -83,6 +91,13 @@ export function cost(model: string, tokensIn: number, cachedIn: number, tokensOu
   const p = priceFor(model);
   const fresh = Math.max(0, tokensIn - cachedIn);
   return (fresh * p.in + cachedIn * p.cachedIn + tokensOut * p.out) / 1_000_000;
+}
+
+/** Per-event count of JSON-recovery-ladder entries this process (spec §5 metric).
+ *  A prompt that never enters under native structured output can drop its ladder. */
+const ladderEntries = new Map<string, number>();
+export function ladderEntryCounts(): Record<string, number> {
+  return Object.fromEntries(ladderEntries);
 }
 
 async function withRetries<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
@@ -161,7 +176,16 @@ async function callModel(req: LlmRequest, useJsonMode: boolean, sendReasoning = 
       { role: "system", content: req.system },
       { role: "user", content: req.user },
     ],
-    ...(useJsonMode ? { response_format: { type: "json_object" } } : {}),
+    // Native constrained decoding when a schema is supplied (spec §5), else the
+    // looser json_object mode. Skipped entirely when useJsonMode is false (the
+    // 400-degrade retry), so a provider that rejects response_format still runs.
+    ...(useJsonMode
+      ? {
+          response_format: req.jsonSchema
+            ? { type: "json_schema", json_schema: { name: req.jsonSchema.name, schema: req.jsonSchema.schema, strict: true } }
+            : { type: "json_object" },
+        }
+      : {}),
   };
 
   if (xai) {
@@ -403,8 +427,16 @@ export async function llmCall(req: LlmRequest): Promise<LlmResponse> {
     };
     if (tryParse(res)) return res;
 
-    // ── The JSON recovery ladder (2026-07-13). GLM's JSON failures live in
-    // three classes, each with its own rung; every rung is bounded. ──────────
+    // Ladder-entry metric (spec §5): first parse failed, so a recovery rung is
+    // about to run (each rung re-charges input). Grep `json-ladder-entry` by
+    // event to see which prompts still need it — a prompt that never enters it
+    // under native structured output can drop its ladder; one that keeps entering
+    // signals a too-tight max_tokens, not a flaky model.
+    ladderEntries.set(req.eventType, (ladderEntries.get(req.eventType) ?? 0) + 1);
+    console.warn(`json-ladder-entry event=${req.eventType} finish=${res.finishReason ?? "?"} schema=${req.jsonSchema ? "y" : "n"} count=${ladderEntries.get(req.eventType)}`);
+
+    // ── The JSON recovery ladder (2026-07-13). Kept as a FALLBACK under native
+    // structured outputs — three failure classes, each with its own bounded rung. ──
 
     // Rung 1 — truncation: finish_reason "length" means the JSON was cut off
     // mid-structure (GLM front-loads prose before the JSON, eating the budget).

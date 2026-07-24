@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { llmCall, type Tier } from "./gateway.js";
+import { llmCall, hashForCacheKey, type Tier } from "./gateway.js";
 
 /**
  * The shared bounded agent loop. Instead of one fixed-context call, the model
@@ -44,6 +44,11 @@ export interface ToolLoopRequest<S extends z.ZodTypeAny> {
   outputSchema: S;
   maxToolCalls: number;
   maxTokens?: number;
+  /** Cache-affinity key (spec §3). Loop iterations replay a growing prefix, so
+   *  one key across the loop makes iterations 2-N cheap on input. Defaults to a
+   *  per-(event,user) key; a caller wanting cross-user L1 sharing (batch jobs)
+   *  can pass a user-less `{promptId}:{version}` key. */
+  cacheKey?: string;
 }
 
 /** Truncation for the per-step note fed back into the loop's context. */
@@ -57,6 +62,8 @@ export async function runToolLoop<S extends z.ZodTypeAny>(
   const notes: string[] = [];
   const steps: ToolLoopStep[] = [];
   const seen = new Set<string>();
+  // One affinity key for the whole loop so replayed context stays on a warm server.
+  const cacheKey = req.cacheKey ?? (req.userId ? `${req.eventType}:${hashForCacheKey(req.userId)}` : req.eventType);
   let forceFinal = false;
 
   // maxToolCalls tool executions → at most maxToolCalls + 1 model calls.
@@ -68,6 +75,7 @@ export async function runToolLoop<S extends z.ZodTypeAny>(
       userId: req.userId,
       eventType: req.eventType,
       tier: req.tier,
+      cacheKey,
       system: req.system,
       user: req.renderUser(notes) + finalNote,
       json: true,

@@ -24,6 +24,28 @@ which is where it's most useful. Both share one Postgres and one `users` row.
 
 <!-- Keep newest-first. Update this whenever a change ships that a reader of the repo should know about. -->
 
+- **2026-07-24 — Grok 4.5 cost/cache optimization (phases 3–5).** Builds on 1–2;
+  all safe-defaulted and correct at a 0% cache hit rate. (3) **Cache affinity wired
+  (§3):** the chat turn carries one `cacheKey` (`chat:{hash(userId)}:{turnId}`) across
+  all its tool-loop iterations, and `runToolLoop` derives a per-(event,user) key —
+  so replayed context lands on a warm server. `converse.v3` now computes `now` ONCE
+  per turn (not per iteration), so the front of the user message is byte-identical
+  across a turn and only the appended tool notes vary (§2/§6 prefix stability). (4)
+  **Loop append-only confirmed (§6):** `toolNotes` are push-only, never rewritten;
+  `reasoning_content` retention is **N/A** to our stateless 2-message (system+user)
+  gateway — there's no assistant turn replayed, so the cache win comes from stable
+  prefix + affinity, not reasoning replay (honest deviation from the spec's
+  Chat-Completions assumption). (5) **Native structured outputs plumbed (§5):**
+  `LlmRequest.jsonSchema` sends `response_format: json_schema` (constrained decoding)
+  when a call opts in; a 400 degrades (drops it) and the JSON recovery **ladder stays
+  as fallback**; a `json-ladder-entry` counter (`ladderEntryCounts()`) now logs which
+  prompts still need the ladder. **Deferred (deliberately):** the full per-prompt
+  L1/L2/L3 re-layering (§2 long tail — incremental, low marginal gain over affinity in
+  a 2-message gateway) and per-callsite schema attachment (best prioritized by the new
+  counter; skip freeform-`tool` prompts like converse). **Phase 6 (Batch API) not
+  started** — the spec gates it on live measurement + an account SLA/discount check.
+  See INTERNAL §2.
+
 - **2026-07-24 — Grok 4.5 cost/cache optimization (phases 1–2 of the spec).**
   Foundation for cutting per-call spend without changing what any feature does.
   (1) **Metering now accounts for cached input** (`usage/meter.ts`, migration `0028`):
