@@ -12,8 +12,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const user = await getSessionUser();
   if (!user) redirect("/sign-in");
 
-  const email = user.email ?? "your account";
-  const initials = (email.trim()[0] ?? "y").toUpperCase();
   const [x, trial] = await Promise.all([
     getXConnectStatus(user.id).catch(() => ({ connected: false, status: null, postCount: 0 })),
     trialInfo(user.id).catch(() => null),
@@ -22,7 +20,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <div className={styles.shell}>
       <div className={styles.platform}>
-        <Sidebar user={{ email, initials }} />
+        <Sidebar />
         <main className={styles.workspace}>
           <TopBar telegramUrl={config.TELEGRAM_BOT_URL} trial={trial} />
           <div className={styles.content}>{children}</div>

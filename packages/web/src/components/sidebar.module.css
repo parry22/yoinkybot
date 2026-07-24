@@ -88,73 +88,6 @@
   color: var(--accent-ink);
 }
 
-.spacer {
-  flex: 1;
-}
-
-.profileRow {
-  margin-top: auto;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 4px 2px;
-  border-top: 0.5px solid var(--stroke);
-  padding-top: 12px;
-}
-
-.profileLeft {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--ink-900);
-  min-width: 0;
-}
-
-.avatar {
-  width: 26px;
-  height: 26px;
-  border-radius: 100%;
-  border: 0.5px solid var(--accent-border);
-  background: linear-gradient(180deg, var(--accent) 0%, var(--accent-2) 100%);
-  color: #fff;
-  display: grid;
-  place-items: center;
-  font-size: 11px;
-  font-weight: 500;
-  flex: 0 0 auto;
-}
-
-.userName {
-  font-size: 13px;
-  line-height: 1.2;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.iconButton {
-  width: 30px;
-  height: 30px;
-  border-radius: 999px;
-  border: none;
-  background: transparent;
-  color: var(--ink-600);
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-  flex: 0 0 auto;
-}
-
-.iconButton:hover {
-  color: var(--ink-900);
-  background: var(--hover);
-}
-
-.actions {
-  display: flex;
-  gap: 2px;
-}
-
 @media (max-width: 1000px) {
   .sidebar {
     max-width: 100%;
@@ -168,11 +101,7 @@
     grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
     gap: 4px;
   }
-  .navLabel,
-  .spacer {
+  .navLabel {
     display: none;
-  }
-  .profileRow {
-    border-top: none;
   }
 }

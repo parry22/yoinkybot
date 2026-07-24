@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { SignOutButton } from "@clerk/nextjs";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   BotIcon,
@@ -13,7 +12,6 @@ import {
   Analytics01Icon,
   Target01Icon,
   Settings05Icon,
-  Logout01Icon,
 } from "@hugeicons/core-free-icons";
 import styles from "./sidebar.module.css";
 
@@ -36,7 +34,7 @@ const ACCOUNT_NAV: NavItem[] = [
   { href: "/app/settings", label: "Settings", icon: Settings05Icon },
 ];
 
-export function Sidebar({ user }: { user: { email: string; initials: string } }) {
+export function Sidebar() {
   const pathname = usePathname();
 
   function renderGroup(label: string, items: NavItem[]) {
@@ -68,22 +66,6 @@ export function Sidebar({ user }: { user: { email: string; initials: string } })
         {renderGroup("Grow", GROW_NAV)}
         {renderGroup("Account", ACCOUNT_NAV)}
       </nav>
-
-      <div className={styles.spacer} />
-
-      <div className={styles.profileRow}>
-        <div className={styles.profileLeft}>
-          <span className={styles.avatar}>{user.initials}</span>
-          <span className={styles.userName}>{user.email}</span>
-        </div>
-        <div className={styles.actions}>
-          <SignOutButton redirectUrl="/sign-in">
-            <button type="button" className={styles.iconButton} aria-label="Sign out" title="Sign out">
-              <HugeiconsIcon icon={Logout01Icon} size={18} strokeWidth={1.8} />
-            </button>
-          </SignOutButton>
-        </div>
-      </div>
     </aside>
   );
 }
