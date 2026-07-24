@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -12,6 +13,7 @@ import {
   Analytics01Icon,
   Target01Icon,
   Settings05Icon,
+  TelegramIcon,
 } from "@hugeicons/core-free-icons";
 import styles from "./sidebar.module.css";
 
@@ -36,6 +38,24 @@ const ACCOUNT_NAV: NavItem[] = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const [tgBusy, setTgBusy] = useState(false);
+
+  // Open the bot through a one-time link token so /start links this Clerk
+  // account to the Telegram chat (idempotent if already linked). A plain
+  // t.me link would arrive unlinked and the auth-gated bot would turn it away.
+  async function openTelegram() {
+    if (tgBusy) return;
+    setTgBusy(true);
+    try {
+      const res = await fetch("/api/telegram/link", { method: "POST" });
+      const data = await res.json();
+      if (data.url) window.open(data.url, "_blank", "noopener,noreferrer");
+    } catch {
+      /* transient failure — the user can tap again */
+    } finally {
+      setTgBusy(false);
+    }
+  }
 
   function renderGroup(label: string, items: NavItem[]) {
     return (
@@ -66,6 +86,17 @@ export function Sidebar() {
         {renderGroup("Grow", GROW_NAV)}
         {renderGroup("Account", ACCOUNT_NAV)}
       </nav>
+
+      <button
+        type="button"
+        className={`${styles.navItem} ${styles.telegramItem}`}
+        onClick={openTelegram}
+        disabled={tgBusy}
+        title="Open the Yoinky bot in Telegram"
+      >
+        <HugeiconsIcon icon={TelegramIcon} size={18} strokeWidth={1.8} />
+        <span>{tgBusy ? "Opening…" : "Telegram Bot"}</span>
+      </button>
     </aside>
   );
 }

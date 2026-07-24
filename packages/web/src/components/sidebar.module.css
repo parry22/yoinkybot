@@ -88,6 +88,25 @@
   color: var(--accent-ink);
 }
 
+.telegramItem {
+  margin-top: auto;
+  color: var(--accent);
+  cursor: pointer;
+  border: 0.5px solid var(--accent-border);
+  background: var(--accent-soft);
+}
+
+.telegramItem:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+  filter: brightness(0.98);
+}
+
+.telegramItem:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
 @media (max-width: 1000px) {
   .sidebar {
     max-width: 100%;
