@@ -23,6 +23,22 @@ which is where it's most useful. Both share one Postgres and one `users` row.
 ## Latest updates
 
 <!-- Keep newest-first. Update this whenever a change ships that a reader of the repo should know about. -->
+- **2026-07-25 — Post-migration sweep: all six loops now run on the Claude Agent
+  SDK, plus three real fixes.** Every `AGENT_RUNTIME_*` flag is `sdk` in
+  production. **Chat no longer goes silent:** the model will not narrate between
+  tool calls under structured output, so `TOOL_BEATS` gives each chat tool a
+  written beat ("checking what you've told me") used whenever the model supplies
+  none — with a guard so the same line never repeats twice in a row. The sweep
+  also caught a **money bug I had just introduced**: pg-boss v10 ignores
+  `singletonKey` on the default `standard` queue policy, so double-clicking
+  "Scan now" bought *two* paid Buyer Radar scans — now guarded by an in-flight
+  re-attach plus a `short` queue policy. And **dependency advisories went 29 (16
+  high) → 1**: `next` had been pinned exact at 16.2.4 and drifted seven patches
+  behind → 16.2.11, `fastify` → 5.10.0, with overrides for
+  postcss/fast-uri/find-my-way/sharp. The one left (`@hono/node-server`) is
+  unreachable here — only the MCP HTTP transport imports it and we use in-process
+  MCP servers. See INTERNAL §3n.
+
 
 - **2026-07-25 — Agent SDK adapter built; 5 loops ready to flip; no Railway
   upgrade needed.** `src/agent-runtime/` adds `runAgentLoop(feature, req)`, a

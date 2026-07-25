@@ -1541,8 +1541,8 @@ bespoke `llm/tool-loop.ts` runner onto the **Claude Agent SDK**
 routed through a **LiteLLM proxy → OpenRouter → grok-4.5** (any provider/key
 later). Spec + canonical guide: `docs/Claude-Agent-SDK-Canonical-Guide.md`.
 
-**Status: Phase 1 — adapter BUILT and validated 7/7 (2026-07-25). Five of six
-loops are wired and ready to flip; every flag still defaults to `legacy`.**
+**Status: LIVE — all six `AGENT_RUNTIME_*` flags are `sdk` in production as of
+2026-07-25. Adapter validated 9/9.**
 
 The adapter lives in `src/agent-runtime/`:
 
@@ -1557,9 +1557,8 @@ All five `runToolLoop` callsites now call `runAgentLoop("<feature>", …)`:
 `consistency/check.ts`, `jobs/viral-benchmark.ts`, `jobs/trend-match.ts`,
 `engagement/reply-agent.ts`, `buyer/radar-agent.ts`.
 
-**`AGENT_RUNTIME_CHAT` IS now wired** (`agent-runtime/chat-turn.ts`, dispatched
-from `telegram/conversation.ts`) — but **leave it on `legacy`**, for a measured
-reason, not caution.
+**`AGENT_RUNTIME_CHAT` is wired and LIVE** (`agent-runtime/chat-turn.ts`,
+dispatched from `telegram/conversation.ts`).
 
 Chat could not reuse `runAgentLoop`: the five bounded loops are pure (tools
 return text, nothing reaches the user until the final object), whereas each chat
@@ -1582,10 +1581,21 @@ So the beat is never *generated*, not lost in transit. The likely cause is
 free-text narration between tool calls. The untried remedy is to drop
 `outputFormat` for chat and recover the final object with a loose JSON parse,
 trading output reliability for narration; that is a real trade and deserves its
-own change. **Flipping chat today gives a functionally correct turn that is
-SILENT until the final reply, where legacy narrates each step.** Everything else
-about the chat path validates (E1: real converse prompt, tools called, valid
-result), so it is ready the moment that trade is made.
+own change.
+
+**Resolved by not depending on the model at all.** `TOOL_BEATS` in `chat-turn.ts`
+gives every chat tool a written beat, used whenever the model supplies none, so a
+multi-tool turn always says what it is doing ("checking what you've told me",
+"getting that scheduled"). A `previous` guard turns a repeated line into "still on
+it", because the same canned sentence twice in a row reads worse than silence. A
+test asserts every member of `chatToolSchema` has an entry, so a new tool cannot
+silently inherit the generic fallback. The model's own beat still wins when it
+exists, so this becomes dead weight the day the structured-output constraint is
+lifted. Everything else about the chat path validates (E1: real converse prompt,
+tools called, valid result).
+
+_Watch item:_ a 2-tool chat turn measured **~9s** end to end — slower than legacy,
+and felt directly because chat is the one interactive surface.
 
 **Phase 1 validation — 7/7, `ADAPTER OK`** (`scripts/validate-agent-runtime.ts`,
 run inside Railway against the live private proxy, using the REAL
@@ -1618,13 +1628,48 @@ Two findings from building it, both now encoded:
    fallback needs a *routable but upstream-broken* alias, hence
    `yoinky-agent-broken` in `litellm-config.yaml` (called with the master key).
 
-**Rollout.** `AGENT_RUNTIME_CONSISTENCY=sdk` is **LIVE in production** as of
-2026-07-25 (the first flip; backend healthy after restart). Flip the rest one at
-a time — `VIRAL`, `TREND_TAKE`, `REPLY`, `BUYER` — watching for
-`agent-runtime FALLBACK` in the logs between each:
+**Rollout — COMPLETE.** All six flags (`CONSISTENCY`, `VIRAL`, `TREND_TAKE`,
+`REPLY`, `BUYER`, `CHAT`) are `sdk` on the Railway backend as of 2026-07-25.
+Rolling any one back is one command:
 ```
-railway variable set AGENT_RUNTIME_VIRAL=sdk --service backend
+railway variable set AGENT_RUNTIME_VIRAL=legacy --service backend
 ```
+**Caveat worth keeping in view:** the flags went on before any real traffic had
+exercised them — four of the five loops are cron batch jobs and chat fires on a
+user message, so at flip time `agent-runtime` log lines were still 0. The harness
+proves the translation; only production proves the prompts.
+
+**Post-migration sweep (2026-07-25).** Three findings, all fixed:
+- **Duplicate paid scans.** pg-boss v10 only builds its singleton unique indexes
+  `WHERE policy IN ('short','singleton','stately')`. `startBoss` set no policy, so
+  every queue was `standard` and the `singletonKey` on `buyer.scan-now` was
+  silently ignored — a double-click bought two scans: two lots of twitterapi.io +
+  LLM spend, two decrements of the user's monthly cap. Fixed in two layers because
+  neither suffices alone. `enqueueBuyerScan` re-attaches to an in-flight job (the
+  only thing that catches a second click once the first scan is already `active`),
+  and the queue now uses `policy: 'short'` so the unique index atomically dedupes
+  two genuinely simultaneous clicks that both pass that check.
+- **Dependencies: 29 advisories (16 high) → 1.** `next` was pinned EXACT at
+  16.2.4, which is why it had drifted seven patches behind several high
+  advisories → `16.2.11`; `fastify` → 5.10.0; plus pnpm `overrides` for
+  `postcss` / `fast-uri` / `find-my-way` / `sharp`, which their parents pin below
+  the patched versions.
+- **`BUYER_MONTHLY_SIGNAL_CAP` deleted** — read by nothing and actively
+  misleading, since the real cap is per-plan in `billing/entitlements.ts`, so
+  setting the env var changed nothing while looking like it should.
+
+The single remaining advisory (`@hono/node-server`, moderate) is **not reachable
+in this deployment** and is deliberately not force-upgraded. Its fix is a 1.x→2.x
+major; the latest `@modelcontextprotocol/sdk` (1.29.0) still pins `^1.19.9`, so
+there is no upstream path; and the only modules importing it are
+`server/streamableHttp.js` plus a hono example — we use in-process MCP servers
+(`createSdkMcpServer`), which never load that transport. Forcing a major inside
+the MCP SDK the entire agent runtime depends on is a worse risk than the advisory.
+
+Verified clean in the same sweep: backend logs (no errors), zero TODO/FIXME
+markers, and the one API route without a session guard (`/api/auth/x/start`) —
+harmless, because its callback requires a Clerk session and validates `state`
+against an httpOnly cookie.
 `AGENT_SDK_FALLBACK_TO_LEGACY` (default true) re-runs a failed SDK loop on the
 legacy runner and logs loudly. That is a RUNTIME fallback (same model, other
 runner) — deliberately distinct from the model-level auto-fallback this section
