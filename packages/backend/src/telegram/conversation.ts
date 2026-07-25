@@ -4,7 +4,9 @@ import { query, queryOne } from "../db/pool.js";
 import { config } from "../config.js";
 import { llmCall, asObject, hashForCacheKey } from "../llm/gateway.js";
 import { converse } from "../prompts/converse.v3.js";
-import { parseChatTool, type ChatTool } from "./chat-tools.js";
+import { parseChatTool, chatToolSchema, type ChatTool } from "./chat-tools.js";
+import { runAgentChatTurn } from "../agent-runtime/chat-turn.js";
+import { sdkConfigured } from "../agent-runtime/sdk-options.js";
 import { activePositions } from "../memory/positions.js";
 import { hybridSearch } from "../memory/search.js";
 import { currentVoiceProfile } from "../voice/profile.js";
@@ -188,6 +190,68 @@ export async function converseWithUser(
   let capture = false;
   let offerAngles = false;
 
+  /** One renderer for both runtimes, so the SDK path and the legacy loop can
+   *  never drift apart on what the model is actually shown. */
+  const renderUser = (notes: string[]) =>
+    converse.render({
+      message,
+      history,
+      positions: positions.map((p) => p.statement),
+      relevantMemories: relevant.map((m) => ({ content: m.content, kind: m.kind, created_at: m.created_at })),
+      recentMoments: moments.map((m) => ({ title: m.title ?? "(untitled)", theme: m.theme, verdict: m.verdict })),
+      pendingAngles: pending.map((p) => ({
+        title: p.payload?.title ?? "a saved moment",
+        hooks: (p.payload?.angles ?? []).map((a) => a.hook).slice(0, 3),
+      })),
+      voiceTraits: profile?.traits,
+      memoryCount: Number(counts[0]?.n ?? 0),
+      profile: brandProfile ? profileSummaryForPrompt(brandProfile) : undefined,
+      throughline: plan?.throughline,
+      goal: goals[0]?.detail,
+      pendingUnlocks,
+      stage,
+      relationship,
+      toolNotes: notes,
+      toolCallsRemaining: Math.max(0, maxToolCalls - notes.length),
+      now: nowIso,
+    });
+
+  // ── Agent SDK path (docs/INTERNAL §3n) ──────────────────────────────────────
+  // Only with an executor: without one the caller wants the legacy single-tool
+  // behaviour (first tool call ends the turn and is handed back), which has no
+  // SDK equivalent because the SDK runs tools itself.
+  if (config.AGENT_RUNTIME_CHAT === "sdk" && opts.executeTool && sdkConfigured()) {
+    // The user's message is persisted BEFORE the run, unlike the legacy loop
+    // which waits for a successful first model call. It has to be: the SDK may
+    // execute a tool — and the executor persists its beat and trace as assistant
+    // turns — before we ever see a result, and a reply landing in history ahead
+    // of the message that prompted it would corrupt the transcript order.
+    await saveTurn(userId, "user", message);
+    userTurnSaved = true;
+    try {
+      const turn = await runAgentChatTurn({
+        userId,
+        system: converse.system,
+        user: renderUser([]),
+        maxToolCalls,
+        toolSchema: chatToolSchema,
+        executeTool: (tool, beat) => opts.executeTool!(tool as ChatTool, casualize(beat)),
+      });
+      const reply = casualize(turn.reply);
+      // Same rule as the legacy tail: a turn must carry something, but when a
+      // tool already delivered output an empty final beat is correct, not a bug.
+      const finalReply = reply || (turn.toolCalls > 0 ? "" : "Say more?");
+      if (finalReply) await saveTurn(userId, "assistant", finalReply);
+      return { reply: finalReply, capture: turn.capture, offerAngles: turn.offerAngles };
+    } catch (err) {
+      const why = err instanceof Error ? err.message : String(err);
+      if (!config.AGENT_SDK_FALLBACK_TO_LEGACY) throw err;
+      // Loud, never silent. Falls through to the legacy loop below; the user
+      // turn is already saved, which `userTurnSaved` prevents duplicating.
+      console.warn(`agent-runtime FALLBACK [chat] → legacy after sdk failure: ${why.slice(0, 300)}`);
+    }
+  }
+
   for (let call = 0; ; call++) {
     const outOfCalls = forceFinal || toolNotes.length >= maxToolCalls;
     const res = await llmCall({
@@ -197,28 +261,7 @@ export async function converseWithUser(
       cacheKey,
       system: converse.system,
       user:
-        converse.render({
-          message,
-          history,
-          positions: positions.map((p) => p.statement),
-          relevantMemories: relevant.map((m) => ({ content: m.content, kind: m.kind, created_at: m.created_at })),
-          recentMoments: moments.map((m) => ({ title: m.title ?? "(untitled)", theme: m.theme, verdict: m.verdict })),
-          pendingAngles: pending.map((p) => ({
-            title: p.payload?.title ?? "a saved moment",
-            hooks: (p.payload?.angles ?? []).map((a) => a.hook).slice(0, 3),
-          })),
-          voiceTraits: profile?.traits,
-          memoryCount: Number(counts[0]?.n ?? 0),
-          profile: brandProfile ? profileSummaryForPrompt(brandProfile) : undefined,
-          throughline: plan?.throughline,
-          goal: goals[0]?.detail,
-          pendingUnlocks,
-          stage,
-          relationship,
-          toolNotes,
-          toolCallsRemaining: Math.max(0, maxToolCalls - toolNotes.length),
-          now: nowIso,
-        }) +
+        renderUser(toolNotes) +
         (outOfCalls
           ? "\n\nNo more tool calls this turn. Give your final reply now (tool must be null)."
           : ""),
@@ -247,9 +290,12 @@ export async function converseWithUser(
       capture = parsed.capture;
       offerAngles = parsed.offer_angles;
       // First model call succeeded — the turn is real, persist their message
-      // before any tool output lands so history stays chronological.
-      await saveTurn(userId, "user", message);
-      userTurnSaved = true;
+      // before any tool output lands so history stays chronological. Guarded:
+      // when the SDK path ran first and fell back, it already saved this.
+      if (!userTurnSaved) {
+        await saveTurn(userId, "user", message);
+        userTurnSaved = true;
+      }
     }
     const tool = parseChatTool(parsed.tool);
     const reply = casualize(parsed.reply);

@@ -39,8 +39,14 @@ which is where it's most useful. Both share one Postgres and one `users` row.
   is now actually enforced with cgroup-based admission control. Buyer Radar
   "Scan now" moved off the Vercel request path to a pg-boss job (enqueue → poll),
   since SDK composition spawns a subprocess a serverless function cannot host.
-  Every flag still defaults to `legacy`. Note `AGENT_RUNTIME_CHAT` is **not**
-  wired — the chat brain is a separate path. See INTERNAL §3n.
+  **`AGENT_RUNTIME_CONSISTENCY=sdk` is now live in production** — the first flip;
+  the other four loops are ready and flip one at a time. The chat brain is also
+  wired now (`agent-runtime/chat-turn.ts`) but stays on `legacy`: its mid-turn
+  "on it, checking that first" beat does not survive the SDK runtime — measured
+  across three attempts, the narration is never generated, most likely because
+  enforced structured output leaves no room for free text between tool calls.
+  Flipping chat today would work but go silent until the final reply. See
+  INTERNAL §3n for the full finding and the untried remedy.
 
 - **2026-07-25 — Agent SDK migration: Phase 0 gate PASSED, LiteLLM proxy live.**
   The proxy the Claude Agent SDK routes through is deployed as its own Railway

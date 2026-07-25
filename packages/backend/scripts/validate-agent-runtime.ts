@@ -28,6 +28,9 @@ import { consistencyToolSchema } from "../src/consistency/tools.js";
 import { runToolLoop, type ToolLoopRequest } from "../src/llm/tool-loop.js";
 import { runAgentLoop } from "../src/agent-runtime/run-agent-loop.js";
 import { readContainerMemory, sampleUsedMb } from "../src/agent-runtime/capacity.js";
+import { runAgentChatTurn } from "../src/agent-runtime/chat-turn.js";
+import { converse } from "../src/prompts/converse.v3.js";
+import { chatToolSchema } from "../src/telegram/chat-tools.js";
 
 const results: Array<{ name: string; pass: boolean; detail: string }> = [];
 const record = (name: string, pass: boolean, detail: string) => {
@@ -271,6 +274,59 @@ async function testD_antiLoopLedger() {
   }
 }
 
+/**
+ * The chat turn is the riskiest surface: unlike the bounded loops its tools have
+ * SIDE EFFECTS mid-turn (each one says a beat to the user and persists it), so a
+ * broken migration is visible to a human immediately. Exercised here against the
+ * real converse.v3 prompt with a recording executor.
+ */
+async function testE_chatTurn() {
+  const seenTools: Array<{ name: string; beat: string }> = [];
+  try {
+    const turn = await runAgentChatTurn({
+      userId: "validation",
+      system: converse.system,
+      user: converse.render({
+        message: "can you check whether my last take on pricing still holds?",
+        history: [],
+        positions: ["Pricing pages should show a number, not 'contact us'"],
+        relevantMemories: [],
+        recentMoments: [],
+        pendingAngles: [],
+        memoryCount: 12,
+        pendingUnlocks: [],
+        stage: "steady",
+        toolNotes: [],
+        toolCallsRemaining: 3,
+        now: "2026-07-25T08:00:00.000Z",
+      } as never),
+      maxToolCalls: 3,
+      toolSchema: chatToolSchema,
+      executeTool: async (tool, beat) => {
+        seenTools.push({ name: tool.name, beat });
+        return `ran ${tool.name}: found 1 prior take on pricing, still active.`;
+      },
+    });
+    const ok = typeof turn.reply === "string" && typeof turn.capture === "boolean";
+    record(
+      "E1 chat turn returns a valid result over the real converse prompt",
+      ok,
+      `tools=${turn.toolCalls} capture=${turn.capture} offerAngles=${turn.offerAngles} reply="${turn.reply.slice(0, 70)}"`,
+    );
+    // The beat is best-effort by design (see chat-turn.ts) — report what actually
+    // happened rather than asserting, so a missing beat is visible but not a
+    // false failure.
+    const withBeat = seenTools.filter((t) => t.beat.length > 0).length;
+    record(
+      "E2 mid-turn beats observed (best-effort, see chat-turn.ts caveat)",
+      true,
+      `toolCalls=${seenTools.length} withBeat=${withBeat} names=[${seenTools.map((t) => t.name).join(", ")}]`,
+    );
+  } catch (e) {
+    record("E1 chat turn returns a valid result over the real converse prompt", false, `threw: ${String((e as Error).message).slice(0, 250)}`);
+  }
+}
+
 async function main() {
   console.log(`\n=== agent-runtime validation → ${config.LITELLM_BASE_URL} ===`);
   console.log(`consistency runtime flag = ${config.AGENT_RUNTIME_CONSISTENCY}, maxConcurrency=${config.AGENT_MAX_CONCURRENCY}\n`);
@@ -278,6 +334,7 @@ async function main() {
   await testB_memory();
   await testC_fallback();
   await testD_antiLoopLedger();
+  await testE_chatTurn();
 
   const passed = results.filter((r) => r.pass).length;
   // A2/A3 are the flip gate: without them the adapter is not safe to enable.

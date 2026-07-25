@@ -5,6 +5,7 @@ import { runToolLoop, type ToolLoopRequest, type ToolLoopStep } from "../llm/too
 import { MCP_SERVER_NAME, qualify, toolsFromSchema } from "./mcp-tools.js";
 import { zodToJsonSchema } from "./json-schema.js";
 import { acquireSlot, AgentCapacityError, sampleUsedMb } from "./capacity.js";
+import { LOCKDOWN, PROTOCOL_OVERRIDE, sdkConfigured, sdkEnv } from "./sdk-options.js";
 
 /**
  * The agent-runtime adapter (docs/INTERNAL §3n).
@@ -41,52 +42,6 @@ const FLAG: Record<AgentFeature, () => "legacy" | "sdk"> = {
   chat: () => config.AGENT_RUNTIME_CHAT,
 };
 
-/**
- * The prompts in src/prompts were written for the legacy JSON envelope, where a
- * tool call is `{"tool": {...}}` in the model's output. Under the SDK the tools
- * are real callable tools, so that instruction is not just redundant, it is
- * actively wrong — a model that emits an envelope makes zero tool calls and
- * returns a placeholder answer. Rather than fork every prompt, override the
- * protocol at the end of the system prompt, where it wins on recency.
- */
-const PROTOCOL_OVERRIDE = `
-
---- RUNTIME OVERRIDE (native tool calling is active) ---
-Ignore the JSON "tool" envelope described above. Do NOT include a "tool" key in
-your output and do NOT write tool requests as JSON. The tools listed above are
-exposed to you as real, directly callable tools — call them normally.
-When you have finished gathering, your final message must be ONLY the result
-object described above, with the "tool" key omitted entirely.`;
-
-/** Everything that keeps the subprocess from inheriting the operator's own
- *  Claude Code setup. Without `settingSources: []` the SDK would read the host's
- *  settings/skills and behave differently on a laptop than on Railway. */
-const LOCKDOWN = {
-  tools: [] as string[], // strip ALL built-ins (no Bash/Read/Write in a product loop)
-  permissionMode: "dontAsk" as const,
-  settingSources: [] as [],
-  strictMcpConfig: true,
-  skills: [] as [],
-};
-
-/** TS `env` REPLACES the inherited environment, so spread process.env first. */
-function sdkEnv(): Record<string, string> {
-  return {
-    ...(process.env as Record<string, string>),
-    ANTHROPIC_BASE_URL: config.LITELLM_BASE_URL,
-    // Phase 0 test 7: LiteLLM accepts either. Set both so the bundled binary
-    // finds whichever it prefers without us guessing per version.
-    ANTHROPIC_AUTH_TOKEN: config.LITELLM_API_KEY ?? "",
-    ANTHROPIC_API_KEY: config.LITELLM_API_KEY ?? "",
-    ENABLE_TOOL_SEARCH: "false",
-    // Keep per-run state out of $HOME so concurrent subprocesses cannot collide
-    // over the same config dir.
-    CLAUDE_CONFIG_DIR: "/tmp/yoinky-agent-sdk",
-    CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1",
-    CLAUDE_AGENT_SDK_CLIENT_APP: "yoinky",
-  };
-}
-
 export interface AgentLoopResult<S extends z.ZodTypeAny> {
   output: z.infer<S>;
   steps: ToolLoopStep[];
@@ -104,7 +59,7 @@ export async function runAgentLoop<S extends z.ZodTypeAny>(
     return { ...r, runtime: "legacy" };
   }
 
-  if (!config.LITELLM_BASE_URL || !config.LITELLM_API_KEY) {
+  if (!sdkConfigured()) {
     // Misconfiguration, not a runtime failure — say so precisely instead of
     // letting the SDK fail with an opaque connection error.
     const why = `agent-runtime [${feature}] sdk mode requires LITELLM_BASE_URL + LITELLM_API_KEY`;

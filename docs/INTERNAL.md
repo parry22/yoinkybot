@@ -1557,10 +1557,35 @@ All five `runToolLoop` callsites now call `runAgentLoop("<feature>", …)`:
 `consistency/check.ts`, `jobs/viral-benchmark.ts`, `jobs/trend-match.ts`,
 `engagement/reply-agent.ts`, `buyer/radar-agent.ts`.
 
-**`AGENT_RUNTIME_CHAT` is NOT wired.** The chat brain does not go through
-`runToolLoop` — it is the agentic `converse.v3` path over `telegram/chat-tools.ts`
-(§3a). The flag exists and the adapter accepts `"chat"`, but no callsite passes
-it, so setting it does nothing today. Migrating chat is a separate piece of work.
+**`AGENT_RUNTIME_CHAT` IS now wired** (`agent-runtime/chat-turn.ts`, dispatched
+from `telegram/conversation.ts`) — but **leave it on `legacy`**, for a measured
+reason, not caution.
+
+Chat could not reuse `runAgentLoop`: the five bounded loops are pure (tools
+return text, nothing reaches the user until the final object), whereas each chat
+tool call has a SIDE EFFECT mid-turn — `executeTool` says a short beat ("on it,
+checking that first"), runs the tool, and persists both, so a 3-tool turn appears
+in history as its fragments. Hence a separate entry point.
+
+**The beat does not survive the SDK runtime.** Three attempts, each ruling
+something out:
+1. Read the beat from the completed `assistant` message → empty.
+2. Wait for that message via an epoch counter → still empty, **and it deadlocks**:
+   the tool handler blocks the very iterator it is waiting on, burning the full
+   timeout per call. Do not reintroduce a wait.
+3. `includePartialMessages` + an explicit "narrate before each tool" instruction
+   → partial streaming demonstrably works (`toolBlocks=3` observed) but the text
+   buffer is still empty (`toolCalls=2 withBeat=0`).
+
+So the beat is never *generated*, not lost in transit. The likely cause is
+`outputFormat: json_schema` — enforcing structured output leaves no room for
+free-text narration between tool calls. The untried remedy is to drop
+`outputFormat` for chat and recover the final object with a loose JSON parse,
+trading output reliability for narration; that is a real trade and deserves its
+own change. **Flipping chat today gives a functionally correct turn that is
+SILENT until the final reply, where legacy narrates each step.** Everything else
+about the chat path validates (E1: real converse prompt, tools called, valid
+result), so it is ready the moment that trade is made.
 
 **Phase 1 validation — 7/7, `ADAPTER OK`** (`scripts/validate-agent-runtime.ts`,
 run inside Railway against the live private proxy, using the REAL
@@ -1575,6 +1600,8 @@ consistency-check.v2 prompt with stubbed executors):
 | B | subprocess memory | PASS — limit 7629 MB, idle 243 MB, **peak delta +163 MB**, 7223 MB still free |
 | C | **model fallback engages** | **PASS** — `modelsUsed=[yoinky-agent-fallback]`, returned `"failover"` |
 | D | anti-loop ledger | PASS — 3 executor calls, 3 distinct, 0 duplicates |
+| E1 | chat turn over the real converse.v3 prompt | PASS — 2 tools called, valid `{reply, capture, offer_angles}` |
+| E2 | mid-turn beats | **withBeat=0 — the known limitation above; chat stays `legacy`** |
 
 Two findings from building it, both now encoded:
 
@@ -1591,10 +1618,12 @@ Two findings from building it, both now encoded:
    fallback needs a *routable but upstream-broken* alias, hence
    `yoinky-agent-broken` in `litellm-config.yaml` (called with the master key).
 
-**Rollout.** Flip one feature at a time and watch for `agent-runtime FALLBACK` in
-the logs:
+**Rollout.** `AGENT_RUNTIME_CONSISTENCY=sdk` is **LIVE in production** as of
+2026-07-25 (the first flip; backend healthy after restart). Flip the rest one at
+a time — `VIRAL`, `TREND_TAKE`, `REPLY`, `BUYER` — watching for
+`agent-runtime FALLBACK` in the logs between each:
 ```
-railway variable set AGENT_RUNTIME_CONSISTENCY=sdk --service backend
+railway variable set AGENT_RUNTIME_VIRAL=sdk --service backend
 ```
 `AGENT_SDK_FALLBACK_TO_LEGACY` (default true) re-runs a failed SDK loop on the
 legacy runner and logs loudly. That is a RUNTIME fallback (same model, other
