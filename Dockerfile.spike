@@ -1,0 +1,43 @@
+# Phase-0 harness for the Agent SDK migration (docs/INTERNAL §3n, DEPLOY.md).
+#
+# WHY A SERVICE AND NOT `railway run`: the LiteLLM proxy is private-network-only,
+# and `railway run` executes on your laptop — `*.railway.internal` is private DNS
+# that does not resolve off-platform. `railway ssh` into the backend is the normal
+# answer, but it requires outbound port 22 (sandbox exec needs 2226), which some
+# networks block outright. Deploying the spike AS a short-lived service is the
+# escape hatch that works from anywhere: it runs inside the private network, and
+# the results come back through `railway logs`.
+#
+# Usage:
+#   railway add --service phase0-spike
+#   railway variable set RAILWAY_DOCKERFILE_PATH=Dockerfile.spike --service phase0-spike
+#   ... set LITELLM_BASE_URL / LITELLM_MASTER_KEY / LITELLM_API_KEY ...
+#   railway up --service phase0-spike
+#   railway logs --service phase0-spike
+#   railway service delete --service phase0-spike   # ← always clean up
+#
+# Mirrors the backend image so the spike runs against the real dependency tree.
+FROM node:20-slim
+
+RUN corepack enable && corepack prepare pnpm@10.0.0 --activate
+
+WORKDIR /app
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/backend/package.json packages/backend/
+RUN pnpm install --frozen-lockfile
+
+COPY packages/backend packages/backend
+COPY docs docs
+
+ENV NODE_ENV=production
+
+# Which harness to run. `spike` = the Phase-0 transport gate; `validate` = the
+# Phase-1 adapter check (SDK vs legacy, subprocess memory, model fallback, the
+# anti-loop ledger). Set HARNESS on the service to pick.
+ENV HARNESS=validate
+
+# Mint the scoped virtual key, then run the chosen harness. The trailing sleep
+# holds the container open so Railway does not treat the exit as a crash and
+# restart the whole thing (which would re-run it and re-spend tokens). Delete the
+# service once you have read the logs.
+CMD ["sh", "-c", "pnpm --filter @yoink/backend exec tsx scripts/mint-litellm-key.ts && if [ \"$HARNESS\" = spike ]; then pnpm --filter @yoink/backend exec tsx scripts/spike-agent-sdk.ts; else pnpm --filter @yoink/backend exec tsx scripts/validate-agent-runtime.ts; fi; echo \"HARNESS_DONE($HARNESS) exit=$?\"; sleep 1800"]

@@ -311,28 +311,84 @@ and translates to **OpenRouter → grok-4.5**. The backend's SDK subprocess poin
 `ANTHROPIC_BASE_URL` at it over Railway's **private network** — never expose it
 publicly. Config lives in `litellm-config.yaml` (repo root).
 
+## Provisioned resources
+| Thing | Identifier |
+|---|---|
+| Railway service | `litellm` (`6860e21a-ce7e-439b-bedd-1438fda3cb98`), project `yoinky` |
+| Private URL | `http://litellm.railway.internal:4000` — **no public domain, by design** |
+| Image | `ghcr.io/berriai/litellm:v1.93.0`, built by `Dockerfile.litellm` |
+| Key store | Neon project `yoinky-litellm` (`autumn-credit-25191795`), `aws-eu-central-1`, PG17 |
+
 ## Deploy
-1. New Railway service in the `yoinky` project from the `ghcr.io/berriai/litellm`
-   image. **Pin a clean version above 1.82.8** — PyPI `1.82.7`/`1.82.8` shipped
-   credential-stealing malware (BerriAI/litellm#24518). **Pinned: `1.93.0`** (use
-   the `-stable` Docker tag). Do not float `latest`.
+1. Image: `ghcr.io/berriai/litellm:v1.93.0`. **Pin a clean version above 1.82.8** —
+   PyPI `1.82.7`/`1.82.8` shipped credential-stealing malware (BerriAI/litellm#24518).
+   Do not float `latest` or `main-stable`. Note `main-v1.93.0-stable` **does not
+   exist** (404 on ghcr.io); the `main-vX-stable` tag scheme stopped around 1.66.
 2. Region: any (OpenRouter handles provider routing, so grok-4.5's xAI EU-console
    restriction doesn't apply here).
-3. Mount `litellm-config.yaml` and start with `--config /path/litellm-config.yaml`.
-4. Service env (NOT on the backend): `LITELLM_MASTER_KEY` (admin), `OPENROUTER_API_KEY`
-   (upstream — the same key the backend uses). If you ever add an Anthropic-direct
-   fallback, name that key something other than `ANTHROPIC_API_KEY` so a stray real
-   key can't silently bypass the proxy and bill the public Anthropic API.
-5. Mint a **virtual key** scoped to `yoinky-agent` + `yoinky-agent-fallback`; put
+3. **Config is baked in, not mounted.** Railway has no file-mount primitive —
+   volumes are empty persistent disks — so `Dockerfile.litellm` is a thin
+   `FROM ghcr.io/berriai/litellm:v1.93.0` + `COPY litellm-config.yaml`. Select it
+   on the service with `RAILWAY_DOCKERFILE_PATH=Dockerfile.litellm` and deploy
+   from the repo root with `railway up --service litellm`.
+4. **Bind `::`, not `0.0.0.0`.** Railway private networking is IPv6 in legacy
+   environments; `::` binds both stacks. `Dockerfile.litellm`'s `CMD` passes
+   `--host ::`. Confirm the boot log says `Uvicorn running on http://[::]:4000`.
+5. **Postgres is mandatory.** Virtual keys are DB-backed — there is no static
+   virtual-key block in `config.yaml`. `DATABASE_URL` points at a *separate free
+   Neon project*, deliberately **not** `yoinkybot-prod`, so LiteLLM's ~30 prisma
+   tables and its startup `migrate deploy` never touch the app database. Use the
+   **direct** (non-pooler) endpoint — prisma migrations can't run through Neon's
+   transaction-mode pooler. See §3n for the free-tier settings this forces.
+6. Service env (NOT on the backend): `LITELLM_MASTER_KEY` (admin), `OPENROUTER_API_KEY`
+   (upstream — the same key the backend uses), `DATABASE_URL`, `PORT=4000`,
+   `RAILWAY_DOCKERFILE_PATH`. If you ever add an Anthropic-direct fallback, name
+   that key something other than `ANTHROPIC_API_KEY` so a stray real key can't
+   silently bypass the proxy and bill the public Anthropic API.
+7. Mint a **virtual key** scoped to `yoinky-agent` + `yoinky-agent-fallback`; put
    it on the **backend** as `LITELLM_API_KEY` (backend never gets the master key).
-6. Set the backend's `LITELLM_BASE_URL` to the private URL (e.g.
-   `http://litellm.railway.internal:4000`).
+   The proxy has no public domain, so mint it from *inside* the container:
+   ```
+   railway ssh --service litellm -- \
+     curl -s localhost:4000/key/generate -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
+       -H 'content-type: application/json' \
+       -d '{"models":["yoinky-agent","yoinky-agent-fallback"],"key_alias":"yoinky-backend"}'
+   ```
+8. Set the backend's `LITELLM_BASE_URL` to `http://litellm.railway.internal:4000`.
 
 ## Verify (Phase 0 — the gate)
-`railway run --service backend pnpm --filter @yoink/backend exec tsx scripts/spike-agent-sdk.ts`
-must print `GATE OK`. Force a grok failure (temporarily break the primary model
-id) once to confirm the fallback engages. Paste the spike's results into
-INTERNAL §3n before building the adapter.
+**The spike must run INSIDE Railway.** `railway run` executes the command on your
+laptop with Railway's env vars injected — `*.railway.internal` is private DNS and
+does not resolve off-platform, so a `railway run --service backend …` form fails
+on DNS no matter what.
+
+**If your network allows outbound port 22:**
+```
+railway ssh --service backend -- pnpm --filter @yoink/backend exec tsx scripts/spike-agent-sdk.ts
+```
+(Requires the deployed backend image to contain the spike — redeploy the backend
+first if its image predates the Phase 0/1 commit.)
+
+**If it doesn't** — some networks block 22 (`railway ssh`), 2226
+(`railway sandbox exec`) and 5432 alike — deploy the spike **as a throwaway
+service**, which works from anywhere and still never exposes the proxy:
+```
+railway add --service phase0-spike
+railway variable set RAILWAY_DOCKERFILE_PATH=Dockerfile.spike --service phase0-spike --skip-deploys
+railway variable set LITELLM_BASE_URL=http://litellm.railway.internal:4000 --service phase0-spike --skip-deploys
+printf '%s' "$MASTER_KEY"  | railway variable set LITELLM_MASTER_KEY --stdin --service phase0-spike --skip-deploys
+printf '%s' "$VIRTUAL_KEY" | railway variable set LITELLM_API_KEY    --stdin --service phase0-spike --skip-deploys
+railway up --service phase0-spike --detach
+railway logs --service phase0-spike            # ← results land here
+railway service delete --service phase0-spike --yes   # ← ALWAYS clean up
+```
+`Dockerfile.spike` mirrors the backend image and runs `scripts/mint-litellm-key.ts`
+(which mints the scoped virtual key from a value you supply, so the secret is
+never echoed into deploy logs) followed by the spike.
+
+It must print `GATE OK`. **Force a grok failure (temporarily break the primary
+model id) once to confirm the fallback engages — Phase 0 did not test this.**
+Paste the spike's results into INTERNAL §3n before building the adapter.
 
 ## Rollback
 Flip the relevant `AGENT_RUNTIME_*` back to `legacy` on the backend (no deploy of

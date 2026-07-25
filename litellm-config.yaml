@@ -7,8 +7,11 @@
 #
 # Deploy as its OWN Railway service, private-network-reachable from the backend
 # (never public). PIN A CLEAN VERSION > 1.82.8 — PyPI 1.82.7/1.82.8 shipped
-# credential-stealing malware (BerriAI/litellm#24518). Current clean stable:
-# 1.93.0 (use the `-stable` Docker tag). Record the pinned version in DEPLOY.md.
+# credential-stealing malware (BerriAI/litellm#24518). Pinned: 1.93.0, via the
+# image tag `ghcr.io/berriai/litellm:v1.93.0` — NOT `main-v1.93.0-stable`, which
+# does not exist (the `main-vX-stable` tag scheme stopped around 1.66). The image
+# is built by Dockerfile.litellm, which COPYs this file in; Railway has no
+# file-mount primitive, so baking it into a thin derived image is the mount.
 
 model_list:
   # What the SDK sends as its `model` (config.AGENT_MODEL). grok-4.5 via OpenRouter.
@@ -16,6 +19,14 @@ model_list:
     litellm_params:
       model: openrouter/x-ai/grok-4.5
       api_key: os.environ/OPENROUTER_API_KEY
+    # grok-4.5 is NOT in LiteLLM's built-in cost map — without this the proxy
+    # logs every request at $0.00 and the spend log is useless as a cross-check
+    # (and any budget ceiling silently never trips). Rates are OpenRouter's
+    # list price per token: $2/M in, $6/M out, $0.30/M cached read.
+    model_info:
+      input_cost_per_token: 0.000002
+      output_cost_per_token: 0.000006
+      cache_read_input_token_cost: 0.0000003
 
   # SDK `fallbackModel` (config.AGENT_FALLBACK_MODEL). A different model, still on
   # OpenRouter (no new key). A Claude model gives the truest Anthropic-format tool
@@ -23,7 +34,29 @@ model_list:
   # — the app only reaches this when grok itself errors.
   - model_name: yoinky-agent-fallback
     litellm_params:
-      model: openrouter/anthropic/claude-sonnet-4.5
+      model: openrouter/anthropic/claude-sonnet-5
+      api_key: os.environ/OPENROUTER_API_KEY
+    # OpenRouter list price: $2/M in, $10/M out, $0.20/M cached read,
+    # $2.50/M cache write.
+    model_info:
+      input_cost_per_token: 0.000002
+      output_cost_per_token: 0.00001
+      cache_read_input_token_cost: 0.0000002
+      cache_creation_input_token_cost: 0.0000025
+
+  # Deliberately broken, for verifying that fallbackModel actually engages
+  # (scripts/validate-agent-runtime.ts test C). It routes to an OpenRouter model
+  # id that does not exist, so any call errors upstream.
+  #
+  # It has to be a REAL alias rather than a made-up model name: the backend's
+  # virtual key is scoped to [yoinky-agent, yoinky-agent-fallback], so asking for
+  # an unknown name is rejected by key scoping with a 403 BEFORE the SDK's
+  # fallback logic is ever reached — which is the scoping doing its job, but it
+  # makes the fallback untestable that way. The validation harness calls this one
+  # with the MASTER key. Nothing in the product references it.
+  - model_name: yoinky-agent-broken
+    litellm_params:
+      model: openrouter/x-ai/grok-does-not-exist
       api_key: os.environ/OPENROUTER_API_KEY
 
   # Optional (spec Phase 5): give the single-shot gateway.ts path one metering
@@ -32,6 +65,10 @@ model_list:
     litellm_params:
       model: openrouter/x-ai/grok-4.5
       api_key: os.environ/OPENROUTER_API_KEY
+    model_info:
+      input_cost_per_token: 0.000002
+      output_cost_per_token: 0.000006
+      cache_read_input_token_cost: 0.0000003
 
 litellm_settings:
   # OpenRouter/xAI reject some Anthropic-shaped params — let LiteLLM drop them
@@ -42,3 +79,45 @@ general_settings:
   # Admin key for the proxy. Issue a VIRTUAL KEY scoped to the two agent models
   # for the backend (LITELLM_API_KEY) rather than handing it the master key.
   master_key: os.environ/LITELLM_MASTER_KEY
+
+  # ── Neon free-tier hygiene ────────────────────────────────────────────────
+  # Virtual keys are DB-backed (there is no static virtual-key block in config),
+  # so the proxy needs Postgres. That's DATABASE_URL, read from the env: a
+  # SEPARATE free Neon project (`yoinky-litellm`, eu-central-1) — deliberately
+  # NOT the app's yoinkybot-prod DB, so LiteLLM's ~30 prisma tables and its
+  # startup `migrate deploy` never touch production.
+  #
+  # Free tier constrains us two ways: the compute autosuspends after 5 min idle
+  # (not disableable) and the allowance is 100 CU-hours/project/month at a
+  # 0.25 CU floor. The settings below keep us inside both.
+
+  # THE important one. reset_budget polls the DB every 597–605s — a SHORTER
+  # period than the 5-min suspend window, so leaving it on keeps the Neon
+  # compute awake essentially 24/7: 0.25 CU × 730h ≈ 182 CU-hours/month against
+  # a 100 CU-hour allowance, i.e. exhausted in ~2.5 weeks, taking the agent
+  # runtime down with it. It only resets `budget_duration` rolling budgets,
+  # which we do not use — the SDK's own maxBudgetUsd is the real per-run cap.
+  # With it off, an idle proxy issues ZERO queries and Neon stays suspended.
+  # (Verified against v1.93.0: the other recurring jobs are all no-ops when
+  # idle — update_spend guards on len(...) > 0, _update_daily_spend loops
+  # `while daily_spend_transactions:`, _monitor_spend_logs_queue guards on
+  # queue_size > 0, and add_deployment/get_credentials only run when
+  # store_model_in_db is on, which it is not.)
+  disable_reset_budget: true
+
+  # Resolve virtual-key auth from memory for an hour so a Neon wake is off the
+  # request path almost always. Default is only 60s.
+  user_api_key_cache_ttl: 3600
+
+  # Safety net for the remaining cold-start window: if the DB connection errors
+  # while Neon is waking, serve the request under a synthetic NON-admin auth
+  # instead of 500-ing a user. Narrow by construction — it catches *connection*
+  # errors only (an invalid key still 401s) and cannot escalate to proxy-admin.
+  # The docs gate this on "only use this if running LiteLLM in your VPC"; this
+  # service has no public domain and is reachable only over Railway's private
+  # network, which is that condition.
+  allow_requests_on_db_unavailable: true
+
+  # A free Neon project caps at 0.5 GB and spend logs are one row per request.
+  # Auto-purge so the key store cannot fill up and wedge the proxy.
+  maximum_spend_logs_retention_period: "30d"

@@ -1,25 +1,53 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/session";
 import { requirePaid } from "@/lib/entitlements";
-import { scanBuyerSignals } from "@yoink/backend/web";
+import { enqueueBuyerScan, buyerScanProgress } from "@yoink/backend/web";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-// A scan runs paid searches + embeddings + up to a handful of composition loops.
-export const maxDuration = 300;
 
+/**
+ * "Scan now" is ENQUEUE + POLL, not a synchronous scan (docs/INTERNAL §3n).
+ *
+ * A scan composes an outreach reply per gated candidate, and with
+ * AGENT_RUNTIME_BUYER=sdk each of those spawns a Claude Code subprocess that
+ * needs a real filesystem — which a serverless function is not. So the work runs
+ * on the Railway backend via pg-boss and this route only starts it and reports
+ * progress. That also retires the old 300s-ceiling race against several paid
+ * searches plus a handful of composition loops.
+ *
+ * POST → { jobId }              start (or re-attach to) a scan
+ * GET  ?jobId=… → { state, … }  poll it
+ */
 export async function POST() {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   // Paid-only — a scan spends real twitterapi.io + LLM budget. The per-plan
-  // monthly cap (Growth 25 / Scale ∞) is enforced inside scanBuyerSignals.
+  // monthly cap (Growth 25 / Scale ∞) is enforced inside the scan itself.
   if (!(await requirePaid(user)))
     return NextResponse.json({ error: "upgrade_required" }, { status: 402 });
   try {
-    const res = await scanBuyerSignals(user.id);
-    return NextResponse.json(res);
+    const ticket = await enqueueBuyerScan(user.id);
+    // 202: accepted, not finished. The client polls GET for the outcome.
+    return NextResponse.json({ jobId: ticket.jobId, state: "queued" }, { status: 202 });
   } catch (err) {
-    console.error("buyer radar scan failed", err);
+    console.error("buyer radar scan enqueue failed", err);
     return NextResponse.json({ error: "scan failed" }, { status: 500 });
+  }
+}
+
+export async function GET(req: Request) {
+  const user = await getSessionUser();
+  if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const jobId = new URL(req.url).searchParams.get("jobId");
+  if (!jobId) return NextResponse.json({ error: "jobId required" }, { status: 400 });
+  try {
+    // Ownership is checked inside buyerScanProgress against the job payload, so a
+    // guessed jobId reads as "unknown" rather than leaking another user's scan.
+    const progress = await buyerScanProgress(user.id, jobId);
+    return NextResponse.json(progress);
+  } catch (err) {
+    console.error("buyer radar scan poll failed", err);
+    return NextResponse.json({ error: "poll failed" }, { status: 500 });
   }
 }

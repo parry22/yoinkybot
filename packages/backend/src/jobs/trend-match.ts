@@ -3,7 +3,7 @@ import { config } from "../config.js";
 import { query, queryOne } from "../db/pool.js";
 import { getBoss, QUEUES } from "./boss.js";
 import { llmCall } from "../llm/gateway.js";
-import { runToolLoop } from "../llm/tool-loop.js";
+import { runAgentLoop } from "../agent-runtime/run-agent-loop.js";
 import { macroMatch } from "../prompts/macro-match.v1.js";
 import { trendTake } from "../prompts/trend-take.v2.js";
 import { trendTakeToolSchema } from "../trends/tools.js";
@@ -433,7 +433,7 @@ export async function composeAndDeliverTake(
     },
   };
 
-  const { output, steps } = await runToolLoop({
+  const { output, steps } = await runAgentLoop("trend_take", {
     userId,
     eventType: "trend_take",
     tier: trendTake.tier,

@@ -1,0 +1,25 @@
+# LiteLLM proxy for the Agent SDK runtime (docs/INTERNAL §3n, DEPLOY.md).
+#
+# Railway has no file-mount primitive — volumes are empty persistent disks — so
+# the "mount litellm-config.yaml" step is done by baking the config into a thin
+# derived image. Build context is the repo root; select this file on the service
+# with RAILWAY_DOCKERFILE_PATH=Dockerfile.litellm.
+#
+# Tag pin: 1.93.0 is above the 1.82.7/1.82.8 credential-stealing malware releases
+# (BerriAI/litellm#24518). Use `v1.93.0` — `main-v1.93.0-stable` does NOT exist
+# on ghcr.io (verified 404); the `main-vX-stable` scheme stopped around 1.66.
+# Never float `latest` or `main-stable`.
+FROM ghcr.io/berriai/litellm:v1.93.0
+
+COPY litellm-config.yaml /app/litellm-config.yaml
+
+EXPOSE 4000
+
+# The base image's ENTRYPOINT is docker/prod_entrypoint.sh, which is just
+# `exec litellm "$@"` — so these args land on the litellm CLI.
+#
+# --host :: is REQUIRED for Railway private networking: legacy Railway
+# environments are IPv6-only, and :: binds both stacks (0.0.0.0 would be
+# unreachable over the private network). The service intentionally has no
+# public domain, so this port is private-only.
+CMD ["--config", "/app/litellm-config.yaml", "--host", "::", "--port", "4000"]

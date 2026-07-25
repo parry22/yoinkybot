@@ -203,7 +203,11 @@ async function test5_preToolUseDeny() {
           hooks: {
             PreToolUse: [
               {
-                matcher: "get_profile",
+                // Matchers match the FULL tool name. In-process MCP tools are
+                // namespaced `mcp__<server>__<tool>`, so a bare "get_profile"
+                // never fires (that false negative is what the first spike run
+                // reported).
+                matcher: "mcp__yoinky__get_profile",
                 hooks: [
                   async () => {
                     denied = true;
@@ -228,25 +232,42 @@ async function test5_preToolUseDeny() {
   }
 }
 
-async function test6_caps() {
+/** A cap can surface EITHER as a result message with an error subtype OR as a
+ *  thrown error — the first spike run proved maxTurns throws rather than
+ *  returning `subtype=error_max_turns`. Both count as "the cap terminated the
+ *  loop"; what matters for the adapter is that it must handle the throw too.
+ *  Run each cap independently so a throw in one doesn't skip the other. */
+async function runCap(
+  label: string,
+  opts: { maxTurns: number; maxBudgetUsd?: number },
+  expectSubtype: string,
+  expectThrow: RegExp,
+): Promise<{ ok: boolean; how: string }> {
   try {
-    const turns = await drain(
+    const { result } = await drain(
       query({
         prompt: "Keep calling search_memory over and over; never give a final answer.",
-        options: { model: MODEL, fallbackModel: FALLBACK, env: sdkEnv(), maxTurns: 1, ...LOCKDOWN, mcpServers: { yoinky } },
+        options: { model: MODEL, fallbackModel: FALLBACK, env: sdkEnv(), ...opts, ...LOCKDOWN, mcpServers: { yoinky } },
       }),
     );
-    const budget = await drain(
-      query({
-        prompt: "Keep calling search_memory over and over; never give a final answer.",
-        options: { model: MODEL, fallbackModel: FALLBACK, env: sdkEnv(), maxTurns: 50, maxBudgetUsd: 0.001, ...LOCKDOWN, mcpServers: { yoinky } },
-      }),
-    );
-    const ok = turns.result?.subtype === "error_max_turns" && budget.result?.subtype === "error_max_budget_usd";
-    record("6 maxTurns / maxBudgetUsd terminate", ok, `turns=${turns.result?.subtype} budget=${budget.result?.subtype}`);
+    if (result?.subtype === expectSubtype) return { ok: true, how: `${label}=result:${result.subtype}` };
+    return { ok: false, how: `${label}=result:${result?.subtype ?? "none"}` };
   } catch (e) {
-    record("6 maxTurns / maxBudgetUsd terminate", false, `threw: ${String((e as Error).message).slice(0, 200)}`);
+    const msg = String((e as Error).message);
+    if (expectThrow.test(msg)) return { ok: true, how: `${label}=THREW (cap honored, adapter must catch)` };
+    return { ok: false, how: `${label}=threw-unexpected:${msg.slice(0, 120)}` };
   }
+}
+
+async function test6_caps() {
+  const turns = await runCap("maxTurns", { maxTurns: 1 }, "error_max_turns", /maximum number of turns/i);
+  const budget = await runCap(
+    "maxBudgetUsd",
+    { maxTurns: 50, maxBudgetUsd: 0.001 },
+    "error_max_budget_usd",
+    /budget|max_budget/i,
+  );
+  record("6 maxTurns / maxBudgetUsd terminate", turns.ok && budget.ok, `${turns.how} · ${budget.how}`);
 }
 
 async function test7_authVar() {

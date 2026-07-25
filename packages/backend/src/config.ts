@@ -74,11 +74,33 @@ const schema = z.object({
   //   OpenRouter upstream in litellm-config.yaml).
   AGENT_MODEL: z.string().default("yoinky-agent"),
   AGENT_FALLBACK_MODEL: z.string().default("yoinky-agent-fallback"),
-  //   Max concurrent SDK subprocesses (~1 GiB each) — a semaphore in the adapter.
-  //   Railway is single-instance; raise only after confirming the plan can carry it.
-  AGENT_MAX_CONCURRENCY: z.coerce.number().default(2),
+  //   Max concurrent SDK subprocesses — enforced by agent-runtime/capacity.ts.
+  //   NO RAILWAY UPGRADE IS NEEDED for this. Measured on the current plan
+  //   (scripts/validate-agent-runtime.ts, test B): container limit 7629 MB,
+  //   backend idle ~240 MB, and ONE subprocess peaks at +152 MB — not the ~1 GiB
+  //   originally assumed. 4 concurrent is ~1 GB of a 7.6 GB box. The ceiling is
+  //   far higher; 4 is deliberately conservative, not a plan limit.
+  AGENT_MAX_CONCURRENCY: z.coerce.number().default(4),
   //   Per-loop hard cost ceiling (USD), independent of the turn cap → maxBudgetUsd.
   AGENT_MAX_BUDGET_USD: z.coerce.number().default(0.5),
+  //   Admission control (capacity.ts), MB. 256 = the measured 152 MB peak plus
+  //   headroom for a heavier loop. The adapter logs the real delta per run
+  //   (`agent-runtime … memΔ=`), so re-tune from logs rather than guessing.
+  AGENT_SUBPROCESS_MB: z.coerce.number().default(256),
+  AGENT_MEMORY_RESERVE_MB: z.coerce.number().default(512),
+  //   How long a loop waits for a slot before giving up. Exceeding this raises
+  //   AgentCapacityError, which the adapter turns into a legacy run rather than a
+  //   failure — an unbounded queue would turn memory pressure into silent latency.
+  AGENT_ACQUIRE_TIMEOUT_MS: z.coerce.number().default(20_000),
+  //   When an SDK run fails (capacity, proxy down, translation bug), re-run it on
+  //   the legacy runner instead of failing the feature. Loud, never silent: every
+  //   fallback logs `agent-runtime FALLBACK`. This is a RUNTIME fallback (same
+  //   model, different runner) — distinct from the model-level fallback §3n
+  //   deliberately refuses to make automatic. Set false to surface SDK errors raw.
+  AGENT_SDK_FALLBACK_TO_LEGACY: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((v) => v === "true"),
 
   // Embeddings are separate from the chat model (the chat model is chat-only):
   // OpenAI when OPENAI_API_KEY is set, else Qwen/DashScope (OpenAI-compatible mode).

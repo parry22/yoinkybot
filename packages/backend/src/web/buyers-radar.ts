@@ -191,13 +191,122 @@ function emptyReason(result: ScanResult): string | null {
   return "No real buyers this round. Yoinky will keep looking.";
 }
 
-/** On-demand scan (the "Scan now" button). Budget-gated inside scanForUser. */
+/**
+ * The scan itself. Called by the pg-boss worker on the BACKEND, never from a
+ * Vercel route — see `enqueueBuyerScan` for why.
+ */
 export async function scanBuyerSignals(userId: string): Promise<ScanResponse> {
   const result = await scanForUser(userId);
   const signals = await listBuyerSignals(userId);
   // The funnel counts are the thing you need when a user says "it found nobody".
   console.log(`buyer scan user=${userId} status=${result.status} surfaced=${result.surfaced}`, result.stages);
   return { status: result.status, surfaced: result.surfaced, signals, reason: emptyReason(result) };
+}
+
+export type BuyerScanJobState = "queued" | "running" | "done" | "failed" | "unknown";
+
+export interface BuyerScanTicket {
+  jobId: string;
+}
+
+export interface BuyerScanProgress {
+  state: BuyerScanJobState;
+  /** Present only when state === "done". */
+  result: ScanResponse | null;
+  /** Present only when state === "failed". */
+  error: string | null;
+}
+
+/**
+ * Enqueue an on-demand scan and hand back a ticket to poll (docs/INTERNAL §3n).
+ *
+ * WHY NOT SYNCHRONOUS ANY MORE: with `AGENT_RUNTIME_BUYER=sdk`, composing an
+ * outreach reply spawns a Claude Code subprocess that needs a real filesystem —
+ * something a Vercel serverless function does not have, so the old in-request
+ * scan simply cannot run in SDK mode. Moving it to pg-boss also retires a problem
+ * the synchronous version always had: several paid searches plus a handful of
+ * composition loops racing a 300s function ceiling.
+ *
+ * The web app runs domain code in-process but never starts pg-boss, so
+ * `ensureBoss()` lazily starts the engine in enqueue-only mode (it registers no
+ * workers — the backend still consumes).
+ */
+export async function enqueueBuyerScan(userId: string): Promise<BuyerScanTicket> {
+  const { ensureBoss, QUEUES } = await import("../jobs/boss.js");
+  const boss = await ensureBoss();
+  // singletonKey collapses double-clicks and impatient re-clicks into ONE scan;
+  // without it an eager user could spend the provider budget several times over.
+  const jobId = await boss.send(
+    QUEUES.buyerScanNow,
+    { userId },
+    { singletonKey: `buyer-scan:${userId}`, retryLimit: 0 },
+  );
+  if (!jobId) {
+    // send() returns null when the singleton already has a job in flight. Report
+    // the existing run rather than pretending we queued a second one.
+    const existing = await findActiveBuyerScan(userId);
+    if (existing) return { jobId: existing };
+    throw new Error("could not enqueue buyer scan");
+  }
+  return { jobId };
+}
+
+/** The in-flight scan for this user, if any — used to recover a dropped ticket. */
+async function findActiveBuyerScan(userId: string): Promise<string | null> {
+  const row = await queryOne<{ id: string }>(
+    `SELECT id::text FROM pgboss.job
+     WHERE name = 'buyer.scan-now' AND state IN ('created','active','retry')
+       AND data->>'userId' = $1
+     ORDER BY created_on DESC LIMIT 1`,
+    [userId],
+  );
+  return row?.id ?? null;
+}
+
+/**
+ * Poll a scan. Ownership is verified against the job payload so one user cannot
+ * read another's scan by guessing a job id.
+ */
+export async function buyerScanProgress(userId: string, jobId: string): Promise<BuyerScanProgress> {
+  const { ensureBoss, QUEUES } = await import("../jobs/boss.js");
+  const boss = await ensureBoss();
+  // includeArchive: a fast scan can complete and be archived before the first poll.
+  const job = await boss.getJobById<BuyerScanNowPayload>(QUEUES.buyerScanNow, jobId, { includeArchive: true });
+  if (!job) return { state: "unknown", result: null, error: null };
+  if (job.data?.userId !== userId) return { state: "unknown", result: null, error: null };
+
+  switch (job.state) {
+    case "created":
+    case "retry":
+      return { state: "queued", result: null, error: null };
+    case "active":
+      return { state: "running", result: null, error: null };
+    case "completed":
+      return { state: "done", result: (job.output as ScanResponse | null) ?? null, error: null };
+    case "failed":
+    case "cancelled":
+      // pg-boss folds expiry into `failed`, so there is no separate case here.
+      return {
+        state: "failed",
+        result: null,
+        error: extractJobError(job.output) ?? `scan ${job.state}`,
+      };
+    default:
+      return { state: "unknown", result: null, error: null };
+  }
+}
+
+interface BuyerScanNowPayload {
+  userId: string;
+}
+
+/** pg-boss stores a thrown error as `{ message, stack, ... }` on output. */
+function extractJobError(output: unknown): string | null {
+  if (output && typeof output === "object" && "message" in output) {
+    const m = (output as { message?: unknown }).message;
+    if (typeof m === "string") return m;
+  }
+  return null;
 }
 
 /**

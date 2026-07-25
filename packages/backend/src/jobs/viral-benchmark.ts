@@ -2,7 +2,7 @@ import { z } from "zod";
 import { InlineKeyboard } from "grammy";
 import { config } from "../config.js";
 import { query, queryOne } from "../db/pool.js";
-import { runToolLoop } from "../llm/tool-loop.js";
+import { runAgentLoop } from "../agent-runtime/run-agent-loop.js";
 import { hybridSearch } from "../memory/search.js";
 import { currentVoiceProfile } from "../voice/profile.js";
 import { getProfile } from "../strategist/profile.js";
@@ -142,7 +142,7 @@ export async function viralBenchmarkForUser(
     },
   };
 
-  const { output } = await runToolLoop({
+  const { output } = await runAgentLoop("viral", {
     userId,
     eventType: "viral_case_study",
     tier: viralCaseStudy.tier,

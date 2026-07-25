@@ -18,7 +18,7 @@ import { alertAdmin } from "../lib/alerts.js";
 import { handleTrendFetch } from "./trend-fetch.js";
 import { handleTrendMatch } from "./trend-match.js";
 import { handleViralBenchmark } from "./viral-benchmark.js";
-import { handleBuyerRadar } from "./buyer-radar.js";
+import { handleBuyerRadar, handleBuyerScanNow } from "./buyer-radar.js";
 import { handleBuyerRecalibration } from "../buyer/calibration.js";
 import { handleInspirationSeed } from "./inspiration-seed.js";
 import { handleIngestProfile } from "../strategist/connect.js";
@@ -32,7 +32,13 @@ import { handleCampaignDetect } from "./campaign-detect.js";
 import { handleMonthlyRecalibration } from "../memory/corrections.js";
 import { handleScheduledPost } from "./scheduled-post.js";
 import { handleAutomationTick } from "../automations/tick.js";
-import type { IngestProfileJob, DiagnoseJob, CampaignDetectJob, ScheduledPostJob } from "./boss.js";
+import type {
+  IngestProfileJob,
+  DiagnoseJob,
+  CampaignDetectJob,
+  ScheduledPostJob,
+  BuyerScanNowJob,
+} from "./boss.js";
 
 /**
  * Log a worker failure with enough context to trace it (queue, job id, payload),
@@ -43,7 +49,10 @@ function logged<T>(queue: string, fn: (data: T, jobId: string) => Promise<unknow
     const job = jobs[0];
     if (!job) return;
     try {
-      await fn(job.data, job.id);
+      // RETURN the handler's value — pg-boss persists it as the job's `output`,
+      // which is how buyer.scan-now hands its result back to the web app's poll.
+      // Handlers that return void are unaffected (undefined output).
+      return await fn(job.data, job.id);
     } catch (err) {
       console.error(`job failed [${queue}] id=${job.id} data=${JSON.stringify(job.data).slice(0, 300)}`, err);
       // Throttled per queue — a crash-looping job pages once an hour, not per retry.
@@ -82,6 +91,12 @@ export async function registerWorkers(boss: PgBoss): Promise<void> {
   await boss.work(QUEUES.viralBenchmark, logged(QUEUES.viralBenchmark, () => handleViralBenchmark()));
   await boss.work(QUEUES.buyerRadar, logged(QUEUES.buyerRadar, () => handleBuyerRadar()));
   await boss.work(QUEUES.buyerRecalibrate, logged(QUEUES.buyerRecalibrate, () => handleBuyerRecalibration()));
+  // On-demand "Scan now" from the web app. Runs here, not in the Vercel route,
+  // because SDK-mode composition spawns subprocesses (§3n).
+  await boss.work<BuyerScanNowJob>(
+    QUEUES.buyerScanNow,
+    logged(QUEUES.buyerScanNow, (d: BuyerScanNowJob) => handleBuyerScanNow(d)),
+  );
   await boss.work<{ userId: string }>(
     QUEUES.inspirationSeed,
     logged(QUEUES.inspirationSeed, (d: { userId: string }) => handleInspirationSeed(d.userId)),

@@ -24,6 +24,39 @@ which is where it's most useful. Both share one Postgres and one `users` row.
 
 <!-- Keep newest-first. Update this whenever a change ships that a reader of the repo should know about. -->
 
+- **2026-07-25 — Agent SDK adapter built; 5 loops ready to flip; no Railway
+  upgrade needed.** `src/agent-runtime/` adds `runAgentLoop(feature, req)`, a
+  drop-in for `runToolLoop(req)` that dispatches legacy-vs-SDK per feature flag.
+  Tool porting is **mechanical, not per-feature**: every loop already declares its
+  tools as `z.discriminatedUnion("name", …)` next to an executors map, which is
+  enough to derive SDK `tool()` definitions automatically — so adding a tool still
+  means editing one union and one map. Validated **7/7** against the real
+  consistency prompt on the live private proxy: SDK output is schema-valid and
+  agrees with legacy, the anti-loop ledger denies repeats, and model fallback
+  genuinely engages when the primary breaks. **The "needs a bigger Railway plan"
+  assumption was wrong** — measured, a subprocess costs **~163 MB**, not ~1 GiB,
+  against a 7.6 GB limit; the missing piece was a bound, so `AGENT_MAX_CONCURRENCY`
+  is now actually enforced with cgroup-based admission control. Buyer Radar
+  "Scan now" moved off the Vercel request path to a pg-boss job (enqueue → poll),
+  since SDK composition spawns a subprocess a serverless function cannot host.
+  Every flag still defaults to `legacy`. Note `AGENT_RUNTIME_CHAT` is **not**
+  wired — the chat brain is a separate path. See INTERNAL §3n.
+
+- **2026-07-25 — Agent SDK migration: Phase 0 gate PASSED, LiteLLM proxy live.**
+  The proxy the Claude Agent SDK routes through is deployed as its own Railway
+  service (`ghcr.io/berriai/litellm:v1.93.0`, built from `Dockerfile.litellm`),
+  reachable **only** at `http://litellm.railway.internal:4000` — no public domain.
+  Its virtual-key store is a **separate free Neon project**, deliberately not the
+  app DB. The spike now passes **8/8** against the live path: grok-4.5 through
+  LiteLLM's Anthropic→OpenRouter translation handles multi-step in-process MCP
+  tool loops, parallel tool use, structured output, `PreToolUse` deny, and both
+  cost/turn caps. **Still inert in prod** — every `AGENT_RUNTIME_*` flag remains
+  `legacy`; the adapter is the next thing to build. Three findings the adapter
+  must encode (caps *throw* rather than return; `PreToolUse` matchers need the
+  full `mcp__server__tool` name; the SDK's own `total_cost_usd` over-reports
+  grok-4.5 by ~3.4× so metering must come from LiteLLM) are written up in
+  INTERNAL §3n. Runbook in DEPLOY.md.
+
 - **2026-07-24 — Sidebar: Telegram Bot launcher + profile-row cleanup.** Since
   Clerk owns identity, the sidebar's redundant profile row (avatar/email/logout)
   is gone — sign-out already lives in the topbar `<UserButton>` and on Settings.

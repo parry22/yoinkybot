@@ -1541,12 +1541,92 @@ bespoke `llm/tool-loop.ts` runner onto the **Claude Agent SDK**
 routed through a **LiteLLM proxy → OpenRouter → grok-4.5** (any provider/key
 later). Spec + canonical guide: `docs/Claude-Agent-SDK-Canonical-Guide.md`.
 
-**Status: scaffolding only, gated on Phase 0.** Shipped so far: the SDK dep, the
-config flags (`AGENT_RUNTIME_*` per feature, default `legacy`; `LITELLM_*`;
-`AGENT_MODEL`/`AGENT_FALLBACK_MODEL`; `AGENT_MAX_CONCURRENCY`; `AGENT_MAX_BUDGET_USD`),
-`litellm-config.yaml`, and the verification spike `packages/backend/scripts/spike-agent-sdk.ts`.
-**Nothing routes through the SDK yet** — every feature is `legacy`, so this is
-inert in prod. The adapter (`src/agent-runtime/*`) is NOT built until Phase 0 passes.
+**Status: Phase 1 — adapter BUILT and validated 7/7 (2026-07-25). Five of six
+loops are wired and ready to flip; every flag still defaults to `legacy`.**
+
+The adapter lives in `src/agent-runtime/`:
+
+| File | Role |
+|---|---|
+| `run-agent-loop.ts` | `runAgentLoop(feature, req)` — a drop-in for `runToolLoop(req)` that dispatches legacy vs SDK per flag |
+| `mcp-tools.ts` | Derives SDK `tool()` defs from a feature's existing `z.discriminatedUnion("name", …)` — no per-feature tool rewrite |
+| `json-schema.ts` | zod-v3 → JSON Schema for the SDK's `outputFormat` (zod 3 has no `toJSONSchema`; `zod/v4` cannot read v3 schemas) |
+| `capacity.ts` | The `AGENT_MAX_CONCURRENCY` semaphore + cgroup memory admission control |
+
+All five `runToolLoop` callsites now call `runAgentLoop("<feature>", …)`:
+`consistency/check.ts`, `jobs/viral-benchmark.ts`, `jobs/trend-match.ts`,
+`engagement/reply-agent.ts`, `buyer/radar-agent.ts`.
+
+**`AGENT_RUNTIME_CHAT` is NOT wired.** The chat brain does not go through
+`runToolLoop` — it is the agentic `converse.v3` path over `telegram/chat-tools.ts`
+(§3a). The flag exists and the adapter accepts `"chat"`, but no callsite passes
+it, so setting it does nothing today. Migrating chat is a separate piece of work.
+
+**Phase 1 validation — 7/7, `ADAPTER OK`** (`scripts/validate-agent-runtime.ts`,
+run inside Railway against the live private proxy, using the REAL
+consistency-check.v2 prompt with stubbed executors):
+
+| # | Test | Result |
+|---|---|---|
+| A1 | legacy runner baseline | PASS — `no_conflict` conf=0.88, 2 tool calls |
+| A2 | **SDK runner, schema-valid output** | **PASS** — `runtime=sdk`, `no_conflict` conf=0.90, 3 tool calls |
+| A3 | **protocol override worked** | **PASS** — 3 real tool calls; 0 would mean the model kept emitting the JSON envelope |
+| A4 | SDK and legacy agree | PASS — both `no_conflict` |
+| B | subprocess memory | PASS — limit 7629 MB, idle 243 MB, **peak delta +163 MB**, 7223 MB still free |
+| C | **model fallback engages** | **PASS** — `modelsUsed=[yoinky-agent-fallback]`, returned `"failover"` |
+| D | anti-loop ledger | PASS — 3 executor calls, 3 distinct, 0 duplicates |
+
+Two findings from building it, both now encoded:
+
+1. **`maxTurns` must not be `maxToolCalls + 1`.** That is the obvious mapping and
+   it is wrong: the model spends a turn per tool call and needs at least one more
+   to compose, so a loop that uses its full budget dies with "Reached maximum
+   number of turns" instead of answering (observed on the first validation run).
+   The tool budget is now enforced in the `PreToolUse` hook — a *deny* that tells
+   the model to answer now, exactly mirroring the legacy runner's `forceFinal` —
+   and `maxTurns` is only a runaway backstop at `maxToolCalls + 3`.
+2. **Scoped virtual keys make a bogus model name untestable for fallback.** The
+   key is scoped to `[yoinky-agent, yoinky-agent-fallback]`, so an unknown name
+   401/403s at the key check before the SDK's fallback logic runs. Testing
+   fallback needs a *routable but upstream-broken* alias, hence
+   `yoinky-agent-broken` in `litellm-config.yaml` (called with the master key).
+
+**Rollout.** Flip one feature at a time and watch for `agent-runtime FALLBACK` in
+the logs:
+```
+railway variable set AGENT_RUNTIME_CONSISTENCY=sdk --service backend
+```
+`AGENT_SDK_FALLBACK_TO_LEGACY` (default true) re-runs a failed SDK loop on the
+legacy runner and logs loudly. That is a RUNTIME fallback (same model, other
+runner) — deliberately distinct from the model-level auto-fallback this section
+refuses to make silent.
+
+---
+
+**Phase 0 record (2026-07-25) — infra live.**
+Shipped so far: the SDK dep, the config flags (`AGENT_RUNTIME_*` per feature,
+default `legacy`; `LITELLM_*`; `AGENT_MODEL`/`AGENT_FALLBACK_MODEL`;
+`AGENT_MAX_CONCURRENCY`; `AGENT_MAX_BUDGET_USD`), `litellm-config.yaml`, the
+verification spike `packages/backend/scripts/spike-agent-sdk.ts`, and the
+deployed proxy. **Nothing routes through the SDK yet** — every feature is
+`legacy`, so this is inert in prod. The adapter (`src/agent-runtime/*`) is the
+next thing to build.
+
+**Deployed infrastructure** (see DEPLOY.md for the runbook):
+
+| Piece | Identifier |
+|---|---|
+| Proxy | Railway service `litellm`, image `ghcr.io/berriai/litellm:v1.93.0`, built from `Dockerfile.litellm` |
+| Reachability | `http://litellm.railway.internal:4000` — **private network only, no public domain** |
+| Key store | Neon project `yoinky-litellm` (`autumn-credit-25191795`), `aws-eu-central-1`, PG17 — deliberately NOT `yoinkybot-prod` |
+| Backend wiring | `LITELLM_BASE_URL` + `LITELLM_API_KEY` (virtual key scoped to `yoinky-agent`, `yoinky-agent-fallback`) |
+
+Two gotchas that cost real time and are baked into the files now:
+- `main-v1.93.0-stable` **does not exist** on ghcr.io (404). The `main-vX-stable`
+  tag scheme stopped around 1.66; the correct pin is `v1.93.0`.
+- Railway has **no file-mount primitive**, so `litellm-config.yaml` is baked into
+  a thin derived image (`Dockerfile.litellm`) rather than mounted, and the proxy
+  must bind `::` (not `0.0.0.0`) or it is unreachable over the private network.
 
 **Phase 0 is a HARD GATE.** Deploy the LiteLLM service, then run the spike against
 it; it proves (or disproves) that grok-4.5 *through LiteLLM's Anthropic→provider
@@ -1557,27 +1637,116 @@ numbers. If the multi-tool loop or parallel-tool test fails, the SDK is not a
 viable backend for grok-4.5-via-LiteLLM and the migration stops here. **Fill in
 the verified findings below once the spike has run.**
 
-- Phase 0 spike results: _pending — paste the spike's PASS/FAIL table + the
-  auth-var answer + token-vs-LiteLLM-spend cross-check here._
+**Phase 0 spike results — 8/8 PASS, `GATE OK` (2026-07-25, run against the live
+private proxy):**
+
+| # | Test | Result |
+|---|---|---|
+| 1 | basic query | PASS — `subtype=success`, returned `"pong"` |
+| 2 | **multi-step tool loop (THE gate)** | **PASS** — `search=1 profile=1 steps=2`; grok-4.5 chains tool calls correctly through LiteLLM's translation |
+| 3 | **parallel tool use** | **PASS** — `subtype=success steps=2`, no crash |
+| 4 | structured output (`outputFormat`) | PASS — valid `structured_output` object, so the fallback plan is not needed |
+| 5 | `PreToolUse` deny | PASS — hook fired and the deny was honored |
+| 6 | `maxTurns` / `maxBudgetUsd` | PASS — **both caps terminate by THROWING**, not by returning a result subtype |
+| 7 | auth var | PASS — LiteLLM accepts **both** `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_API_KEY` |
+| 8/9 | usage + latency | PASS — first token ~1.8–2.1s, full 2-tool loop ~6.3–7.0s |
+
+Three findings the adapter must encode:
+
+1. **Caps throw; they do not return.** `maxTurns`/`maxBudgetUsd` surface as a
+   thrown `Error` ("Reached maximum number of turns (1)"), *not* as a `result`
+   message with `subtype=error_max_turns`/`error_max_budget_usd`. An adapter that
+   only inspects `result.subtype` will treat a capped run as an unhandled crash.
+   Wrap every `query()` drain in try/catch and classify the throw.
+2. **`PreToolUse` matchers need the FULL namespaced tool name.** In-process MCP
+   tools are `mcp__<server>__<tool>`; a bare `"get_profile"` matcher silently
+   never fires. This is exactly the anti-loop ledger's mechanism, so getting it
+   wrong would have failed open. (The first spike run reported test 5 as FAIL for
+   this reason — a bug in the spike, not the SDK.)
+3. **The SDK's `total_cost_usd` is wrong for grok-4.5 — confirmed, not assumed.**
+   For the test-8/9 query the SDK reported `costUSD=0.011293` on
+   `inputTokens=226, outputTokens=363, cacheReadInputTokens=2176`. At grok-4.5's
+   actual OpenRouter rates ($2/M in, $6/M out, $0.30/M cached read) that run cost
+   `0.0033` — the SDK over-reports by **~3.4×** because it prices the unknown
+   model `yoinky-agent` off an Anthropic-shaped default (note it also self-reports
+   `provider: "firstParty"`). **Never meter from the SDK.** `litellm-config.yaml`
+   now carries a `model_info` cost map per model, so LiteLLM's `LiteLLM_SpendLogs`
+   is the accurate ledger.
+
+_Caveat on the cross-check:_ the direct `LiteLLM_SpendLogs` read was not performed
+— this network blocks outbound 5432 (see the networking note below), so the cost
+comparison above is arithmetic against OpenRouter's published rates rather than a
+row-level diff. Worth a one-time confirmation from a less restricted network.
+
+**Networking constraint discovered while deploying.** The dev machine's network
+blocks outbound **22** (`railway ssh`), **2226** (`railway sandbox exec`) and
+**5432** (direct Postgres); only 80/443 pass. Since the proxy is private-only,
+that leaves no interactive way in. The documented `railway run --service backend …`
+form in the original plan **cannot work regardless of network** — `railway run`
+executes on your laptop with Railway's env vars injected, and `*.railway.internal`
+is private DNS that does not resolve off-platform. The escape hatch, now checked
+in, is to deploy the spike **as a short-lived Railway service**
+(`Dockerfile.spike` + `scripts/mint-litellm-key.ts`) and read results from
+`railway logs`, then delete the service. That path works from any network and
+never exposes the proxy publicly.
 
 **Hosting:** SDK mode is **Railway-only** — it spawns a Claude Code subprocess
 needing a real filesystem, which a Vercel serverless function is not (same
-`in-process import ≠ same process` lesson as §3i). Any web surface that needs an
-SDK loop (Buyer Radar "Scan now", which runs the loop synchronously in its Vercel
-route today) must move to pg-boss (enqueue → poll). Railway is single-instance
-Hobby and each SDK subprocess is ~1 GiB, so `AGENT_MAX_CONCURRENCY` caps concurrent
-subprocesses (default 2); the plan likely needs an upgrade before the interactive
-chat brain runs on the SDK.
+`in-process import ≠ same process` lesson as §3i). Buyer Radar "Scan now" has
+been moved off the Vercel request path accordingly: `POST /api/buyers-radar/scan`
+now enqueues `buyer.scan-now` (pg-boss) and returns a `jobId`, and the client
+polls `GET …/scan?jobId=…`. The worker returns the `ScanResponse` as the job's
+output, so the user still gets the same funnel counts and `reason` sentence. Two
+incidental fixes came with it: `workers.ts`'s `logged()` now RETURNS the handler's
+value (it was discarding it, which would have silently dropped every job output),
+and the queue gets a 30-minute expiry because a scan fans out into several
+composition loops that may queue behind the concurrency cap.
 
-**Unverified (settle in Phase 0, per convention):** multi-turn tool-use fidelity
-and structured-output support through LiteLLM's translation; which of
-`ANTHROPIC_AUTH_TOKEN`/`ANTHROPIC_API_KEY` the SDK's bundled binary sends that
-LiteLLM accepts; whether LiteLLM serves `/v1/messages/count_tokens` for an
-OpenRouter-backed model; Railway concurrency headroom; the SDK's `total_cost_usd`
-is known-wrong for grok-4.5 (meter from our own `PRICE` map); prompt-caching
-economics against a non-Anthropic upstream. Also note the SDK peer-wants `zod@^4`
+**NO RAILWAY UPGRADE IS NEEDED — the earlier "~1 GiB per subprocess, the plan
+likely needs an upgrade" note was wrong, and measurement is what disproved it.**
+The container limit is **7629 MB / 8 vCPU**, the backend idles at **~156-243 MB**,
+and one SDK subprocess peaks at **+152-163 MB** — not ~1 GiB. At the default
+concurrency of 4 that is ~1 GB of a 7.6 GB box, and there is room for several
+times more. What was actually missing was not headroom but a *bound*:
+`AGENT_MAX_CONCURRENCY` was a config flag nothing enforced. `capacity.ts` now
+enforces it with a FIFO queue plus a cgroup-based memory check (`os.freemem()` is
+useless here — inside a container it reports the host's memory), and a loop that
+cannot get a slot within `AGENT_ACQUIRE_TIMEOUT_MS` runs on the legacy runner
+rather than queueing unboundedly.
+
+**Settled by Phase 0:** multi-turn tool-use fidelity and structured output through
+LiteLLM's translation both work; LiteLLM accepts either auth env var; the SDK's
+`total_cost_usd` is confirmed wrong for grok-4.5 (~3.4× over) — meter from
+LiteLLM's spend log or our own `PRICE` map.
+
+**Still unverified:** whether LiteLLM serves `/v1/messages/count_tokens` for an
+OpenRouter-backed model (the spike never called it); Railway concurrency headroom
+under real load; prompt-caching economics against a non-Anthropic upstream (the
+spike did see non-zero `cacheReadInputTokens`, so caching is at least active);
+whether the `yoinky-agent-fallback` route actually engages on a primary failure —
+the spike exercised the fallback *config* but never forced grok to error, so
+**force one failure before relying on it**. Also note the SDK peer-wants `zod@^4`
 but the repo is on `zod@3`; the SDK's `tool()` types accept `ZodRawShape | zod/v4`
 (both), so v3 raw shapes work — the warning is cosmetic.
+
+**Neon free-tier hygiene (why `litellm-config.yaml` looks the way it does).** The
+key store is a free Neon project: autosuspend after 5 min idle (not disableable)
+and 100 CU-hours/project/month at a 0.25 CU floor. LiteLLM's `reset_budget` job
+polls the DB every 597–605s — a *shorter* period than the suspend window — so
+left on it would pin the compute awake ~24/7 (0.25 CU × 730h ≈ 182 CU-hours) and
+exhaust the allowance in ~2.5 weeks, taking the agent runtime down with it.
+`disable_reset_budget: true` fixes that; it only resets `budget_duration` rolling
+budgets, which we do not use. Every other recurring job was checked against
+v1.93.0 source and is a genuine no-op when idle (`update_spend` guards on
+`len(...) > 0`, `_update_daily_spend` loops `while daily_spend_transactions:`,
+`_monitor_spend_logs_queue` guards on `queue_size > 0`, and
+`add_deployment`/`get_credentials` only run under `store_model_in_db`, which is
+off). Cold start is kept off the request path by `user_api_key_cache_ttl: 3600`
+plus `allow_requests_on_db_unavailable: true`, which serves a request under a
+synthetic **non-admin** auth if the DB connection errors mid-wake — it catches
+connection errors only (a bad key still 401s) and cannot escalate to proxy-admin,
+and the "VPC only" caveat in LiteLLM's docs is satisfied by this service having no
+public domain.
 
 ---
 

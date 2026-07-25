@@ -9,6 +9,8 @@
 import { config } from "../config.js";
 import { query } from "../db/pool.js";
 import { scanForUser } from "../buyer/scan.js";
+import type { BuyerScanNowJob } from "./boss.js";
+import { scanBuyerSignals, type ScanResponse } from "../web/buyers-radar.js";
 
 export async function handleBuyerRadar(): Promise<void> {
   if (!config.BUYER_RADAR_ENABLED || !config.BUYER_RADAR_PROACTIVE) return; // ships dark
@@ -26,4 +28,22 @@ export async function handleBuyerRadar(): Promise<void> {
       console.error(`buyer radar scan failed for ${u.user_id}`, err);
     }
   }
+}
+
+/**
+ * On-demand "Scan now", moved off the Vercel request path (docs/INTERNAL §3n).
+ *
+ * WHY IT HAD TO MOVE: a scan calls composeOutreach per gated candidate, and under
+ * `AGENT_RUNTIME_BUYER=sdk` each of those spawns a Claude Code subprocess needing
+ * a real filesystem. A Vercel serverless function is not that, so the old
+ * synchronous route could not work in SDK mode at all. Running it here also
+ * retires a second problem the sync route always had: several paid searches plus
+ * a handful of composition loops against a 300s function ceiling.
+ *
+ * The return value becomes the pg-boss job output, which the web app polls — so
+ * the user still gets the same funnel counts and `reason` sentence, just after a
+ * poll instead of a held-open request.
+ */
+export async function handleBuyerScanNow(data: BuyerScanNowJob): Promise<ScanResponse> {
+  return scanBuyerSignals(data.userId);
 }

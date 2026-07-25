@@ -25,6 +25,9 @@ export const QUEUES = {
   agentTick: "agent.tick",
   buyerRadar: "buyer.radar",
   buyerRecalibrate: "buyer.recalibrate",
+  /** On-demand "Scan now". Separate from the scheduled buyer.radar sweep because
+   *  it is user-triggered, per-user, and its result is polled by the web app. */
+  buyerScanNow: "buyer.scan-now",
   inspirationSeed: "inspiration.seed",
   automationTick: "automation.tick",
 } as const;
@@ -67,6 +70,9 @@ export interface ScheduledPostJob {
   scheduledPostId: string;
   userId: string;
 }
+export interface BuyerScanNowJob {
+  userId: string;
+}
 
 let boss: PgBoss | undefined;
 
@@ -106,13 +112,21 @@ export async function startBoss(): Promise<PgBoss> {
     QUEUES.peerIngest,
     QUEUES.buyerRadar,
     QUEUES.inspirationSeed,
+    // User-triggered and paid: a retry would double-spend the provider budget on
+    // a scan the user can simply run again.
+    QUEUES.buyerScanNow,
   ];
+  // A "Scan now" fans out into several composition loops, and under SDK mode each
+  // one is a subprocess that may queue behind AGENT_MAX_CONCURRENCY. The default
+  // 10-minute expiry can plausibly be hit; expiring mid-scan would strand a job
+  // the user is actively polling.
+  const LONG_EXPIRY: Partial<Record<string, number>> = { [QUEUES.buyerScanNow]: 30 };
   for (const q of Object.values(QUEUES)) {
     // Per-item ingest jobs (extract/embed/transcribe/…) DO retry — a retry there
     // recovers real per-capture work that won't otherwise re-run. The scheduled
     // provider jobs above don't: 0 retries, they come back on the next cron.
     const retryLimit = NO_RETRY.includes(q) ? 0 : 3;
-    const policy = { name: q, retryLimit, retryDelay: 30, retryBackoff: true, expireInMinutes: 10 };
+    const policy = { name: q, retryLimit, retryDelay: 30, retryBackoff: true, expireInMinutes: LONG_EXPIRY[q] ?? 10 };
     await boss.createQueue(q, policy);
     await boss.updateQueue(q, policy);
   }

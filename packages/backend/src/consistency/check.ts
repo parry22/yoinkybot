@@ -3,7 +3,7 @@ import { config } from "../config.js";
 import { query, queryOne, toVector } from "../db/pool.js";
 import { embedOne } from "../llm/embeddings.js";
 import { llmCall } from "../llm/gateway.js";
-import { runToolLoop } from "../llm/tool-loop.js";
+import { runAgentLoop } from "../agent-runtime/run-agent-loop.js";
 import { hybridSearch } from "../memory/search.js";
 import { consistencyCheck } from "../prompts/consistency-check.v1.js";
 import { consistencyAgent } from "../prompts/consistency-check.v2.js";
@@ -262,7 +262,7 @@ async function checkWithAgent(
     },
   };
 
-  const { output, steps } = await runToolLoop({
+  const { output, steps } = await runAgentLoop("consistency", {
     userId,
     eventType: "consistency",
     tier: consistencyAgent.tier,

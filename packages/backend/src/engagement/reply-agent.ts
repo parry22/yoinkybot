@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { config } from "../config.js";
-import { runToolLoop, type ToolLoopStep } from "../llm/tool-loop.js";
+import { type ToolLoopStep } from "../llm/tool-loop.js";
+import { runAgentLoop } from "../agent-runtime/run-agent-loop.js";
 import { hybridSearch } from "../memory/search.js";
 import { currentVoiceProfile } from "../voice/profile.js";
 import { getProfile } from "../strategist/profile.js";
@@ -111,7 +112,7 @@ export async function draftReplyWithAgent(
     },
   };
 
-  const { output, steps } = await runToolLoop({
+  const { output, steps } = await runAgentLoop("reply", {
     userId,
     eventType: "reply_draft",
     tier: replyDraftAgent.tier,

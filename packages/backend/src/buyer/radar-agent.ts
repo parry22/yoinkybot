@@ -9,7 +9,8 @@
  */
 import { z } from "zod";
 import { config } from "../config.js";
-import { runToolLoop, type ToolLoopStep } from "../llm/tool-loop.js";
+import { type ToolLoopStep } from "../llm/tool-loop.js";
+import { runAgentLoop } from "../agent-runtime/run-agent-loop.js";
 import { llmCall } from "../llm/gateway.js";
 import { hybridSearch } from "../memory/search.js";
 import { currentVoiceProfile } from "../voice/profile.js";
@@ -124,7 +125,7 @@ export async function composeOutreach(userId: string, candidate: GatedCandidate)
   let output: z.infer<typeof outputSchema>;
   let steps: ToolLoopStep[] = [];
   try {
-    const res = await runToolLoop({
+    const res = await runAgentLoop("buyer", {
       userId,
       eventType: "compose",
       tier: buyerOutreach.tier,

@@ -73,12 +73,18 @@ export {
   getBuyerIcp,
   buyerIcpPrefill,
   saveBuyerIcp,
-  scanBuyerSignals,
+  // "Scan now" is enqueue + poll, not a synchronous call: SDK-mode composition
+  // spawns a subprocess, which a Vercel function cannot host (§3n).
+  enqueueBuyerScan,
+  buyerScanProgress,
   setBuyerSignalVerdict,
   type BuyerSignalView,
   type BuyerRadarStatus,
   type BuyerIcpView,
   type ScanResponse,
+  type BuyerScanTicket,
+  type BuyerScanProgress,
+  type BuyerScanJobState,
 } from "./web/buyers-radar.js";
 
 // Diagnosis, plan, beliefs (read models for the panels)
