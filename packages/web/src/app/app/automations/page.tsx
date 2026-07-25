@@ -18,6 +18,7 @@ export default async function AutomationsPage() {
       initialAutomations={automations}
       initialApprovals={approvals}
       canAutoAgent={ent.autoAgent}
+      planCap={ent.automationPostsPerMonth}
     />
   );
 }

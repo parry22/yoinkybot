@@ -1,109 +1,223 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Copy01Icon, CheckmarkCircle02Icon } from "@hugeicons/core-free-icons";
-import panel from "./panel.module.css";
-import styles from "./compose.module.css";
+import { Copy01Icon, CheckmarkCircle02Icon, ArrowUp01Icon } from "@hugeicons/core-free-icons";
+import { useAgentStream } from "./use-agent-stream";
+import styles from "./chat.module.css";
 
 type Draft = { id: string; content: string; platform: string; created_at?: string };
 
-export function Compose({ initialDrafts }: { initialDrafts: Draft[] }) {
-  const platform = "x" as const;
-  const [topic, setTopic] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [drafts, setDrafts] = useState<Draft[]>(initialDrafts);
+type Entry =
+  | { kind: "user"; id: string; text: string }
+  | { kind: "agent"; id: string; text: string }
+  | { kind: "draft"; id: string; content: string; platform: string };
 
-  async function write() {
-    const t = topic.trim();
+const SUGGESTIONS = [
+  { title: "Write from what I've been thinking", sub: "Turns your captures into a post in your voice" },
+  { title: "What have I said about pricing?", sub: "Searches everything you've told me" },
+  { title: "Reshape my last post for LinkedIn", sub: "Same idea, native to the platform" },
+  { title: "Check this draft against my positions", sub: "Flags anything that contradicts you" },
+];
+
+/**
+ * Compose is a chat, not a form.
+ *
+ * It used to be a top-anchored textarea with a "Write it" button and a list of
+ * results underneath, which framed the agent as a one-shot generator. It's now a
+ * transcript with the composer pinned to the bottom, talking to the same brain the
+ * Telegram bot uses (`/api/chat/stream`) — so it can draft, search memory, check a
+ * draft, repurpose or schedule, and you can follow up in context.
+ *
+ * While a turn runs, the activity feed shows the steps actually being taken. Those
+ * labels come from the tool the model invoked and from the draft pipeline, written
+ * in code (web/stream.ts) — never scraped from model narration, which under
+ * enforced structured output frequently isn't emitted at all.
+ */
+export function Compose({ initialDrafts }: { initialDrafts: Draft[] }) {
+  const [entries, setEntries] = useState<Entry[]>(() =>
+    // Seed with the most recent drafts so the page isn't blank on return, newest
+    // last (chat order).
+    [...initialDrafts]
+      .slice(0, 4)
+      .reverse()
+      .map((d) => ({ kind: "draft" as const, id: d.id, content: d.content, platform: d.platform })),
+  );
+  const [input, setInput] = useState("");
+  const [error, setError] = useState("");
+  const { run, activity, busy } = useAgentStream();
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const taRef = useRef<HTMLTextAreaElement>(null);
+
+  const add = (e: Entry) => setEntries((prev) => [...prev, e]);
+  const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  // Follow the conversation as it grows.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [entries, activity, busy]);
+
+  // Grow the textarea with its content, up to the stylesheet's max-height.
+  useEffect(() => {
+    const ta = taRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    ta.style.height = `${Math.min(ta.scrollHeight, 160)}px`;
+  }, [input]);
+
+  async function send(text: string) {
+    const t = text.trim();
     if (!t || busy) return;
-    setBusy(true);
     setError("");
-    try {
-      const res = await fetch("/api/draft", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ platform, topic: t }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error ?? "Couldn't write that one.");
-      } else {
-        const fresh: Draft[] = (data.messages ?? []).map((content: string, i: number) => ({
-          id: `new-${Date.now()}-${i}`,
-          content,
-          platform,
-        }));
-        setDrafts((d) => [...fresh, ...d]);
-        setTopic("");
-      }
-    } catch {
-      setError("Network error - try again.");
-    } finally {
-      setBusy(false);
+    setInput("");
+    add({ kind: "user", id: uid(), text: t });
+
+    await run(
+      "/api/chat/stream",
+      { text: t },
+      {
+        onMessage: (msg) => {
+          // A message carrying a drafted post gets its own card (copyable, keeps
+          // its own capitalization) instead of a chat bubble.
+          const draft = extractDraft(msg);
+          if (draft) add({ kind: "draft", id: uid(), content: draft, platform: "x" });
+          else add({ kind: "agent", id: uid(), text: msg });
+        },
+        onError: (message, status) => {
+          setError(status === 402 ? "Your trial has ended — upgrade to keep composing." : message);
+        },
+      },
+    );
+  }
+
+  function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    // Enter sends, Shift+Enter is a newline.
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      void send(input);
     }
   }
 
-  return (
-    <div className={panel.page}>
-      <div className={panel.inner}>
-        <div className={panel.head}>
-          <div>
-            <div className={panel.title}>Compose</div>
-            <div className={panel.subtitle}>Turn a thought into a post in your voice.</div>
-          </div>
-        </div>
+  const empty = entries.length === 0 && !busy;
 
+  return (
+    <div className={styles.root}>
+      <div className={styles.scroll} ref={scrollRef}>
+        <div className={styles.thread}>
+          {empty ? (
+            <>
+              <div className={styles.header}>
+                <div className={styles.greeting}>What are we shipping?</div>
+                <div className={styles.sub}>
+                  Drop a thought and I&apos;ll write it in your voice — grounded in what you&apos;ve actually said, and
+                  in what&apos;s actually worked for you.
+                </div>
+              </div>
+              {/* .empty is the 2-col grid; .suggest is each card. */}
+              <div className={styles.empty}>
+                {SUGGESTIONS.map((s) => (
+                  <button key={s.title} className={styles.suggest} onClick={() => void send(s.title)}>
+                    <div className={styles.suggestTitle}>{s.title}</div>
+                    <div className={styles.suggestSub}>{s.sub}</div>
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : (
+            entries.map((e) =>
+              e.kind === "draft" ? (
+                <DraftCard key={e.id} content={e.content} platform={e.platform} />
+              ) : (
+                <div key={e.id} className={`${styles.msg} ${e.kind === "user" ? styles.msgUser : styles.msgBot}`}>
+                  {e.text}
+                </div>
+              ),
+            )
+          )}
+
+          {activity.length > 0 && (
+            <div className={styles.activity}>
+              {activity.map((a, i) => (
+                <div
+                  key={`${a.label}-${i}`}
+                  className={`${styles.activityRow} ${a.active ? styles.activityRowActive : ""}`}
+                >
+                  {a.active ? <span className={styles.activitySpin} /> : <span className={styles.activityDone}>✓</span>}
+                  <span className={styles.activityLabel}>{a.label}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className={styles.composerWrap}>
         <div className={styles.composer}>
+          {/* Placeholder is short on purpose: the box is one row until you type,
+              and a longer one wraps to two lines and clips on a narrow phone. */}
           <textarea
+            ref={taRef}
             className={styles.input}
-            placeholder='What&apos;s the post about? e.g. "the lesson from shipping the redesign"'
-            value={topic}
-            onChange={(e) => setTopic(e.target.value)}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder="What's on your mind?"
+            rows={1}
           />
           <div className={styles.composerFooter}>
-            <span className={styles.hint}>{error || "Writing for X"}</span>
-            <button className="btnPrimary" disabled={busy || !topic.trim()} onClick={write}>
-              {busy ? "Writing…" : "Write it"}
+            <span className={styles.hint}>{error || "Enter to send · Shift+Enter for a new line"}</span>
+            <button
+              className={styles.send}
+              onClick={() => void send(input)}
+              disabled={busy || !input.trim()}
+              aria-label="Send"
+            >
+              <HugeiconsIcon icon={ArrowUp01Icon} size={16} strokeWidth={2} />
             </button>
           </div>
         </div>
-
-        {drafts.length > 0 && (
-          <>
-            <div className={styles.sectionLabel}>Drafts</div>
-            {drafts.map((d) => (
-              <DraftCard key={d.id} draft={d} />
-            ))}
-          </>
-        )}
       </div>
     </div>
   );
 }
 
-function DraftCard({ draft }: { draft: Draft }) {
+/**
+ * The bot delivers a draft as "✍️ here you go:\n\n<post>" (telegram/actions.ts).
+ * Pull the post body out so it can render as a copyable card. Anything not
+ * recognisably a draft stays an ordinary message — no guessing.
+ */
+function extractDraft(msg: string): string | null {
+  const m = msg.match(/^✍️[^\n]*\n\n([\s\S]+)$/);
+  if (!m) return null;
+  // Drop the trailing media nudge — it's guidance about the post, not the post.
+  return (m[1] ?? "").split("\n\n📎 pair it with:")[0]!.trim() || null;
+}
+
+function DraftCard({ content, platform }: { content: string; platform: string }) {
   const [copied, setCopied] = useState(false);
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(draft.content);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      /* clipboard blocked - no-op */
-    }
-  }
   return (
     <div className={styles.draftCard}>
       <div className={styles.draftTop}>
-        <span className="pill">{draft.platform === "linkedin" ? "LinkedIn" : "X"}</span>
-        <button className={styles.copyBtn} onClick={copy}>
-          <HugeiconsIcon icon={copied ? CheckmarkCircle02Icon : Copy01Icon} size={14} strokeWidth={1.8} />
+        <span className={styles.draftPill}>{platform === "linkedin" ? "LinkedIn" : "X"} draft</span>
+        <span className={styles.draftSpacer} />
+        <button
+          className={styles.copyBtn}
+          onClick={() => {
+            navigator.clipboard
+              ?.writeText(content)
+              .then(() => {
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1600);
+              })
+              .catch(() => {});
+          }}
+        >
+          <HugeiconsIcon icon={copied ? CheckmarkCircle02Icon : Copy01Icon} size={13} strokeWidth={1.8} />
           {copied ? "Copied" : "Copy"}
         </button>
       </div>
-      <div className={styles.draftBody}>{draft.content}</div>
+      <div className={styles.draftBody}>{content}</div>
     </div>
   );
 }

@@ -24,6 +24,29 @@ which is where it's most useful. Both share one Postgres and one `users` row.
 
 <!-- Keep newest-first. Update this whenever a change ships that a reader of the repo should know about. -->
 
+- **2026-07-25 — Compose and Auto Agent are chat surfaces, and they show their
+  work.** Both pages were forms that framed the agent as a one-shot generator.
+  **Compose** is now a transcript with the composer pinned to the bottom, talking to
+  the same brain the bot uses (new `POST /api/chat/stream`) — so it can draft,
+  search memory, check a draft, repurpose or schedule, and you can follow up in
+  context; drafts render as copyable cards. **Auto Agent** drops its config modal:
+  your agents sit at the top, and *How it delivers · How often · Cap/month* sit
+  directly above a bottom composer where you describe the agent in your own words
+  (clicking an agent loads it back into that composer to edit). Both stream an
+  **activity feed** — "Retrieving relevant memories ✓ → Reading what's actually
+  worked for you ✓ → Writing the draft" — append-only, so the sequence itself is the
+  information rather than a spinner with words. Mechanically: `web/stream.ts` adds a
+  `streamingChannel()` behind the **existing `Channel` contract**, so
+  `converseWithUser` / `runDraft` / `runAutomationOnce` are untouched; three SSE
+  routes (`chat/stream`, `automations/save/stream`, `automations/run/stream`) on the
+  Node runtime; `useAgentStream` consumes them (fetch + body reader, since
+  `EventSource` can't POST). **Every stage label is written in code, never parsed
+  from model output** — the SDK migration proved the model won't reliably narrate
+  between tool calls under enforced structured output, which is exactly why
+  `TOOL_BEATS` exists. Telegram parity: it already had this affordance as sequential
+  messages + typing; the underlying stages are shared. The reused
+  `chat.module.css`/`agent.module.css` had been sitting orphaned in the repo.
+
 - **2026-07-25 — Auto Agent + Buyer Radar caps made real, and pricing tells the
   truth.** (1) **Auto Agent is now plan-capped**: new
   `entitlements.automationPostsPerMonth` — **Growth 5/month** (approval mode; the

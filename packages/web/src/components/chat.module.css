@@ -246,3 +246,129 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ── agent activity feed (2026-07-25) ────────────────────────────────────────
+ * What the agent is doing, while it does it. Append-only and completed steps
+ * stay visible — the sequence IS the information ("retrieving memories ✓ →
+ * reading what's worked for you"); one replaced line would just be a spinner
+ * with extra words. Labels come from code (web/stream.ts), never from model
+ * narration, which under structured output often isn't emitted at all. */
+.activity {
+  align-self: flex-start;
+  width: min(100%, 460px);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 0.5px solid var(--stroke);
+  background: var(--surface);
+  min-width: 0;
+}
+
+.activityRow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ink-600);
+  min-width: 0;
+}
+
+.activityRowActive {
+  color: var(--ink-900);
+}
+
+.activityLabel {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Completed step: a small filled tick. */
+.activityDone {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  border: 0.5px solid var(--accent-border);
+  color: var(--accent);
+  font-size: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Running step: a pulsing dot, so exactly one row reads as "now". */
+.activitySpin {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 1.5px solid var(--accent-border);
+  border-top-color: var(--accent);
+  animation: activitySpin 700ms linear infinite;
+}
+
+@keyframes activitySpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* A draft the agent produced, inside the transcript. Content keeps its own
+ * capitalization (it's feed copy), so it gets a distinct surface + copy button. */
+.draftCard {
+  align-self: flex-start;
+  width: min(100%, var(--content-width));
+  border-radius: 16px;
+  border: 0.5px solid var(--accent-border);
+  background: var(--accent-soft);
+  padding: 14px 16px;
+  min-width: 0;
+}
+
+.draftTop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.draftPill {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+}
+
+.draftSpacer {
+  flex: 1;
+}
+
+.copyBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 0.5px solid var(--stroke);
+  background: var(--surface);
+  color: var(--ink-700);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.copyBtn:hover {
+  color: var(--ink-900);
+}
+
+.draftBody {
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--ink-900);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

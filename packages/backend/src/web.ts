@@ -41,8 +41,9 @@ export { scheduledStatus, type ScheduledStatus } from "./scheduling/service.js";
 // "Sign in with X" / "Connect X" finalizer + status (web runs the OAuth itself)
 export { finalizeXConnect, getXConnectStatus, type XConnectStatus } from "./web/x-signin.js";
 
-// Conversational brain, web-flavored
-export { runWebChatTurn } from "./web/chat.js";
+// Conversational brain, web-flavored (+ the streamed variant the chat UI uses)
+export { runWebChatTurn, runWebChatTurnStreaming } from "./web/chat.js";
+export type { AgentEvent, Emit } from "./web/stream.js";
 
 // Strategist state + stated profile
 export { getStage, getState } from "./strategist/state.js";
@@ -134,6 +135,8 @@ export {
   saveAutomationFromWeb,
   setAutomationEnabledWeb,
   runAutomationOnceWeb,
+  saveAutomationStreaming,
+  runAutomationOnceStreaming,
   listPendingApprovalsWeb,
   listAutomationRunsWeb,
   actOnRunWeb,

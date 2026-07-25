@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Add01Icon, AiMagicIcon, FireIcon, ArchiveIcon } from "@hugeicons/core-free-icons";
+import { AiMagicIcon, FireIcon, ArchiveIcon } from "@hugeicons/core-free-icons";
 import panel from "./panel.module.css";
+import { useAgentStream } from "./use-agent-stream";
 import styles from "./automations.module.css";
 
 type SourceType = "trend_ride" | "unlock_backlog" | "custom";
@@ -87,21 +88,33 @@ export function Automations({
   initialAutomations,
   initialApprovals,
   canAutoAgent,
+  planCap,
 }: {
   initialAutomations: AutomationView[];
   initialApprovals: ApprovalView[];
   /** Scale-only: whether the user's plan allows hands-off AUTO delivery. */
   canAutoAgent: boolean;
+  /** Auto Agent posts/month the plan allows (Growth 5 / Scale 90). */
+  planCap: number | null;
 }) {
   const [automations, setAutomations] = useState(initialAutomations);
   const [approvals, setApprovals] = useState(initialApprovals);
-  const [editing, setEditing] = useState<null | FormState>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const [form, setForm] = useState<FormState>({ ...BLANK });
+  const [note, setNote] = useState<string | null>(null);
+  const [err, setErr] = useState("");
+  const { run, activity, busy } = useAgentStream();
+  const taRef = useRef<HTMLTextAreaElement>(null);
 
-  function flash(msg: string) {
-    setToast(msg);
-    setTimeout(() => setToast(null), 3500);
-  }
+  const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setForm((f) => ({ ...f, [k]: v }));
+  const editingExisting = Boolean(form.id);
+
+  // Grow the brief box with its content.
+  useEffect(() => {
+    const ta = taRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    ta.style.height = `${Math.min(ta.scrollHeight, 150)}px`;
+  }, [form.brief]);
 
   async function toggle(a: AutomationView) {
     const next = !a.enabled;
@@ -113,31 +126,61 @@ export function Automations({
     }).catch(() => {});
   }
 
-  async function runNow(a: AutomationView) {
-    flash("running…");
-    try {
-      const res = await fetch("/api/automations/run", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: a.id }),
-      });
-      const data = await res.json();
-      if (data.status === "awaiting_approval") flash("drafted, check Telegram or below to approve");
-      else if (data.status === "scheduled") flash("drafted and queued to post");
-      else flash(data.reason ?? "nothing to post right now");
-      await refreshApprovals();
-    } catch {
-      flash("couldn't run that");
-    }
-  }
-
   async function refreshApprovals() {
     const res = await fetch("/api/automations/approvals").then((r) => r.json()).catch(() => ({ approvals: [] }));
     setApprovals(res.approvals ?? []);
   }
 
-  function edit(a: AutomationView) {
-    setEditing({
+  /** "Run now" — streamed, so the pipeline shows its work. */
+  async function runNow(a: AutomationView) {
+    setErr("");
+    setNote(null);
+    await run(
+      "/api/automations/run/stream",
+      { id: a.id },
+      {
+        onMessage: (text) => setNote(text),
+        onResult: () => void refreshApprovals(),
+        onError: (message, status) =>
+          setErr(status === 402 ? "Your trial has ended — upgrade to keep the agent running." : message),
+      },
+    );
+  }
+
+  /** Send the brief: creates (or updates) the agent, streamed. */
+  async function submit() {
+    if (busy) return;
+    if (form.sourceType === "custom" && !form.brief.trim()) {
+      setErr("Tell the agent what to do — describe it in the box.");
+      return;
+    }
+    setErr("");
+    setNote(null);
+    await run(
+      "/api/automations/save/stream",
+      { ...form, id: form.id || undefined },
+      {
+        onMessage: (text) => setNote(text),
+        onResult: (data) => {
+          const view = (data as { automation?: AutomationView } | undefined)?.automation;
+          if (view) {
+            setAutomations((list) => {
+              const exists = list.some((x) => x.id === view.id);
+              return exists ? list.map((x) => (x.id === view.id ? view : x)) : [view, ...list];
+            });
+          }
+          setForm({ ...BLANK });
+        },
+        onError: (message, status) =>
+          setErr(status === 402 ? "Auto Agent is a paid feature — upgrade to set one up." : message),
+      },
+    );
+  }
+
+  function loadForEdit(a: AutomationView) {
+    setNote(null);
+    setErr("");
+    setForm({
       id: a.id,
       name: a.name,
       sourceType: a.sourceType,
@@ -146,89 +189,201 @@ export function Automations({
       monthlyCap: a.monthlyCap,
       brief: a.brief ?? "",
     });
+    taRef.current?.focus();
   }
 
   return (
-    <div className={panel.page}>
-      <div className={panel.inner}>
-        <div className={panel.head}>
-          <div>
-            <div className={panel.title}>Auto Agent</div>
-            <div className={panel.subtitle}>Describe an agent once and Yoinky runs it. You stay in control.</div>
-          </div>
-          <button className="btnPrimary" onClick={() => setEditing({ ...BLANK })}>
-            <HugeiconsIcon icon={Add01Icon} size={16} strokeWidth={2} />
-            New agent
-          </button>
-        </div>
-
-        {toast && <div className={styles.toast}>{toast}</div>}
-
-        {approvals.length > 0 && (
-          <section className={styles.section}>
-            <div className={styles.sectionTitle}>Needs your approval</div>
-            {approvals.map((a) => (
-              <ApprovalCard
-                key={a.runId}
-                approval={a}
-                onResolved={(runId) => setApprovals((list) => list.filter((x) => x.runId !== runId))}
-                onEdited={(runId, draft) =>
-                  setApprovals((list) => list.map((x) => (x.runId === runId ? { ...x, draft } : x)))
-                }
-              />
-            ))}
-          </section>
-        )}
-
-        <section className={styles.section}>
-          {automations.length === 0 ? (
-            <div className={styles.empty}>
-              No agents yet. Describe one in your own words and Yoinky will draft posts for you, on your cadence, in your voice.
-            </div>
-          ) : (
-            automations.map((a) => (
-              <div key={a.id} className={styles.card}>
-                <div className={styles.cardMain} onClick={() => edit(a)}>
-                  <div className={styles.cardName}>{a.name}</div>
-                  <div className={styles.cardMeta}>
-                    {SOURCE_LABEL[a.sourceType]} · {CADENCE_LABEL[a.cadenceKind]} · {DELIVERY_LABEL[a.deliveryMode]}
-                  </div>
-                  {a.pendingApprovals > 0 && (
-                    <div className={styles.pendingTag}>{a.pendingApprovals} waiting on you</div>
-                  )}
-                </div>
-                <div className={styles.cardActions}>
-                  <button className={styles.runBtn} onClick={() => runNow(a)}>
-                    Run now
-                  </button>
-                  <button
-                    className={`${styles.toggle} ${a.enabled ? styles.on : ""}`}
-                    onClick={() => toggle(a)}
-                    aria-label={a.enabled ? "pause" : "enable"}
-                  >
-                    <span className={styles.knob} />
-                  </button>
-                </div>
+    <div className={styles.agentRoot}>
+      {/* everything you already have, at the top */}
+      <div className={styles.agentScroll}>
+        <div className={styles.agentInner}>
+          <div className={panel.head}>
+            <div>
+              <div className={panel.title}>Auto Agent</div>
+              <div className={panel.subtitle}>
+                Describe an agent once and Yoinky runs it. You stay in control.
+                {planCap !== null && ` Your plan covers ${planCap} agent posts a month.`}
               </div>
-            ))
+            </div>
+          </div>
+
+          {approvals.length > 0 && (
+            <section className={styles.section}>
+              <div className={styles.sectionTitle}>Needs your approval</div>
+              {approvals.map((a) => (
+                <ApprovalCard
+                  key={a.runId}
+                  approval={a}
+                  onResolved={(runId) => setApprovals((list) => list.filter((x) => x.runId !== runId))}
+                  onEdited={(runId, draft) =>
+                    setApprovals((list) => list.map((x) => (x.runId === runId ? { ...x, draft } : x)))
+                  }
+                />
+              ))}
+            </section>
           )}
-        </section>
+
+          <section className={styles.section}>
+            <div className={styles.sectionTitle}>Your agents</div>
+            {automations.length === 0 ? (
+              <div className={styles.empty}>
+                No agents yet. Describe one below in your own words and Yoinky will draft posts for you, on your
+                cadence, in your voice.
+              </div>
+            ) : (
+              automations.map((a) => (
+                <div key={a.id} className={styles.card}>
+                  <div className={styles.cardMain} onClick={() => loadForEdit(a)}>
+                    <div className={styles.cardName}>{a.name}</div>
+                    <div className={styles.cardMeta}>
+                      {SOURCE_LABEL[a.sourceType]} · {CADENCE_LABEL[a.cadenceKind]} · {DELIVERY_LABEL[a.deliveryMode]} ·
+                      up to {a.monthlyCap}/mo
+                    </div>
+                    {a.pendingApprovals > 0 && <div className={styles.pendingTag}>{a.pendingApprovals} waiting on you</div>}
+                  </div>
+                  <div className={styles.cardActions}>
+                    <button className={styles.runBtn} onClick={() => runNow(a)} disabled={busy}>
+                      Run now
+                    </button>
+                    <button
+                      className={`${styles.toggle} ${a.enabled ? styles.on : ""}`}
+                      onClick={() => toggle(a)}
+                      aria-label={a.enabled ? "pause" : "enable"}
+                    >
+                      <span className={styles.knob} />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </section>
+
+          {/* what the agent is doing, right where you're looking */}
+          {activity.length > 0 && (
+            <div className={styles.agentActivity}>
+              {activity.map((a, i) => (
+                <div
+                  key={`${a.label}-${i}`}
+                  className={`${styles.agentActivityRow} ${a.active ? styles.agentActivityRowActive : ""}`}
+                >
+                  {a.active ? <span className={styles.agentSpin} /> : <span className={styles.agentTick}>✓</span>}
+                  <span className={styles.agentActivityLabel}>{a.label}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {note && <div className={styles.agentNote}>{note}</div>}
+        </div>
       </div>
 
-      {editing && (
-        <ConfigModal
-          initial={editing}
-          canAutoAgent={canAutoAgent}
-          onClose={() => setEditing(null)}
-          onSaved={(view) => {
-            setAutomations((list) => {
-              const exists = list.some((x) => x.id === view.id);
-              return exists ? list.map((x) => (x.id === view.id ? view : x)) : [view, ...list];
-            });
-            setEditing(null);
-          }}
-        />
-      )}
+      {/* the composer: settings directly above the box, box at the bottom */}
+      <div className={styles.agentDock}>
+        <div className={styles.agentDockInner}>
+          <div className={styles.chips}>
+            {MODES.map((m) => (
+              <button
+                key={m.type}
+                className={styles.chip}
+                onClick={() => set("sourceType", m.type)}
+                style={
+                  form.sourceType === m.type
+                    ? { borderColor: "var(--accent-border)", color: "var(--accent)", background: "var(--accent-soft)" }
+                    : undefined
+                }
+                title={m.blurb}
+              >
+                {m.title}
+              </button>
+            ))}
+            {form.sourceType === "custom" &&
+              EXAMPLES.slice(0, 2).map((ex) => (
+                <button key={ex} className={styles.chip} onClick={() => set("brief", ex)}>
+                  {ex.length > 42 ? `${ex.slice(0, 42)}…` : ex}
+                </button>
+              ))}
+          </div>
+
+          <div className={styles.settingsRow}>
+            <label className={styles.settingCol}>
+              <span className={styles.settingLabel}>How it delivers</span>
+              <select
+                className={styles.settingInput}
+                value={form.deliveryMode}
+                onChange={(e) => set("deliveryMode", e.target.value as FormState["deliveryMode"])}
+              >
+                <option value="approval">Ask me first</option>
+                {canAutoAgent ? (
+                  <option value="auto">Post on its own</option>
+                ) : (
+                  <option value="auto" disabled>
+                    Post on its own (Scale)
+                  </option>
+                )}
+              </select>
+            </label>
+            <label className={styles.settingCol}>
+              <span className={styles.settingLabel}>How often</span>
+              <select
+                className={styles.settingInput}
+                value={form.cadenceKind}
+                onChange={(e) => set("cadenceKind", e.target.value as FormState["cadenceKind"])}
+              >
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="manual">When I run it</option>
+              </select>
+            </label>
+            <label className={styles.settingCol}>
+              <span className={styles.settingLabel}>Cap / month{planCap !== null ? ` (max ${planCap})` : ""}</span>
+              <input
+                className={styles.settingInput}
+                type="number"
+                min={1}
+                max={planCap ?? 200}
+                value={form.monthlyCap}
+                onChange={(e) => set("monthlyCap", Number(e.target.value) || 1)}
+              />
+            </label>
+          </div>
+
+          <div className={styles.briefBox}>
+            <textarea
+              ref={taRef}
+              className={styles.briefInput}
+              value={form.brief}
+              onChange={(e) => set("brief", e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  void submit();
+                }
+              }}
+              rows={1}
+              placeholder={
+                form.sourceType === "custom"
+                  ? "Describe the agent in your own words…"
+                  : "Extra guidance (optional)…"
+              }
+            />
+            <div className={styles.briefFooter}>
+              <span className={styles.briefHint}>
+                {err ||
+                  (editingExisting
+                    ? `Updating “${form.name || "this agent"}” — Enter to save`
+                    : "Enter to create · Shift+Enter for a new line")}
+              </span>
+              {editingExisting && (
+                <button className={styles.chip} onClick={() => setForm({ ...BLANK })}>
+                  Cancel
+                </button>
+              )}
+              <button className={styles.briefSend} onClick={() => void submit()} disabled={busy}>
+                {busy ? "Working…" : editingExisting ? "Save agent" : "Create agent"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -303,181 +458,6 @@ function ApprovalCard({
           </button>
         </div>
       )}
-    </div>
-  );
-}
-
-function ConfigModal({
-  initial,
-  canAutoAgent,
-  onClose,
-  onSaved,
-}: {
-  initial: FormState;
-  canAutoAgent: boolean;
-  onClose: () => void;
-  onSaved: (view: AutomationView) => void;
-}) {
-  const [form, setForm] = useState(initial);
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setForm((f) => ({ ...f, [k]: v }));
-  const isCustom = form.sourceType === "custom";
-
-  function appendExample(text: string) {
-    setForm((f) => ({ ...f, brief: f.brief.trim() ? `${f.brief.trim()} ${text}` : text }));
-  }
-
-  async function save() {
-    if (isCustom && !form.brief.trim()) {
-      setErr("Tell the agent what to do — describe it in the box above.");
-      return;
-    }
-    setSaving(true);
-    setErr(null);
-    try {
-      const res = await fetch("/api/automations/save", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(form),
-      });
-      const data = await res.json();
-      if (res.status === 402) {
-        setErr("Automations are a paid feature — upgrade to continue.");
-        return;
-      }
-      if (!res.ok) {
-        setErr(data.error ?? "could not save");
-        return;
-      }
-      onSaved(data.automation);
-    } catch {
-      setErr("could not save");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className={styles.overlay} onClick={onClose}>
-      <div className={`${styles.modal} ${styles.modalWide}`} onClick={(e) => e.stopPropagation()}>
-        <div className={styles.modalTitle}>{form.id ? "Edit agent" : "New Auto Agent"}</div>
-
-        {/* Conversational lead-in — the brief is the hero, options support it. */}
-        <div className={styles.assistantRow}>
-          <span className={styles.assistantAvatar}>
-            <HugeiconsIcon icon={AiMagicIcon} size={16} strokeWidth={1.8} />
-          </span>
-          <div className={styles.assistantBubble}>
-            Tell me what this agent should do — in your own words. Or pick a starting point.
-          </div>
-        </div>
-
-        <div className={styles.modeGrid}>
-          {MODES.map((m) => {
-            const active = form.sourceType === m.type;
-            return (
-              <button
-                key={m.type}
-                type="button"
-                className={`${styles.modeCard} ${active ? styles.modeCardActive : ""}`}
-                onClick={() => set("sourceType", m.type)}
-              >
-                <span className={styles.modeIcon}>
-                  <HugeiconsIcon icon={m.icon} size={16} strokeWidth={1.8} />
-                </span>
-                <span className={styles.modeTitle}>{m.title}</span>
-                <span className={styles.modeBlurb}>{m.blurb}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        <label className={styles.field}>
-          <span className={styles.label}>{isCustom ? "What should it do?" : "Extra guidance (optional)"}</span>
-          <textarea
-            className={styles.briefArea}
-            value={form.brief}
-            onChange={(e) => set("brief", e.target.value)}
-            rows={isCustom ? 4 : 2}
-            maxLength={1000}
-            autoFocus
-            placeholder={
-              isCustom
-                ? "e.g. Every morning, turn the most interesting AI-infra story into a punchy take in my voice, and tie it back to what we're building at Acme."
-                : "Anything to steer it — angle, hook, topics to favor or avoid…"
-            }
-          />
-          {isCustom && (
-            <div className={styles.exampleChips}>
-              {EXAMPLES.map((ex) => (
-                <button key={ex} type="button" className={styles.exampleChip} onClick={() => appendExample(ex)}>
-                  {ex.length > 42 ? ex.slice(0, 42) + "…" : ex}
-                </button>
-              ))}
-            </div>
-          )}
-        </label>
-
-        <div className={styles.optionsRow}>
-          <label className={styles.optionCol}>
-            <span className={styles.label}>How it delivers</span>
-            <select className={styles.input} value={form.deliveryMode} onChange={(e) => set("deliveryMode", e.target.value as FormState["deliveryMode"])}>
-              <option value="approval">Ask me first</option>
-              {canAutoAgent ? (
-                <option value="auto">Post on its own</option>
-              ) : (
-                <option value="auto" disabled>Post on its own (Scale)</option>
-              )}
-            </select>
-          </label>
-          <label className={styles.optionCol}>
-            <span className={styles.label}>How often</span>
-            <select className={styles.input} value={form.cadenceKind} onChange={(e) => set("cadenceKind", e.target.value as FormState["cadenceKind"])}>
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly</option>
-              <option value="manual">When I run it</option>
-            </select>
-          </label>
-          <label className={styles.optionCol}>
-            <span className={styles.label}>Cap / month</span>
-            <input
-              className={styles.input}
-              type="number"
-              min={1}
-              max={200}
-              value={form.monthlyCap}
-              onChange={(e) => set("monthlyCap", Number(e.target.value) || 30)}
-            />
-          </label>
-        </div>
-
-        {form.deliveryMode === "auto" && (
-          <span className={styles.hint}>
-            The first few still come to you first, and every post lands in your queue where you can cancel it before it goes out.
-          </span>
-        )}
-
-        <label className={styles.field}>
-          <span className={styles.label}>Name (optional)</span>
-          <input
-            className={styles.input}
-            value={form.name}
-            onChange={(e) => set("name", e.target.value)}
-            placeholder="We'll name it from your brief if you leave this blank"
-          />
-        </label>
-
-        {err && <div className={styles.err}>{err}</div>}
-        <div className={styles.modalActions}>
-          <button className={styles.ghost} onClick={onClose}>
-            Cancel
-          </button>
-          <button className="btnPrimary" onClick={save} disabled={saving}>
-            {saving ? "Saving…" : "Save agent"}
-          </button>
-        </div>
-      </div>
     </div>
   );
 }

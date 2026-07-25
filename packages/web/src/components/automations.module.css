@@ -397,3 +397,261 @@
   gap: 10px;
   margin-top: 8px;
 }
+
+/* ── Auto Agent as a chat surface (2026-07-25) ───────────────────────────────
+ * The brief used to live in a modal, which framed "make me an agent" as filling
+ * a form. It's now a bottom-anchored composer with the three settings sitting
+ * directly above it, and the agents you already have listed at the top of the
+ * page — so the screen reads: what you've built → what it'll do → describe it. */
+.agentRoot {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.agentScroll {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  min-height: 0;
+  padding: 20px 24px 8px;
+}
+
+.agentInner {
+  width: min(860px, 100%);
+  margin: 0 auto;
+  min-width: 0;
+}
+
+/* the composer block pinned to the bottom */
+.agentDock {
+  flex: 0 0 auto;
+  padding: 10px 24px 18px;
+  border-top: 0.5px solid var(--stroke);
+  background: var(--chat-bg);
+}
+
+.agentDockInner {
+  width: min(860px, 100%);
+  margin: 0 auto;
+  min-width: 0;
+}
+
+/* the three settings, directly above the box */
+.settingsRow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+  min-width: 0;
+}
+
+.settingCol {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.settingLabel {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-500);
+}
+
+.settingInput {
+  font: inherit;
+  font-size: 13.5px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 0.5px solid var(--stroke);
+  background: var(--surface);
+  color: var(--ink-900);
+  min-width: 0;
+  width: 100%;
+}
+
+.briefBox {
+  border: 0.5px solid var(--stroke);
+  background: var(--surface);
+  border-radius: 18px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.briefInput {
+  font: inherit;
+  font-size: 14.5px;
+  line-height: 1.5;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--ink-900);
+  resize: none;
+  max-height: 150px;
+  min-height: 24px;
+  width: 100%;
+}
+
+.briefFooter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.briefHint {
+  flex: 1 1 0;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--ink-500);
+  overflow-wrap: anywhere;
+}
+
+.briefSend {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.briefSend:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* example prompt chips above the composer */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.chip {
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  border: 0.5px solid var(--stroke);
+  background: var(--surface);
+  color: var(--ink-700);
+  cursor: pointer;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chip:hover {
+  border-color: var(--accent-border);
+  color: var(--ink-900);
+}
+
+/* activity feed for a save/run, same language as Compose */
+.agentActivity {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 12px 14px;
+  margin-top: 12px;
+  border-radius: 16px;
+  border: 0.5px solid var(--stroke);
+  background: var(--surface);
+  min-width: 0;
+}
+
+.agentActivityRow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  color: var(--ink-600);
+  min-width: 0;
+}
+
+.agentActivityRowActive {
+  color: var(--ink-900);
+}
+
+.agentActivityLabel {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.agentTick {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  border: 0.5px solid var(--accent-border);
+  color: var(--accent);
+  font-size: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.agentSpin {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 1.5px solid var(--accent-border);
+  border-top-color: var(--accent);
+  animation: agentSpin 700ms linear infinite;
+}
+
+@keyframes agentSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* what the agent said back after a save/run */
+.agentNote {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 0.5px solid var(--accent-border);
+  background: var(--accent-soft);
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink-900);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 700px) {
+  .agentScroll {
+    padding: 16px 14px 8px;
+  }
+  .agentDock {
+    padding: 10px 14px 14px;
+  }
+  /* 2-up rather than three stacked rows: the dock is fixed furniture, and three
+   * full-width selects plus the chips leave almost no transcript visible on a
+   * short phone. */
+  .settingsRow {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .briefSend {
+    width: 100%;
+  }
+}

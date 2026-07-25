@@ -34,13 +34,27 @@ export interface RunResult {
   reason?: string;
 }
 
+/** Pipeline steps, surfaced to the web so a run shows its work (web/stream.ts). */
+export type AutomationStage = "caps" | "select" | "moderate" | "drafting" | "delivering";
+
 /**
  * Run one automation once. Safe for both the cron tick and the web "run once now"
  * button (pass manual:true so an empty source records a visible skipped run).
+ * `onStage` is optional progress reporting — the cron ignores it.
  */
-export async function runAutomationOnce(automation: Automation, opts: { manual?: boolean } = {}): Promise<RunResult> {
+export async function runAutomationOnce(
+  automation: Automation,
+  opts: { manual?: boolean; onStage?: (s: AutomationStage) => void } = {},
+): Promise<RunResult> {
   const userId = automation.user_id;
   const isAuto = automation.delivery_mode === "auto";
+  const stage = (s: AutomationStage) => {
+    try {
+      opts.onStage?.(s);
+    } catch {
+      /* a progress listener must never break a run */
+    }
+  };
 
   // The whole unattended path is DARK until the flag flips — auto automations
   // produce nothing (and spend nothing) until then. Hands-off AUTO mode is also
@@ -53,6 +67,7 @@ export async function runAutomationOnce(automation: Automation, opts: { manual?:
     }
   }
 
+  stage("caps");
   // Caps BEFORE any paid/model work (buyer-radar doctrine).
   // PLAN ceiling first — it's the one the user is actually paying for (Growth 5 /
   // Scale 90 Auto Agent posts a month) and it bounds every automation at once, so
@@ -76,6 +91,7 @@ export async function runAutomationOnce(automation: Automation, opts: { manual?:
     return { status: "skipped", reason: "daily post cap reached" };
   }
 
+  stage("select");
   // Deterministic select — no LLM has run yet.
   const source = SOURCES[automation.source_type];
   const item = await source.select(userId, automation);
@@ -87,6 +103,7 @@ export async function runAutomationOnce(automation: Automation, opts: { manual?:
     return { status: "skipped", reason: "nothing eligible" };
   }
 
+  stage("moderate");
   // Moderate the seed; a bad seed is dropped, never embedded or sent to a model.
   if (!moderateText(item.seed).ok) {
     const run = await createRun(automation.id, userId, "skipped", {
@@ -96,6 +113,7 @@ export async function runAutomationOnce(automation: Automation, opts: { manual?:
     return { status: "skipped", runId: run.id, reason: "source failed content guidelines" };
   }
 
+  stage("drafting");
   // Compose via the existing draft path (feed voice, metered, voice+pillars+reach).
   let seed = automation.pillar_scope?.length ? `${item.seed}\n\nStay within: ${automation.pillar_scope.join(", ")}.` : item.seed;
   // The brief is the seed itself for a 'custom' automation; for the preset
@@ -125,6 +143,7 @@ export async function runAutomationOnce(automation: Automation, opts: { manual?:
   }
   await stampRun(automation.id);
 
+  stage("delivering");
   // Warmup ramp: an auto automation's first N posts route through approval so the
   // user confirms the voice before it goes fully hands-off.
   const inWarmup = isAuto && automation.warmup_count < config.AUTOMATION_AUTO_WARMUP;

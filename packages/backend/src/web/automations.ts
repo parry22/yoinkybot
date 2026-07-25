@@ -17,6 +17,7 @@ import {
   type AutomationInput,
 } from "../automations/store.js";
 import { runAutomationOnce } from "../automations/run.js";
+import { automationStageLabel, type Emit } from "./stream.js";
 import { approveRun, rejectRun, applyEdit } from "../automations/approval.js";
 import type { Automation, SourceType, DeliveryMode, CadenceKind } from "../automations/types.js";
 
@@ -150,6 +151,63 @@ export async function setAutomationEnabledWeb(userId: string, id: string, enable
   if (!a) return { ok: false };
   await setEnabled(id, userId, enabled);
   return { ok: true };
+}
+
+/**
+ * Create/update an automation from the Auto Agent composer, streaming its steps.
+ * The work is the same `saveAutomationFromWeb`; the stages exist because "type a
+ * brief, press send" should read like the agent doing something rather than a
+ * button that hangs. Labels are ours, emitted around the real steps.
+ */
+export async function saveAutomationStreaming(
+  userId: string,
+  input: AutomationFormInput,
+  emit: Emit,
+  id?: string,
+): Promise<void> {
+  emit({ type: "stage", label: "Reading your brief" });
+  emit({ type: "stage", label: "Checking your plan and caps" });
+  const view = await saveAutomationFromWeb(userId, input, id);
+  emit({ type: "stage", label: id ? "Updating the agent" : "Setting up the agent" });
+  emit({
+    type: "message",
+    text: id
+      ? `Updated **${view.name}** — ${DELIVERY_COPY[view.deliveryMode]}, ${CADENCE_COPY[view.cadenceKind]}, up to ${view.monthlyCap} posts a month.`
+      : `**${view.name}** is live — ${DELIVERY_COPY[view.deliveryMode]}, ${CADENCE_COPY[view.cadenceKind]}, up to ${view.monthlyCap} posts a month. Run it now, or leave it to its schedule.`,
+  });
+  emit({ type: "result", data: { automation: view } });
+}
+
+/** Plain-language echo of the config, so the agent confirms what it just built. */
+const DELIVERY_COPY: Record<string, string> = {
+  approval: "it'll ask you before anything goes out",
+  auto: "it posts on its own",
+};
+const CADENCE_COPY: Record<string, string> = {
+  daily: "checking daily",
+  weekly: "checking weekly",
+  manual: "only when you run it",
+};
+
+/** One "run it now", streamed with its pipeline stages. */
+export async function runAutomationOnceStreaming(userId: string, id: string, emit: Emit): Promise<void> {
+  const a = await getAutomation(id, userId);
+  if (!a) {
+    emit({ type: "error", message: "That agent no longer exists." });
+    return;
+  }
+  const res = await runAutomationOnce(a, {
+    manual: true,
+    onStage: (s) => emit({ type: "stage", label: automationStageLabel(s) }),
+  });
+  if (res.status === "awaiting_approval") {
+    emit({ type: "message", text: "Drafted — it's waiting in your approvals." });
+  } else if (res.status === "scheduled") {
+    emit({ type: "message", text: "Drafted and queued to post." });
+  } else {
+    emit({ type: "message", text: res.reason ?? "Nothing to post right now." });
+  }
+  emit({ type: "result", data: { status: res.status, reason: res.reason } });
 }
 
 export async function runAutomationOnceWeb(userId: string, id: string): Promise<{ status: string; reason?: string }> {
