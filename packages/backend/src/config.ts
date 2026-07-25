@@ -235,9 +235,11 @@ const schema = z.object({
   BUYER_SEARCH_PAGE_CAP: z.coerce.number().default(2),
   //   Bounded set of distilled intent queries run per scan.
   BUYER_MAX_QUERIES: z.coerce.number().default(8),
-  //   Cost + spam guard: max signals surfaced per user per calendar month. The
-  //   monthly budget is checked BEFORE any paid twitterapi.io call in a scan.
-  BUYER_MONTHLY_SIGNAL_CAP: z.coerce.number().default(40),
+  //   NOTE: there is deliberately no BUYER_MONTHLY_SIGNAL_CAP here any more. It
+  //   existed, was read by nothing, and was actively misleading — the real cap is
+  //   per-plan (`entitlementsFor().buyerIntentsPerMonth`: Growth 25, Scale
+  //   unlimited), so setting the env var changed nothing while looking like it
+  //   should. Change the cap in billing/entitlements.ts.
   //   Don't resurface the same prospect within this window (repeat-author guard).
   BUYER_AUTHOR_COOLDOWN_DAYS: z.coerce.number().default(21),
 

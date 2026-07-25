@@ -75,6 +75,48 @@ to do ("on it, checking that first"). The user sees that line while the tool
 runs, so a silent tool call reads as the conversation freezing. Keep it to a
 handful of words, in your normal voice, and never repeat it after the tool.`;
 
+/**
+ * The actual fix for the silence, given the model will not narrate: say it in
+ * code. A tool call that produces no beat is not allowed to be silent — the
+ * user sees one of these instead, phrased per tool so it reads as Yoinky doing
+ * the specific thing rather than a generic "working…" spinner.
+ *
+ * Lowercase on purpose: this goes through the same casual-voice register as the
+ * rest of the DM (see prompts/style.ts CASUAL_VOICE). The model's own beat is
+ * still preferred when there is one, so this becomes dead weight the day the
+ * structured-output constraint is lifted — which is the intended direction, not
+ * a permanent substitute.
+ */
+const TOOL_BEATS: Record<string, string> = {
+  draft_post: "on it, drafting that now",
+  repurpose: "reworking it now",
+  search_memory: "checking what you've told me",
+  check_draft: "checking that against your positions",
+  show_plan: "pulling up your plan",
+  show_positions: "pulling up your positions",
+  show_status: "checking where things stand",
+  refresh_diagnosis: "re-reading your brand, one sec",
+  connect_account: "getting that connected",
+  forget: "clearing that out",
+  schedule_post: "getting that scheduled",
+  correct_classification: "fixing how i read that one",
+  clear_everything: "one sec",
+};
+
+/**
+ * Never let a tool run silently. Model beat first, canned beat otherwise.
+ *
+ * `previous` guards the one way canned beats read worse than silence: two calls
+ * to the same tool in one turn (different args — identical ones are refused by
+ * the ledger) would otherwise say the same sentence twice in a row, which reads
+ * like a stuck bot rather than a working one.
+ */
+export function beatFor(toolName: string, modelBeat: string, previous: string): string {
+  const beat = modelBeat || TOOL_BEATS[toolName] || "on it, one sec";
+  if (beat === previous) return "still on it";
+  return beat;
+}
+
 /** What the chat brain must return once it stops calling tools. */
 const chatOutputSchema = z.object({
   reply: z.string().default(""),
@@ -109,6 +151,7 @@ export async function runAgentChatTurn(req: AgentChatTurnRequest): Promise<Agent
   let textBuffer = "";
   let toolCalls = 0;
   let seenToolUseBlocks = 0;
+  let lastBeat = "";
   const seen = new Set<string>();
   let approved = 0;
 
@@ -128,7 +171,10 @@ export async function runAgentChatTurn(req: AgentChatTurnRequest): Promise<Agent
   const executors: Record<string, Executor> = {};
   for (const name of memberNames) {
     executors[name] = async (args) => {
-      const beat = claimBeat();
+      // beatFor guarantees a non-empty beat, so a multi-tool turn is never
+      // silent even though the model does not narrate under structured output.
+      const beat = beatFor(name, claimBeat(), lastBeat);
+      lastBeat = beat;
       toolCalls++;
       return req.executeTool({ name, ...args }, beat);
     };

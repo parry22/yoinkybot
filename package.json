@@ -2,7 +2,7 @@
   "name": "yoink",
   "private": true,
   "version": "0.1.0",
-  "description": "Yoinky — Telegram-native personal brand strategist. Connect your accounts, get diagnosed, build a plan, ship content.",
+  "description": "Yoinky \u2014 Telegram-native personal brand strategist. Connect your accounts, get diagnosed, build a plan, ship content.",
   "scripts": {
     "dev": "pnpm --filter @yoink/backend dev",
     "dev:web": "pnpm --filter @yoink/web dev",
@@ -14,7 +14,15 @@
   },
   "packageManager": "pnpm@10.0.0",
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ],
+    "overrides": {
+      "postcss": ">=8.5.18",
+      "fast-uri": ">=3.1.4",
+      "find-my-way": ">=9.7.0",
+      "sharp": ">=0.35.0"
+    }
   },
   "engines": {
     "node": ">=20"

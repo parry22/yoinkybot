@@ -121,12 +121,31 @@ export async function startBoss(): Promise<PgBoss> {
   // 10-minute expiry can plausibly be hit; expiring mid-scan would strand a job
   // the user is actively polling.
   const LONG_EXPIRY: Partial<Record<string, number>> = { [QUEUES.buyerScanNow]: 30 };
+  // `singletonKey` ONLY dedupes on a non-standard policy: pg-boss v10 builds its
+  // unique indexes with `WHERE policy = 'short' | 'singleton' | 'stately'`, so on
+  // the default `standard` policy a singletonKey is silently ignored. Buyer
+  // "Scan now" is user-triggered and spends real twitterapi.io + LLM budget, so
+  // two queued scans is money, not just noise — `short` makes the unique index
+  // on (name, singletonKey) apply while a job is still `created`. It is only
+  // half the guard: it cannot stop a second scan starting once the first is
+  // already `active`, which is why enqueueBuyerScan also checks for an in-flight
+  // job before sending.
+  const POLICY: Partial<Record<string, "short" | "singleton" | "stately">> = {
+    [QUEUES.buyerScanNow]: "short",
+  };
   for (const q of Object.values(QUEUES)) {
     // Per-item ingest jobs (extract/embed/transcribe/…) DO retry — a retry there
     // recovers real per-capture work that won't otherwise re-run. The scheduled
     // provider jobs above don't: 0 retries, they come back on the next cron.
     const retryLimit = NO_RETRY.includes(q) ? 0 : 3;
-    const policy = { name: q, retryLimit, retryDelay: 30, retryBackoff: true, expireInMinutes: LONG_EXPIRY[q] ?? 10 };
+    const policy = {
+      name: q,
+      retryLimit,
+      retryDelay: 30,
+      retryBackoff: true,
+      expireInMinutes: LONG_EXPIRY[q] ?? 10,
+      ...(POLICY[q] ? { policy: POLICY[q] } : {}),
+    };
     await boss.createQueue(q, policy);
     await boss.updateQueue(q, policy);
   }

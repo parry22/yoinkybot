@@ -234,16 +234,27 @@ export interface BuyerScanProgress {
 export async function enqueueBuyerScan(userId: string): Promise<BuyerScanTicket> {
   const { ensureBoss, QUEUES } = await import("../jobs/boss.js");
   const boss = await ensureBoss();
-  // singletonKey collapses double-clicks and impatient re-clicks into ONE scan;
-  // without it an eager user could spend the provider budget several times over.
+
+  // Re-attach to an in-flight scan rather than starting a second one. This is
+  // the PRIMARY duplicate guard, not a nicety: a scan spends real twitterapi.io
+  // + LLM budget and burns the user's monthly signal cap, so an impatient second
+  // click must not buy a second scan. It also covers the case pg-boss cannot —
+  // `short` policy's unique index only applies while a job is still `created`,
+  // so once the first scan goes `active` only this check stops a duplicate.
+  const inFlight = await findActiveBuyerScan(userId);
+  if (inFlight) return { jobId: inFlight };
+
   const jobId = await boss.send(
     QUEUES.buyerScanNow,
     { userId },
+    // Dedupes concurrent clicks atomically, which the check above cannot: two
+    // simultaneous requests can both pass it, but only one row survives the
+    // unique index. Requires the `short` queue policy set in boss.ts — on the
+    // default `standard` policy pg-boss ignores singletonKey entirely.
     { singletonKey: `buyer-scan:${userId}`, retryLimit: 0 },
   );
   if (!jobId) {
-    // send() returns null when the singleton already has a job in flight. Report
-    // the existing run rather than pretending we queued a second one.
+    // Lost the race on the unique index — the winner is the scan to report.
     const existing = await findActiveBuyerScan(userId);
     if (existing) return { jobId: existing };
     throw new Error("could not enqueue buyer scan");

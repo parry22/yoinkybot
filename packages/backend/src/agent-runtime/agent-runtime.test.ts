@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { z } from "zod";
 import { zodToJsonSchema, assertFullySupported } from "./json-schema.js";
 import { toolsFromSchema, qualify } from "./mcp-tools.js";
+import { beatFor } from "./chat-turn.js";
 
 /**
  * Guards the two mechanical translations the adapter depends on. Both are the
@@ -123,5 +124,38 @@ describe("toolsFromSchema", () => {
     const single = z.object({ name: z.literal("only"), q: z.string() });
     const { derived } = toolsFromSchema(single, { only: async () => "x" });
     expect(derived.map((d) => d.name)).toEqual(["only"]);
+  });
+});
+
+describe("beatFor (chat never goes silent)", () => {
+  it("prefers the model's own narration when there is any", () => {
+    expect(beatFor("search_memory", "lemme dig that up", "")).toBe("lemme dig that up");
+  });
+
+  it("falls back to a tool-specific line when the model narrates nothing", () => {
+    // This is the real case: under structured output grok emits no text at all,
+    // so without this a multi-tool turn is silent until the final reply.
+    expect(beatFor("search_memory", "", "")).toBe("checking what you've told me");
+    expect(beatFor("draft_post", "", "")).toBe("on it, drafting that now");
+  });
+
+  it("has a beat for every tool in chatToolSchema", async () => {
+    const { chatToolSchema } = await import("../telegram/chat-tools.js");
+    const names = (chatToolSchema as any)._def.options.map(
+      (o: any) => o._def.shape().name._def.value as string,
+    );
+    for (const n of names) {
+      // A new chat tool must not silently inherit the generic line.
+      expect(beatFor(n, "", ""), `no TOOL_BEATS entry for "${n}"`).not.toBe("on it, one sec");
+    }
+  });
+
+  it("does not say the same line twice in a row", () => {
+    const first = beatFor("search_memory", "", "");
+    expect(beatFor("search_memory", "", first)).toBe("still on it");
+  });
+
+  it("still covers an unknown tool rather than returning empty", () => {
+    expect(beatFor("some_future_tool", "", "")).toBe("on it, one sec");
   });
 });
