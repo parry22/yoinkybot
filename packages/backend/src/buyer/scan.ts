@@ -19,8 +19,15 @@ import { applyNicheGate } from "./niche-gate.js";
 import { composeOutreach } from "./radar-agent.js";
 import { effectiveThresholds } from "./calibration.js";
 
-/** Hard cap on composition (LLM) calls per scan, independent of budget — bounds cost. */
-const MAX_COMPOSE_PER_SCAN = 8;
+/**
+ * Hard cap on composition (LLM) calls per scan, independent of the monthly budget.
+ * 5 (was 8): a scan that returns five genuinely in-market prospects each with a
+ * drafted reply is already more than most people will action in one sitting, and
+ * each composition is a bounded agent loop against paid search — so the per-scan
+ * ceiling is the main cost lever. Previous leads persist across scans, so a
+ * smaller batch costs the user nothing in coverage.
+ */
+const MAX_COMPOSE_PER_SCAN = 5;
 
 export type ScanStatus = "ok" | "no_icp" | "unavailable" | "budget_exhausted";
 

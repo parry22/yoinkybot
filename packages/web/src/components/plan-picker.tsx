@@ -29,14 +29,29 @@ export function PlanPicker({
       name: "Growth",
       price: growthPrice,
       blurb: "The full Yoinky brain for building your brand.",
-      features: ["Voice-matched drafts", "Auto Agent automations", "Buyers Radar + Analytics", "Telegram agent"],
+      // Concrete, and the same numbers the landing page shows and
+      // billing/entitlements.ts actually enforces — the old vague copy ("higher
+      // automation caps") had no relationship to what the code allowed.
+      features: [
+        "Unlimited voice-matched drafts",
+        "Auto Agent: 5 posts / month (you approve each)",
+        "Buyer radar: 25 leads / month",
+        "30 scheduled posts / month",
+        "Telegram agent",
+      ],
     },
     {
       key: "scale",
       name: "Scale",
       price: "Higher tier",
       blurb: "For accounts shipping every day and running more agents.",
-      features: ["Everything in Growth", "Higher automation caps", "More proactive nudges", "Priority processing"],
+      features: [
+        "Everything in Growth",
+        "Auto Agent: 90 posts / month, hands-off",
+        "Buyer radar: unlimited leads",
+        "Unlimited scheduled posts",
+        "Proactive resurfacing, 5 a week",
+      ],
     },
   ];
 

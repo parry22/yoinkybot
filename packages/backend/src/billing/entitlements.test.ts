@@ -18,6 +18,7 @@ describe("entitlementsForPlan (Growth vs Scale differentiation)", () => {
     expect(e.scheduledPostsPerMonth).toBe(30);
     expect(e.buyerIntentsPerMonth).toBe(25);
     expect(e.viralPerDay).toBe(1);
+    expect(e.automationPostsPerMonth).toBe(5);
     expect(e.autoAgent).toBe(false);
     expect(e.maxResurfacePerWeek).toBe(3);
     expect(e.drafting).toBe(true);
@@ -30,6 +31,9 @@ describe("entitlementsForPlan (Growth vs Scale differentiation)", () => {
     expect(e.buyerIntentsPerMonth).toBeNull();
     expect(e.viralPerDay).toBeNull();
     expect(e.autoAgent).toBe(true);
+    // Auto Agent is the one deliberate exception to "Scale = unlimited": a
+    // hands-off poster needs a hard ceiling so a runaway can't post unbounded.
+    expect(e.automationPostsPerMonth).toBe(90);
     expect(e.maxResurfacePerWeek).toBe(5);
   });
 

@@ -127,8 +127,16 @@ export async function saveAutomationFromWeb(userId: string, input: AutomationFor
   // Hands-off AUTO mode is a Scale entitlement. Growth can build approval-mode
   // automations but not ones that post on their own. Surfaced as a ModerationError
   // so the web route's existing 400 handler shows the reason.
-  if (clean.delivery_mode === "auto" && !(await entitlementsFor(userId)).autoAgent) {
+  const ent = await entitlementsFor(userId);
+  if (clean.delivery_mode === "auto" && !ent.autoAgent) {
     throw new ModerationError("Hands-off auto mode is a Scale feature — pick “Asks you first”, or upgrade to Scale.");
+  }
+  // Clamp the per-automation "Cap / month" to the plan ceiling so the form can
+  // never promise more than the plan will actually deliver. The run pipeline
+  // enforces the plan cap regardless; this just keeps the number honest on screen.
+  if (ent.automationPostsPerMonth !== null) {
+    const requested = clean.monthly_cap ?? config.AUTOMATION_DEFAULT_MONTHLY_CAP;
+    clean.monthly_cap = Math.min(requested, ent.automationPostsPerMonth);
   }
   const saved = id
     ? await updateAutomation(id, userId, clean)

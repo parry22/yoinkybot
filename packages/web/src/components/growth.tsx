@@ -60,14 +60,31 @@ function scoreLabel(s: number): string {
   return "Just starting";
 }
 
+/**
+ * The Growth board. Ordered by what earns a DAILY visit rather than by what's
+ * biggest to render:
+ *   1. urgency  — only when the streak is actually at risk (conditional, so it
+ *                 never becomes permanent furniture)
+ *   2. next move — the single highest-priority open quest + its CTA. One clear
+ *                 thing to do is what brings someone back; three vanity numbers
+ *                 competing for attention is what the old layout led with.
+ *   3. momentum — level / score / streak as three compact equal tiles. The score
+ *                 breakdown (4 sub-bars) is collapsed by default; expanded it was
+ *                 the single densest thing on the page.
+ *   4. queue    — the remaining quests, lighter than the promoted one.
+ *   5. progress — milestones.
+ *   6. identity — read-once reference (headline, throughline, territory), so last.
+ */
 export function Growth({ data }: { data: Data }) {
   const [showDone, setShowDone] = useState(false);
+  const [showParts, setShowParts] = useState(false);
   const active = data.quests.filter((q) => !q.done);
   const done = data.quests.filter((q) => q.done);
+  const [next, ...queue] = active;
 
   const xpPct = data.xpForNextLevel ? Math.round((data.xpIntoLevel / data.xpForNextLevel) * 100) : 100;
-  // conic ring for the level badge
   const ring = `conic-gradient(var(--accent) ${xpPct * 3.6}deg, var(--stroke) 0deg)`;
+  const streakAtRisk = data.streak.current > 0 && !data.streak.postedThisWeek;
 
   return (
     <div className={panel.page}>
@@ -75,18 +92,56 @@ export function Growth({ data }: { data: Data }) {
         <div className={panel.head}>
           <div>
             <div className={panel.title}>Growth</div>
-            <div className={panel.subtitle}>Clear the quests. Keep the streak.</div>
+            <div className={panel.subtitle}>One move at a time. Keep the streak alive.</div>
           </div>
         </div>
 
-        {/* ── hero: level · score · streak ── */}
-        <div className={styles.hero}>
-          <div className={styles.card}>
+        {/* 1 ── urgency: only rendered when the streak is genuinely on the line */}
+        {streakAtRisk && (
+          <div className={styles.urgent}>
+            <span className={styles.urgentFlame} aria-hidden="true">🔥</span>
+            <span className={styles.urgentText}>
+              Your {data.streak.current}-week streak is at risk — ship one post to keep it.
+            </span>
+            <a href="/app/compose" className={styles.urgentCta}>Compose</a>
+          </div>
+        )}
+
+        {/* 2 ── the next move: the one thing to do now */}
+        {next ? (
+          <div className={styles.nextCard}>
+            <div className={styles.nextLabel}>Your next move</div>
+            <div className={styles.nextTitle}>{next.title}</div>
+            {next.detail && <p className={styles.nextDetail}>{next.detail}</p>}
+            <div className={styles.nextFoot}>
+              {next.cta && (
+                <a href={next.cta.href} className={styles.nextCta}>
+                  {next.cta.label}
+                </a>
+              )}
+              <span className={styles.xpChip}>+{next.xp} XP</span>
+              {queue.length > 0 && (
+                <span className={styles.nextMore}>
+                  {queue.length} more queued below
+                </span>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className={styles.allClear}>
+            <div className={styles.allClearTitle}>🎉 Everything's cleared</div>
+            <p>You&apos;re ahead. Fresh quests land as your plan grows — keep posting to hold the streak.</p>
+          </div>
+        )}
+
+        {/* 3 ── momentum: three equal, compact tiles */}
+        <div className={styles.metrics}>
+          <div className={styles.tile}>
+            <div className={styles.tileLabel}>Level</div>
             <div className={styles.levelRow}>
               <div className={styles.ring} style={{ background: ring }}>
                 <div className={styles.ringInner}>
                   <span className={styles.ringLvl}>{data.level}</span>
-                  <span className={styles.ringCap}>LVL</span>
                 </div>
               </div>
               <div className={styles.levelText}>
@@ -96,122 +151,128 @@ export function Growth({ data }: { data: Data }) {
                     ? `${data.xpForNextLevel - data.xpIntoLevel} XP to ${data.nextTitle}`
                     : "Max level — legend"}
                 </div>
-                <div className={styles.xpBar}>
-                  <i style={{ width: `${xpPct}%` }} />
-                </div>
               </div>
+            </div>
+            <div className={styles.bar}>
+              <i style={{ width: `${xpPct}%` }} />
             </div>
           </div>
 
-          <div className={styles.card}>
-            <div className={styles.cardLabel}>Brand Score</div>
+          <div className={styles.tile}>
+            <div className={styles.tileLabel}>Brand score</div>
             <div className={styles.scoreRow}>
-              <div className={styles.scoreBig}>{data.brandScore}</div>
-              <div className={styles.scoreOutOf}>
-                / 100
-                <div className={styles.scoreTag}>{scoreLabel(data.brandScore)}</div>
+              <span className={styles.bigNum}>{data.brandScore}</span>
+              <span className={styles.bigUnit}>/ 100</span>
+              <span className={styles.scoreTag}>{scoreLabel(data.brandScore)}</span>
+            </div>
+            <div className={styles.bar}>
+              <i style={{ width: `${data.brandScore}%` }} />
+            </div>
+            <button className={styles.linkBtn} onClick={() => setShowParts((v) => !v)}>
+              {showParts ? "Hide breakdown" : "See what moves it"}
+            </button>
+            {showParts && (
+              <div className={styles.parts}>
+                {data.scoreParts.map((p) => (
+                  <div key={p.key} className={styles.part} title={p.hint}>
+                    <div className={styles.partTop}>
+                      <span className={styles.partLabel}>{p.label}</span>
+                      <span className={styles.partVal}>
+                        {p.value}/{p.max}
+                      </span>
+                    </div>
+                    <div className={styles.partBar}>
+                      <i style={{ width: `${(p.value / p.max) * 100}%` }} />
+                    </div>
+                  </div>
+                ))}
               </div>
-            </div>
-            <div className={styles.parts}>
-              {data.scoreParts.map((p) => (
-                <div key={p.key} className={styles.part} title={p.hint}>
-                  <div className={styles.partTop}>
-                    <span>{p.label}</span>
-                    <span className={styles.partVal}>{p.value}/{p.max}</span>
-                  </div>
-                  <div className={styles.partBar}>
-                    <i style={{ width: `${(p.value / p.max) * 100}%` }} />
-                  </div>
-                </div>
-              ))}
-            </div>
+            )}
           </div>
 
-          <div className={`${styles.card} ${styles.streakCard}`}>
-            <div className={styles.cardLabel}>Posting streak</div>
-            <div className={styles.streakBig}>
-              <span className={data.streak.current > 0 ? styles.flameLit : styles.flameDim}>🔥</span>
-              <span className={styles.streakNum}>{data.streak.current}</span>
-              <span className={styles.streakUnit}>{data.streak.current === 1 ? "week" : "weeks"}</span>
+          <div className={styles.tile}>
+            <div className={styles.tileLabel}>Posting streak</div>
+            <div className={styles.scoreRow}>
+              <span className={data.streak.current > 0 ? styles.flameLit : styles.flameDim} aria-hidden="true">🔥</span>
+              <span className={styles.bigNum}>{data.streak.current}</span>
+              <span className={styles.bigUnit}>{data.streak.current === 1 ? "week" : "weeks"}</span>
             </div>
-            {data.streak.current > 0 && !data.streak.postedThisWeek ? (
-              <div className={styles.streakWarn}>At risk — post this week to keep it</div>
-            ) : data.streak.current === 0 ? (
-              <div className={styles.streakSub}>Post this week to start a streak</div>
-            ) : (
-              <div className={styles.streakSub}>Best: {data.streak.best} weeks</div>
-            )}
+            <div className={styles.tileFoot}>
+              {data.streak.current === 0
+                ? "Post this week to start one"
+                : `Best run: ${data.streak.best} ${data.streak.best === 1 ? "week" : "weeks"}`}
+            </div>
           </div>
         </div>
 
-        {/* ── quests ── */}
+        {/* 4 ── the rest of the queue */}
+        {(queue.length > 0 || done.length > 0) && (
+          <section className={styles.section}>
+            <div className={styles.sectionTitle}>
+              <span>Up next</span>
+              {queue.length > 0 && <span className={styles.sectionCount}>{queue.length} open</span>}
+            </div>
+            {queue.length > 0 && (
+              <div className={styles.quests}>
+                {queue.map((q) => (
+                  <div key={q.id} className={styles.quest}>
+                    <div className={styles.questCheck} aria-hidden="true" />
+                    <div className={styles.questBody}>
+                      <div className={styles.questTitle}>{q.title}</div>
+                      {q.detail && <div className={styles.questDetail}>{q.detail}</div>}
+                    </div>
+                    <div className={styles.questRight}>
+                      <span className={styles.xpChip}>+{q.xp} XP</span>
+                      {q.cta && (
+                        <a href={q.cta.href} className={styles.questCta}>
+                          {q.cta.label}
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {done.length > 0 && (
+              <>
+                <button className={styles.linkBtn} onClick={() => setShowDone((v) => !v)}>
+                  {showDone ? "Hide" : "Show"} {done.length} completed
+                </button>
+                {showDone && (
+                  <div className={styles.quests} style={{ marginTop: 10 }}>
+                    {done.map((q) => (
+                      <div key={q.id} className={`${styles.quest} ${styles.questDone}`}>
+                        <div className={styles.questCheckDone} aria-hidden="true">✓</div>
+                        <div className={styles.questBody}>
+                          <div className={styles.questTitle}>{q.title}</div>
+                        </div>
+                        <span className={styles.xpChipDone}>+{q.xp} XP</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </section>
+        )}
+
+        {/* 5 ── milestones */}
         <section className={styles.section}>
           <div className={styles.sectionTitle}>
-            Your quests
-            <span className={styles.sectionCount}>{active.length} open</span>
+            <span>Milestones</span>
           </div>
-          {active.length === 0 ? (
-            <div className={styles.allClear}>🎉 All quests cleared. Fresh ones land as your plan grows.</div>
-          ) : (
-            <div className={styles.quests}>
-              {active.map((q) => (
-                <div key={q.id} className={styles.quest}>
-                  <div className={styles.questCheck} aria-hidden="true" />
-                  <div className={styles.questBody}>
-                    <div className={styles.questTitle}>{q.title}</div>
-                    <div className={styles.questDetail}>{q.detail}</div>
-                  </div>
-                  <div className={styles.questRight}>
-                    <span className={styles.xpChip}>+{q.xp} XP</span>
-                    {q.cta && (
-                      <a href={q.cta.href} className={styles.questCta}>
-                        {q.cta.label}
-                      </a>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {done.length > 0 && (
-            <>
-              <button className={styles.doneToggle} onClick={() => setShowDone((v) => !v)}>
-                {showDone ? "Hide" : "Show"} {done.length} completed
-              </button>
-              {showDone && (
-                <div className={styles.quests}>
-                  {done.map((q) => (
-                    <div key={q.id} className={`${styles.quest} ${styles.questDone}`}>
-                      <div className={styles.questCheckDone} aria-hidden="true">✓</div>
-                      <div className={styles.questBody}>
-                        <div className={styles.questTitle}>{q.title}</div>
-                      </div>
-                      <span className={styles.xpChipDone}>+{q.xp} XP</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </>
-          )}
-        </section>
-
-        {/* ── milestones ── */}
-        <section className={styles.section}>
-          <div className={styles.sectionTitle}>Milestones</div>
           <div className={styles.milestones}>
             {data.milestones.map((m) => {
-              const pctToTarget = Math.min(100, Math.round((m.current / m.target) * 100));
+              const pct = Math.min(100, Math.round((m.current / m.target) * 100));
               return (
-                <div key={m.key} className={styles.milestone}>
-                  <div className={styles.msTop}>
-                    <span className={styles.msLabel}>{m.label}</span>
-                  </div>
+                <div key={m.key} className={`${styles.milestone} ${m.reached ? styles.msReached : ""}`}>
+                  <div className={styles.msLabel}>{m.label}</div>
                   <div className={styles.msValue}>
                     {fmt(m.current)} <span className={styles.msTarget}>/ {fmt(m.target)}</span>
                   </div>
                   <div className={styles.msBar}>
-                    <i style={{ width: `${pctToTarget}%` }} />
+                    <i style={{ width: `${pct}%` }} />
                   </div>
                 </div>
               );
@@ -219,13 +280,15 @@ export function Growth({ data }: { data: Data }) {
           </div>
         </section>
 
-        {/* ── who you are (diagnosis + throughline) ── */}
+        {/* 6 ── who you are: reference, so it sits last */}
         {data.hasDiagnosis ? (
           <section className={styles.section}>
             <div className={styles.sectionTitle}>
-              Who you are
+              <span>Who you are</span>
               {data.diagnosisDate && (
-                <span className={styles.sectionCount}>read {new Date(data.diagnosisDate).toISOString().slice(0, 10)}</span>
+                <span className={styles.sectionCount}>
+                  read {new Date(data.diagnosisDate).toISOString().slice(0, 10)}
+                </span>
               )}
             </div>
             {data.headline && <p className={styles.headline}>{data.headline}</p>}
@@ -250,7 +313,10 @@ export function Growth({ data }: { data: Data }) {
           <section className={styles.section}>
             <div className={styles.lockedRead}>
               <div className={styles.lockedTitle}>🔒 Your brand read is locked</div>
-              <p>Clear the setup quests above — connect X, finish your profile, get your diagnosis — and your identity, throughline, and highest-value territory unlock right here.</p>
+              <p>
+                Clear the setup quests above — connect X, finish your profile, get your diagnosis — and your identity,
+                throughline, and highest-value territory unlock right here.
+              </p>
             </div>
           </section>
         )}

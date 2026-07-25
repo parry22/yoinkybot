@@ -21,6 +21,7 @@ import {
   stampRun,
   bumpWarmup,
   monthlyRunCount,
+  userMonthlyRunCount,
   userDailyRunCount,
   setRunScheduled,
   setRunStatus,
@@ -53,6 +54,20 @@ export async function runAutomationOnce(automation: Automation, opts: { manual?:
   }
 
   // Caps BEFORE any paid/model work (buyer-radar doctrine).
+  // PLAN ceiling first — it's the one the user is actually paying for (Growth 5 /
+  // Scale 90 Auto Agent posts a month) and it bounds every automation at once, so
+  // a user can't route around it by creating more automations.
+  const planCap = (await entitlementsFor(userId)).automationPostsPerMonth;
+  if (planCap !== null && (await userMonthlyRunCount(userId)) >= planCap) {
+    const run = await createRun(automation.id, userId, "skipped", {
+      verdict_reason: `plan cap reached (${planCap} Auto Agent posts this month)`,
+    });
+    return {
+      status: "skipped",
+      runId: run.id,
+      reason: `you've used all ${planCap} Auto Agent posts this month — upgrade for a higher cap`,
+    };
+  }
   if ((await monthlyRunCount(automation.id)) >= automation.monthly_cap) {
     const run = await createRun(automation.id, userId, "skipped", { verdict_reason: "monthly cap reached" });
     return { status: "skipped", runId: run.id, reason: "monthly cap reached" };

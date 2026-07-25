@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { query, queryOne } from "../db/pool.js";
 import { llmCall } from "../llm/gateway.js";
-import { draftPost } from "../prompts/draft.v1.js";
+import { draftPostV2 } from "../prompts/draft.v2.js";
+import { draftEvidence, EMPTY_EVIDENCE } from "./evidence.js";
 import { hybridSearch } from "../memory/search.js";
 import { currentVoiceProfile } from "../voice/profile.js";
 import { entitlementsFor } from "../billing/entitlements.js";
@@ -77,15 +78,26 @@ export async function draftFromAngle(
     ...memories.map((m) => ({ id: m.id, content: m.content, kind: m.kind })),
   ];
 
-  const profile = await currentVoiceProfile(userId);
+  const [profile, evidence] = await Promise.all([
+    currentVoiceProfile(userId),
+    // Same measured evidence the main draft path gets — an angle-draft is still a
+    // post going out under their name, so it should know what lands for them.
+    draftEvidence(userId).catch(() => EMPTY_EVIDENCE),
+  ]);
   const voiceTraits = profile?.traits ?? { note: "No voice profile yet — write in a clear, natural first-person voice; avoid generic AI phrasing." };
 
   const res = await llmCall({
     userId,
     eventType: "draft",
-    tier: draftPost.tier,
-    system: draftPost.system,
-    user: draftPost.render({ request: `Write this post using the chosen angle. Platform: ${platform}.`, platform, memories: grounding, voiceTraits }),
+    tier: draftPostV2.tier,
+    system: draftPostV2.system,
+    user: draftPostV2.render({
+      request: `Write this post using the chosen angle. Platform: ${platform}.`,
+      platform,
+      memories: grounding,
+      voiceTraits,
+      evidence,
+    }),
     json: true,
     maxTokens: 1200,
   });

@@ -18,6 +18,8 @@ export interface Entitlements {
   buyerIntentsPerMonth: number | null;
   /** Viral-tweet breakdowns delivered per day. */
   viralPerDay: number | null;
+  /** Auto Agent posts across ALL of a user's automations per calendar month. */
+  automationPostsPerMonth: number | null;
   /** Trend takes/day — carried for display/telemetry; identical across paid tiers today. */
   trendsPerDay: number | null;
   /** Hard cap on proactive resurfacings per week. */
@@ -46,6 +48,7 @@ const FREE: Entitlements = {
   scheduledPostsPerMonth: 0,
   buyerIntentsPerMonth: 0,
   viralPerDay: 0,
+  automationPostsPerMonth: 0,
   trendsPerDay: 0,
   maxResurfacePerWeek: 1,
   autoAgent: false,
@@ -60,6 +63,10 @@ const GROWTH: Omit<Entitlements, "plan"> = {
   scheduledPostsPerMonth: 30,
   buyerIntentsPerMonth: 25,
   viralPerDay: 1,
+  // Auto Agent runs in APPROVAL mode on Growth (autoAgent below gates hands-off
+  // posting, which stays Scale-only) — so this is 5 agent-written posts a month
+  // that still come to you first.
+  automationPostsPerMonth: 5,
   trendsPerDay: config.MAX_DAILY_TREND_SENDS, // 2-3/day band, unchanged
   maxResurfacePerWeek: 3,
   autoAgent: false,
@@ -75,6 +82,9 @@ const SCALE: Omit<Entitlements, "plan"> = {
   scheduledPostsPerMonth: null,
   buyerIntentsPerMonth: null,
   viralPerDay: null,
+  // 90/month ≈ 3 a day: a real hands-off cadence, but still a hard ceiling so a
+  // runaway automation can't post unbounded. Not `null` on purpose.
+  automationPostsPerMonth: 90,
   trendsPerDay: config.MAX_DAILY_TREND_SENDS, // same band as Growth (deliberate — not a differentiator)
   maxResurfacePerWeek: 5,
   autoAgent: true,

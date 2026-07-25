@@ -1,19 +1,188 @@
-/* ── hero row ── */
-.hero {
-  display: grid;
-  grid-template-columns: 1.1fr 1.1fr 0.9fr;
-  gap: 12px;
-  margin-bottom: 24px;
+/* Growth board.
+ * Spacing scale is deliberately uniform so the page reads as one system:
+ * section rhythm 28px · card padding 16-18px · inner gap 12px · radius var(--radius-lg).
+ * Every text container sets min-width:0 + overflow-wrap so a long unbroken string
+ * (handle, URL, quest title) wraps instead of pushing its card out of shape —
+ * that was the mobile "text breaking out of the cards" problem. */
+
+.section {
+  margin-bottom: 28px;
+  min-width: 0;
 }
 
-.card {
+.sectionTitle {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap; /* a long title + count chip must wrap, not overflow */
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink-900);
+  margin-bottom: 12px;
+  min-width: 0;
+}
+
+.sectionCount {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink-500);
+  background: var(--hover);
+  border-radius: 999px;
+  padding: 2px 10px;
+  white-space: nowrap;
+}
+
+/* ── 1. urgency banner (conditional) ── */
+.urgent {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  border-radius: var(--radius-lg);
+  border: 0.5px solid #d3455b55;
+  background: #d3455b14;
+  min-width: 0;
+}
+
+.urgentFlame {
+  font-size: 18px;
+  flex: 0 0 auto;
+}
+
+/* basis 0, not auto: with flex-wrap on, an `auto` basis makes the long sentence
+ * wrap to its own line and orphan the flame above it. Basis 0 + grow means it
+ * shrinks to share the line with the flame instead, and only the CTA wraps. */
+.urgentText {
+  flex: 1 1 0;
+  min-width: 0;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--ink-900);
+  overflow-wrap: anywhere;
+}
+
+.urgentCta {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  background: #d3455b;
+  color: #fff;
+  white-space: nowrap;
+}
+
+/* ── 2. next move (the lead) ── */
+.nextCard {
+  border-radius: var(--radius-lg);
+  border: 0.5px solid var(--accent-border);
+  background: var(--accent-soft);
+  padding: 20px;
+  margin-bottom: 24px;
+  min-width: 0;
+}
+
+.nextLabel {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+
+.nextTitle {
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--ink-900);
+  overflow-wrap: anywhere;
+}
+
+.nextDetail {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink-600);
+  margin: 8px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.nextFoot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+  min-width: 0;
+}
+
+.nextCta {
+  display: inline-flex;
+  align-items: center;
+  height: 38px;
+  padding: 0 20px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  background: var(--accent);
+  color: #fff;
+  white-space: nowrap;
+}
+
+.nextMore {
+  font-size: 12.5px;
+  color: var(--ink-500);
+}
+
+.allClear {
+  border: 0.5px dashed var(--stroke);
+  border-radius: var(--radius-lg);
+  padding: 22px;
+  margin-bottom: 24px;
+  color: var(--ink-600);
+  min-width: 0;
+}
+
+.allClearTitle {
+  font-size: 16px;
+  color: var(--ink-900);
+  margin-bottom: 6px;
+}
+
+.allClear p {
+  font-size: 13.5px;
+  line-height: 1.55;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ── 3. momentum tiles ── */
+.metrics {
+  display: grid;
+  /* auto-fit means these reflow to 2-up then 1-up on their own, so there is no
+   * breakpoint at which a tile is too narrow for its own contents. */
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 12px;
+  margin-bottom: 28px;
+}
+
+.tile {
   background: var(--surface);
   border: 0.5px solid var(--stroke);
   border-radius: var(--radius-lg);
-  padding: 18px 20px;
+  padding: 16px 18px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
-.cardLabel {
+.tileLabel {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -21,18 +190,57 @@
   margin-bottom: 12px;
 }
 
+.tileFoot {
+  font-size: 12.5px;
+  color: var(--ink-500);
+  margin-top: 10px;
+  overflow-wrap: anywhere;
+}
+
+/* shared big-number row (score + streak) so the two tiles align optically */
+.scoreRow {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.bigNum {
+  font-size: 34px;
+  font-weight: 560;
+  line-height: 1;
+  color: var(--ink-900);
+}
+
+.bigUnit {
+  font-size: 13px;
+  color: var(--ink-500);
+}
+
+.scoreTag {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 999px;
+  padding: 2px 9px;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
 /* level */
 .levelRow {
   display: flex;
   align-items: center;
-  gap: 16px;
-  height: 100%;
+  gap: 14px;
+  min-width: 0;
 }
 
 .ring {
   flex: 0 0 auto;
-  width: 76px;
-  height: 76px;
+  width: 56px;
+  height: 56px;
   border-radius: 999px;
   display: flex;
   align-items: center;
@@ -40,56 +248,56 @@
 }
 
 .ringInner {
-  width: 62px;
-  height: 62px;
+  width: 45px;
+  height: 45px;
   border-radius: 999px;
   background: var(--surface);
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
   line-height: 1;
 }
 
 .ringLvl {
-  font-size: 26px;
+  font-size: 20px;
   font-weight: 560;
   color: var(--ink-900);
 }
 
-.ringCap {
-  font-size: 9px;
-  letter-spacing: 0.14em;
-  color: var(--ink-500);
-  margin-top: 2px;
-}
-
 .levelText {
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
 }
 
 .levelTitle {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 500;
   color: var(--ink-900);
+  overflow-wrap: anywhere;
 }
 
 .levelSub {
   font-size: 12.5px;
   color: var(--ink-500);
   margin-top: 2px;
+  overflow-wrap: anywhere;
 }
 
-.xpBar {
-  height: 7px;
+/* one bar style, reused by level + score */
+.bar {
+  height: 6px;
   background: var(--hover);
   border-radius: 999px;
   overflow: hidden;
-  margin-top: 10px;
+  margin-top: auto;
+  margin-bottom: 0;
 }
 
-.xpBar > i {
+.tile > .bar {
+  margin-top: 14px;
+}
+
+.bar > i {
   display: block;
   height: 100%;
   border-radius: 999px;
@@ -97,57 +305,43 @@
   transition: width 500ms ease;
 }
 
-
-/* score */
-.scoreRow {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.scoreBig {
-  font-size: 40px;
-  font-weight: 560;
-  line-height: 1;
-  color: var(--ink-900);
-}
-
-.scoreOutOf {
-  font-size: 13px;
-  color: var(--ink-500);
-}
-
-.scoreTag {
-  font-size: 12px;
-  color: var(--accent);
-  font-weight: 500;
-  margin-top: 2px;
-}
-
+/* score breakdown (collapsed by default) */
 .parts {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-top: 14px;
+  margin-top: 12px;
 }
 
 .part {
   font-size: 12px;
+  min-width: 0;
 }
 
 .partTop {
   display: flex;
   justify-content: space-between;
+  gap: 8px;
   color: var(--ink-600);
   margin-bottom: 4px;
+  min-width: 0;
+}
+
+.partLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .partVal {
   color: var(--ink-500);
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .partBar {
-  height: 5px;
+  height: 4px;
   background: var(--hover);
   border-radius: 999px;
   overflow: hidden;
@@ -161,79 +355,34 @@
   transition: width 500ms ease;
 }
 
-/* streak */
-.streakCard {
-  display: flex;
-  flex-direction: column;
-}
-
-.streakBig {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-}
-
 .flameLit {
-  font-size: 30px;
-  filter: none;
+  font-size: 24px;
 }
 
 .flameDim {
-  font-size: 30px;
+  font-size: 24px;
   filter: grayscale(1);
   opacity: 0.4;
 }
 
-.streakNum {
-  font-size: 40px;
-  font-weight: 560;
-  line-height: 1;
-  color: var(--ink-900);
-}
-
-.streakUnit {
-  font-size: 14px;
-  color: var(--ink-500);
-}
-
-.streakSub {
+/* shared quiet text button (breakdown toggle + completed toggle) */
+.linkBtn {
+  font: inherit;
   font-size: 12.5px;
   color: var(--ink-500);
-  margin-top: 10px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 10px 0 0;
+  text-align: left;
+  align-self: flex-start;
 }
 
-.streakWarn {
-  font-size: 12.5px;
-  color: #d3455b;
-  margin-top: 10px;
-  font-weight: 450;
+.linkBtn:hover {
+  color: var(--accent);
 }
 
-/* ── sections ── */
-.section {
-  margin-bottom: 26px;
-}
-
-.sectionTitle {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 15px;
-  font-weight: 500;
-  color: var(--ink-900);
-  margin-bottom: 14px;
-}
-
-.sectionCount {
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--ink-500);
-  background: var(--hover);
-  border-radius: 999px;
-  padding: 2px 10px;
-}
-
-/* ── quests ── */
+/* ── 4. quest queue ── */
 .quests {
   display: flex;
   flex-direction: column;
@@ -243,36 +392,37 @@
 .quest {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   background: var(--surface);
   border: 0.5px solid var(--stroke);
   border-radius: var(--radius-lg);
   padding: 14px 16px;
+  min-width: 0;
 }
 
 .questCheck {
   flex: 0 0 auto;
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   border-radius: 999px;
   border: 1.5px solid var(--accent-border);
 }
 
 .questCheckDone {
   flex: 0 0 auto;
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   border-radius: 999px;
   background: var(--accent);
   color: #fff;
-  font-size: 12px;
+  font-size: 11px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .questBody {
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
 }
 
@@ -280,6 +430,7 @@
   font-size: 14.5px;
   font-weight: 460;
   color: var(--ink-900);
+  overflow-wrap: anywhere;
 }
 
 .questDetail {
@@ -287,6 +438,7 @@
   color: var(--ink-500);
   margin-top: 3px;
   line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .questRight {
@@ -295,8 +447,6 @@
   gap: 8px;
   flex: 0 0 auto;
 }
-
-
 
 .xpChip {
   font-size: 12px;
@@ -313,6 +463,7 @@
   font-size: 12px;
   color: var(--ink-500);
   white-space: nowrap;
+  flex: 0 0 auto;
 }
 
 .questCta {
@@ -333,33 +484,10 @@
   opacity: 0.6;
 }
 
-.doneToggle {
-  font: inherit;
-  font-size: 13px;
-  color: var(--ink-500);
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 10px 0 2px;
-}
-
-.doneToggle:hover {
-  color: var(--accent);
-}
-
-.allClear {
-  font-size: 14px;
-  color: var(--ink-600);
-  border: 0.5px dashed var(--stroke);
-  border-radius: var(--radius-lg);
-  padding: 24px;
-  text-align: center;
-}
-
-/* ── milestones ── */
+/* ── 5. milestones ── */
 .milestones {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 12px;
 }
 
@@ -368,22 +496,21 @@
   border: 0.5px solid var(--stroke);
   border-radius: var(--radius-lg);
   padding: 14px 16px;
+  min-width: 0;
 }
 
-.msTop {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.msReached {
+  border-color: var(--accent-border);
 }
-
 
 .msLabel {
   font-size: 12.5px;
   color: var(--ink-600);
+  overflow-wrap: anywhere;
 }
 
 .msValue {
-  font-size: 20px;
+  font-size: 19px;
   font-weight: 500;
   color: var(--ink-900);
   margin: 8px 0;
@@ -396,7 +523,7 @@
 }
 
 .msBar {
-  height: 6px;
+  height: 5px;
   background: var(--hover);
   border-radius: 999px;
   overflow: hidden;
@@ -409,13 +536,14 @@
   background: linear-gradient(90deg, var(--accent), var(--accent-2, var(--accent)));
 }
 
-/* ── identity ── */
+/* ── 6. identity ── */
 .headline {
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 460;
-  line-height: 1.4;
+  line-height: 1.45;
   color: var(--ink-900);
   margin: 0 0 14px;
+  overflow-wrap: anywhere;
 }
 
 .throughlineBox {
@@ -424,6 +552,7 @@
   border-radius: var(--radius-lg);
   padding: 14px 16px;
   margin-bottom: 16px;
+  min-width: 0;
 }
 
 .tlLabel {
@@ -435,11 +564,11 @@
 }
 
 .tlText {
-  font-size: 15px;
+  font-size: 14.5px;
   line-height: 1.5;
   color: var(--ink-900);
+  overflow-wrap: anywhere;
 }
-
 
 .idColLabel {
   font-size: 12.5px;
@@ -462,6 +591,7 @@
   font-size: 13.5px;
   color: var(--ink-800, var(--ink-900));
   line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .idList li::before {
@@ -478,8 +608,9 @@
 .lockedRead {
   border: 0.5px dashed var(--stroke);
   border-radius: var(--radius-lg);
-  padding: 24px;
+  padding: 22px;
   color: var(--ink-600);
+  min-width: 0;
 }
 
 .lockedTitle {
@@ -492,20 +623,48 @@
   font-size: 13.5px;
   line-height: 1.55;
   margin: 0;
+  overflow-wrap: anywhere;
 }
 
-@media (max-width: 900px) {
-  .hero {
-    grid-template-columns: 1fr;
-  }
-  .milestones {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
+/* ── mobile ── */
 @media (max-width: 560px) {
-  .questRight {
+  .nextCard {
+    padding: 16px;
+  }
+  .nextTitle {
+    font-size: 18px;
+  }
+  /* Full-width primary CTA reads as the obvious tap target on a phone. */
+  .nextCta {
+    width: 100%;
+    justify-content: center;
+  }
+  /* The row layout is what broke: title + chip + button side by side has no room
+   * at this width. Stack, and let the actions sit on their own line. */
+  .quest {
     flex-wrap: wrap;
-    justify-content: flex-end;
+    align-items: flex-start;
   }
+  .questCheck,
+  .questCheckDone {
+    margin-top: 2px;
   }
+  .questRight {
+    width: 100%;
+    padding-left: 30px; /* aligns under the title, past the check dot */
+    justify-content: flex-start;
+  }
+  .questCta {
+    margin-left: auto;
+  }
+  .bigNum {
+    font-size: 30px;
+  }
+  .scoreTag {
+    margin-left: 0;
+  }
+  .urgentCta {
+    width: 100%;
+    justify-content: center;
+  }
+}

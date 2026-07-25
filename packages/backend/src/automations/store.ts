@@ -103,6 +103,18 @@ export async function monthlyRunCount(automationId: string): Promise<number> {
   return Number(row?.n ?? 0);
 }
 
+/** Posts across ALL a user's automations this calendar month — the PLAN-level Auto
+ *  Agent ceiling (`entitlements.automationPostsPerMonth`: Growth 5, Scale 90). */
+export async function userMonthlyRunCount(userId: string): Promise<number> {
+  const row = await queryOne<{ n: string }>(
+    `SELECT count(*)::text AS n FROM automation_runs
+     WHERE user_id = $1 AND status IN ${DELIVERED_STATUSES}
+       AND created_at >= date_trunc('month', now())`,
+    [userId],
+  );
+  return Number(row?.n ?? 0);
+}
+
 /** Posts across ALL a user's automations today (global daily flood cap). */
 export async function userDailyRunCount(userId: string): Promise<number> {
   const row = await queryOne<{ n: string }>(

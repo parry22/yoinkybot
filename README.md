@@ -23,6 +23,27 @@ which is where it's most useful. Both share one Postgres and one `users` row.
 ## Latest updates
 
 <!-- Keep newest-first. Update this whenever a change ships that a reader of the repo should know about. -->
+
+- **2026-07-25 — Auto Agent + Buyer Radar caps made real, and pricing tells the
+  truth.** (1) **Auto Agent is now plan-capped**: new
+  `entitlements.automationPostsPerMonth` — **Growth 5/month** (approval mode; the
+  hands-off `autoAgent` flag stays Scale-only) and **Scale 90/month**. Scale is
+  deliberately *not* `null` here: a hands-off poster needs a hard ceiling so a
+  runaway automation can't post unbounded. Enforced in `automations/run.ts` at the
+  **user** level (`userMonthlyRunCount`) before any paid/model work, so creating
+  more automations can't route around it, and the per-automation "Cap / month"
+  field is clamped to the plan ceiling on save. (2) **Buyer Radar: 5 leads per
+  scan** (`MAX_COMPOSE_PER_SCAN` 8→5) — each composition is a bounded agent loop
+  over paid search, so the per-scan count is the real cost lever. (3) **Previous
+  leads no longer vanish on a new scan** — the radar animation was rendered
+  *instead of* the list (`scanning ? <ScanningRadar/> : signals.map(...)`), so every
+  existing lead disappeared the moment you hit "Scan now"; it now sits above the
+  list, and results merge by id rather than replacing (an empty response can no
+  longer clear the board). (4) **Pricing shows the caps** on the landing page and
+  the in-app `<PlanPicker>`, using the same numbers the code enforces. Two false
+  claims removed while I was in there: Scale's "consistency checks on every post"
+  (automatic checking isn't built — manual `/check` is on both paid tiers) and the
+  vague "higher automation caps". 415 tests ✓.
 - **2026-07-25 — Post-migration sweep: all six loops now run on the Claude Agent
   SDK, plus three real fixes.** Every `AGENT_RUNTIME_*` flag is `sdk` in
   production. **Chat no longer goes silent:** the model will not narrate between
@@ -39,6 +60,26 @@ which is where it's most useful. Both share one Postgres and one `users` row.
   unreachable here — only the MCP HTTP transport imports it and we use in-process
   MCP servers. See INTERNAL §3n.
 
+
+- **2026-07-25 — The writer now knows what actually works for you (`draft.v2`).**
+  The drafting prompt was stylistically rich and **empirically blind**: it got memory
+  fragments + a voice profile, so it applied the same universal reach doctrine to
+  everyone and had no idea which of *your* posts ever landed. Every performance number
+  the product already computes lived in surfaces **you** read, never in the loop that
+  **writes**. New `drafting/evidence.ts` (one query, then pure computation) feeds the
+  writer: your **engagement baseline**; your **top posts as real text** tagged
+  `Nx your median` + opener type + length + register + **intent**; your **quietest
+  posts** as counter-examples; **shape lift** (question / link / ≤120 / ≥240 /
+  multi-line, ±% vs your own median); and **motive lift** — which intent lands
+  (`captures.motive` had been written by the classifier since migration 0017 and read
+  by *zero* queries). Retrieved memories are now labelled **PUBLISHED POST** (with
+  engagement + intent) vs **private thinking** — previously indistinguishable, so a
+  take you'd already posted was treated as fresh material. The key prompt line is the
+  **reconciliation rule**: where your measured results contradict generic doctrine,
+  *your data wins*. Guardrails: never mention metrics in the draft, never copy past
+  wording (match mechanics, not content), and fall back to doctrine when there's no
+  evidence yet. Applies to both drafting paths, so **Telegram gets it identically**
+  (shared `runDraft`). 9 new prompt tests; suite 410 ✓. See INTERNAL §3a.
 
 - **2026-07-25 — Agent SDK adapter built; 5 loops ready to flip; no Railway
   upgrade needed.** `src/agent-runtime/` adds `runAgentLoop(feature, req)`, a

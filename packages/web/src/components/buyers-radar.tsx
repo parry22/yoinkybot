@@ -106,7 +106,15 @@ export function BuyersRadar({
         setScanMsg("Still scanning — this one's taking a while. Refresh in a minute to see what it found.");
         return;
       }
-      setSignals(result.signals ?? []);
+      // The server list is authoritative (all surfaced+replied leads), but never
+      // let an empty/short response clear leads we're already showing — "no new
+      // signals this round" must not read as "your radar is empty".
+      const returned = result.signals ?? [];
+      setSignals((prev) => {
+        if (returned.length === 0) return prev;
+        const seen = new Set(returned.map((s) => s.id));
+        return [...returned, ...prev.filter((p) => !seen.has(p.id))];
+      });
       setUsed((u) => u + (result.surfaced ?? 0));
       // The backend says why a scan came back empty (buyer/scan.ts stages) — an
       // empty radar has several causes and they need different things from you.
@@ -219,9 +227,13 @@ export function BuyersRadar({
         )}
         {scanMsg && !scanning && <div className={styles.scanMsg}>{scanMsg}</div>}
 
-        {scanning ? (
-          <ScanningRadar />
-        ) : signals.length === 0 ? (
+        {/* A scan in flight NEVER hides the leads you already have. The radar
+         *  animation used to replace the whole list, so every existing lead
+         *  vanished the moment you hit "Scan now" and only came back when the job
+         *  landed. It sits above the list instead, and new results merge in. */}
+        {scanning && <ScanningRadar />}
+
+        {!scanning && signals.length === 0 ? (
           <div className={styles.empty}>
             No buyer signals yet. Run a scan and Yoinky will surface people on X asking for what you offer, each with a
             reply drafted in your voice for you to approve.

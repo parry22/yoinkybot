@@ -309,6 +309,40 @@ already tuned. It is scoped to the feed/"properly-written" side exactly like
   (`telegram/actions.ts` `deliverDraft`, `telegram/bot.ts` angle-draft handler). Not
   persisted — it's ephemeral guidance, not part of the draft body.
 
+**The writer is evidence-grounded (2026-07-25, `draft.v2` + `drafting/evidence.ts`).**
+Until now the draft prompt was stylistically very well specified and *empirically
+blind*: it received memory fragments, the voice profile, and the stated profile, so
+it applied universal reach doctrine to every user identically and had no idea which
+of THIS person's posts ever landed. Every performance number the product computes
+lived in analytics/diagnosis/report surfaces the **user** reads and never in the loop
+that **writes**. `draftEvidence(userId)` (one query over their own `x_import`
+captures, then pure computation) now supplies:
+- their **engagement baseline** (median), so "high performer" is quotable;
+- their **top posts as real text** with `Nx your median`, opener class
+  (`classifyOpener`), length, register and intent — the truest available spec of
+  their voice, closer than any profile JSON;
+- **quietest posts** as counter-examples (only when there's a real spread, ≥8 posts);
+- **shape lift** — question / link / ≤120 / ≥240 / multi-line, each ±% against their
+  own median (same buckets Analytics shows them, measured on engagement totals);
+- **motive lift** — which INTENT lands. `captures.motive` had been written by the
+  classifier since 0017 and read by *zero* queries before this.
+`memoryProvenance()` additionally labels each retrieved memory as a **PUBLISHED
+POST** (with its engagement + intent) or **private thinking, never posted** — the
+writer previously could not tell a half-formed voice note from a take that already
+went out, and treated both as equal substance. `memories.capture_id` was already
+being fetched and thrown away.
+The load-bearing prompt line is the **reconciliation rule**: where measured results
+contradict the universal doctrine, *their data wins* (and the note says so). Without
+it the model reads the evidence and still obeys the generic rules. Guardrails: the
+draft must never mention metrics (evidence shapes how it writes, it is never the
+subject) and must not copy past wording — match mechanics, not content. All
+best-effort: a cold account, no refreshed engagement, or an all-zero baseline yields
+an empty evidence pack and the writer falls back to doctrine. Both drafting paths
+(`generateDraft` and `angle-draft`) use it, so **Telegram and web get it identically**
+— they already shared `runDraft`. `generateDraft` also takes an optional
+`onStage` callback (voice → memory → evidence → context → writing → polishing) for
+progress UI; Telegram ignores it.
+
 **Message tracking + wiping everything** (`telegram/message-log.ts`, added
 2026-07-11; the `/clear` command itself was removed 2026-07-11, superseded by
 the `clear_everything` chat tool above — the mechanism below is unchanged).
