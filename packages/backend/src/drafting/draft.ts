@@ -8,6 +8,8 @@ import { getProfile, profileSummaryForPrompt } from "../strategist/profile.js";
 import { enforceStyle } from "../prompts/style.js";
 import { embedOne } from "../llm/embeddings.js";
 import { query } from "../db/pool.js";
+import { activePositions } from "../memory/positions.js";
+import { researchTopic, type TopicResearch } from "../trends/research.js";
 
 /**
  * Cultural grounding: the freshest fleet trends nearest the draft request, so
@@ -29,6 +31,26 @@ async function nearbyTrends(userId: string, request: string, k = 4): Promise<Arr
     return [];
   }
 }
+
+/**
+ * When a voice profile hasn't been built yet. Drafting used to REFUSE here
+ * ("run /voice build once you have ~50 memories"), on the reasoning that a draft
+ * without measured voice traits would sound like everyone else.
+ *
+ * That reasoning was right about the risk and wrong about the remedy. Refusing is
+ * how a brand-new user's first request — the one that decides whether they come
+ * back — got answered with a maintenance instruction. And the codebase already
+ * disagreed with itself: draftFromAngle (drafting/angle-draft.ts) has always
+ * drafted without a profile using exactly this fallback. So the two paths now
+ * behave the same way, and the honest caveat rides out on the draft's `note`
+ * instead of replacing the draft.
+ */
+const NO_VOICE_TRAITS = {
+  note:
+    "No voice profile built yet. Write in a clear, natural first-person voice drawn from the " +
+    "material below — their own words, sentence rhythm and vocabulary. Avoid generic AI phrasing, " +
+    "avoid inventing opinions they have not expressed.",
+};
 
 const draftSchema = z.object({
   draft: z.string(),
@@ -54,6 +76,7 @@ export interface DraftResult {
 export type DraftStage =
   | "voice"
   | "memory"
+  | "research"
   | "evidence"
   | "context"
   | "writing"
@@ -91,20 +114,43 @@ export async function generateDraft(
 
   stage("voice");
   const profile = await currentVoiceProfile(userId);
-  if (!profile) {
-    return {
-      ok: false,
-      draft: "",
-      note: "No voice profile yet — run /voice build once you have ~50 memories. Drafting without it would sound like everyone else.",
-      mediaSuggestion: "",
-      sources: [],
-    };
-  }
+  const voiceTraits = profile?.traits ?? NO_VOICE_TRAITS;
 
   stage("memory");
   const memories = await hybridSearch(userId, request, 12);
+
+  // NOTHING IN MEMORY IS NOT A DEAD END. It used to be: an empty retrieval
+  // returned "capture some thinking on it first", which is the answer a user got
+  // for the most natural request there is — "write me a post about <thing in the
+  // news>". Nothing they'd said was about it yet, by definition.
+  //
+  // So a cold retrieval now triggers live research (trends/research.ts: X search
+  // + cached trends + news) and the draft is grounded in THAT plus their stated
+  // positions and profile. The one remaining refusal is when research also comes
+  // back empty AND there are no positions to reason from — at that point there is
+  // genuinely no material, and saying so is honest rather than evasive.
+  let research: TopicResearch | null = null;
+  let positions: string[] = [];
   if (memories.length === 0) {
-    return { ok: false, draft: "", note: "No memories match this request — capture some thinking on it first.", mediaSuggestion: "", sources: [] };
+    stage("research");
+    [research, positions] = await Promise.all([
+      researchTopic(userId, request, { maxPosts: 6, maxHeadlines: 4 }).catch(() => null),
+      activePositions(userId)
+        .then((ps) => ps.map((p) => p.statement))
+        .catch(() => []),
+    ]);
+    const foundSomething = Boolean(research && (research.posts.length > 0 || research.headlines.length > 0));
+    if (!foundSomething && positions.length === 0) {
+      return {
+        ok: false,
+        draft: "",
+        note:
+          "I've got nothing to build this on — you haven't said anything about it, and there's no live " +
+          "conversation on it I can find either. Tell me what you actually think and I'll write from that.",
+        mediaSuggestion: "",
+        sources: [],
+      };
+    }
   }
 
   stage("evidence");
@@ -120,7 +166,42 @@ export async function generateDraft(
   ]);
 
   stage("context");
-  const currentContext = await nearbyTrends(userId, request);
+  // Already-researched trends beat a second cached lookup for the same topic.
+  const currentContext =
+    research && research.headlines.length > 0
+      ? research.headlines.map((h) => ({ topic: h.topic, summary: h.summary }))
+      : await nearbyTrends(userId, request);
+
+  // Grounding the model writes from: retrieved memories normally, and when there
+  // were none, the researched conversation plus their stated positions. Both
+  // shapes are the same `memories` array, labelled by `kind` so the prompt can
+  // tell a real prior thought from a live tweet it should react to.
+  const grounding =
+    memories.length > 0
+      ? memories.map((m) => {
+          const p = m.capture_id ? provenance.get(m.capture_id) : undefined;
+          return {
+            id: m.id,
+            content: m.content,
+            kind: m.kind,
+            published: p?.published,
+            engagement: p?.engagement ?? null,
+            motive: p?.motive ?? null,
+            sincerity: p?.sincerity ?? null,
+          };
+        })
+      : [
+          ...positions.map((statement, i) => ({
+            id: `position:${i}`,
+            content: statement,
+            kind: "position",
+          })),
+          ...(research?.posts ?? []).map((p, i) => ({
+            id: `live:${i}`,
+            content: `@${p.handle} on X right now (${p.likes} likes): ${p.text}`,
+            kind: "live_conversation",
+          })),
+        ];
 
   stage("writing");
   const res = await llmCall({
@@ -131,19 +212,8 @@ export async function generateDraft(
     user: draftPostV2.render({
       request,
       platform,
-      memories: memories.map((m) => {
-        const p = m.capture_id ? provenance.get(m.capture_id) : undefined;
-        return {
-          id: m.id,
-          content: m.content,
-          kind: m.kind,
-          published: p?.published,
-          engagement: p?.engagement ?? null,
-          motive: p?.motive ?? null,
-          sincerity: p?.sincerity ?? null,
-        };
-      }),
-      voiceTraits: profile.traits,
+      memories: grounding,
+      voiceTraits,
       profileSummary: brandProfile ? profileSummaryForPrompt(brandProfile) : undefined,
       offLimits: brandProfile?.topics_off_limits ?? [],
       currentContext,
@@ -155,17 +225,32 @@ export async function generateDraft(
   stage("polishing");
   const parsed = draftSchema.parse(res.parsed);
   const draft = enforceStyle(parsed.draft);
+  // Only real memory rows are citable sources — the synthetic position:/live: ids
+  // used for grounding are not persistable and must not reach `drafts.source_memory_ids`.
   const cited = new Set(parsed.source_memory_ids);
   const sources = memories
     .filter((m) => cited.has(m.id))
     .map((m) => ({ id: m.id, content: m.content, kind: m.kind }));
+  const allMemories = memories.map((m) => ({ id: m.id, content: m.content, kind: m.kind }));
+
+  // When the draft came from research rather than memory, say so — the user should
+  // know it was built on the live conversation, not on something they'd told us.
+  const provenanceNote =
+    memories.length === 0 && research
+      ? research.posts.length > 0
+        ? `Built from what's live on X about this right now (${research.posts.length} posts) plus your stated positions — you hadn't said anything about it yet.`
+        : `Built from your stated positions and what's in the news — you hadn't said anything about this yet.`
+      : "";
+  const voiceNote = profile
+    ? ""
+    : "Heads up: no voice profile built yet, so this is written from your own material rather than a measured voice model. It'll get sharper as I read more of you.";
 
   return {
     ok: draft.length > 0,
     draft,
-    note: parsed.note,
+    note: [parsed.note, provenanceNote, voiceNote].filter(Boolean).join(" "),
     mediaSuggestion: parsed.media_suggestion,
     // If the model cited nothing explicitly, show everything it was given.
-    sources: sources.length > 0 ? sources : memories.map((m) => ({ id: m.id, content: m.content, kind: m.kind })),
+    sources: sources.length > 0 ? sources : allMemories,
   };
 }

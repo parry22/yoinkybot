@@ -437,40 +437,86 @@
   min-width: 0;
 }
 
-/* the three settings, directly above the box */
-.settingsRow {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 10px;
-  margin-bottom: 10px;
-  min-width: 0;
+/* The setup conversation. `.settingsRow`/`.settingCol`/`.settingLabel`/
+   `.settingInput` used to live here for the delivery/cadence/cap dropdowns; those
+   are gone because the interview asks for all three in its own words. */
+
+.intro {
+  padding: 4px 0 8px;
+}
+.introTitle {
+  font-size: 19px;
+  font-weight: 500;
+  color: var(--ink-900);
+  line-height: 1.35;
+  margin-bottom: 8px;
+}
+.introSub {
+  font-size: 13.5px;
+  color: var(--ink-500);
+  line-height: 1.55;
+  max-width: 62ch;
 }
 
-.settingCol {
+.thread {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  min-width: 0;
+  gap: 10px;
+  margin-top: 16px;
 }
-
-.settingLabel {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--ink-500);
+.turn {
+  max-width: min(78%, 620px);
+  padding: 11px 14px;
+  border-radius: 16px;
+  font-size: 14px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
-
-.settingInput {
-  font: inherit;
-  font-size: 13.5px;
-  height: 34px;
-  padding: 0 10px;
-  border-radius: 10px;
-  border: 0.5px solid var(--stroke);
-  background: var(--surface);
+.turnUser {
+  align-self: flex-end;
+  background: var(--accent-soft);
+  border: 0.5px solid var(--accent-border);
   color: var(--ink-900);
-  min-width: 0;
-  width: 100%;
+  border-bottom-right-radius: 6px;
+}
+.turnBot {
+  align-self: flex-start;
+  background: var(--surface);
+  border: 0.5px solid var(--stroke);
+  color: var(--ink-900);
+  border-bottom-left-radius: 6px;
+}
+
+/* The "still working" bubble — the one indicator whose lifetime is the whole
+   turn rather than a single step of it. */
+.turnTyping {
+  display: inline-flex;
+  gap: 4px;
+  padding: 14px 16px;
+}
+.turnTyping i {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--ink-500);
+  animation: agentBlink 1.2s infinite both;
+}
+.turnTyping i:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.turnTyping i:nth-child(3) {
+  animation-delay: 0.4s;
+}
+@keyframes agentBlink {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+  }
+  40% {
+    opacity: 1;
+  }
 }
 
 .briefBox {

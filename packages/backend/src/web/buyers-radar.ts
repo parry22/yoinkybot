@@ -22,7 +22,6 @@ export interface BuyerSignalView {
   /** Domain-fit percentage shown as "% match" in the UI. */
   match: number;
   why: string | null;
-  draftReply: string | null;
   intentType: string | null;
   verdict: string;
   postedAt: string | null;
@@ -74,13 +73,12 @@ export async function listBuyerSignals(userId: string, limit = 30): Promise<Buye
     score: number;
     niche_similarity: number | null;
     why: string | null;
-    draft_reply: string | null;
     intent_type: string | null;
     verdict: string;
     posted_at: string | null;
   }>(
     `SELECT id, author_handle, author_name, content, url, score, niche_similarity,
-            why, draft_reply, intent_type, verdict, posted_at::text
+            why, intent_type, verdict, posted_at::text
      FROM buyer_signals
      WHERE user_id = $1 AND verdict IN ('surfaced','replied')
      ORDER BY (verdict = 'surfaced') DESC, score DESC, surfaced_at DESC
@@ -96,7 +94,6 @@ export async function listBuyerSignals(userId: string, limit = 30): Promise<Buye
     url: r.url,
     match: matchPct(r.niche_similarity, r.score),
     why: r.why,
-    draftReply: r.draft_reply,
     intentType: r.intent_type,
     verdict: r.verdict,
     postedAt: r.posted_at,
@@ -159,36 +156,47 @@ export interface ScanResponse {
   signals: BuyerSignalView[];
   /** Why a scan came back empty, in the user's language. Null when it surfaced something. */
   reason: string | null;
+  /** Set when the scan had to reach past its own thresholds to fill the six. */
+  note: string | null;
 }
 
 /**
- * Turn the funnel counts into one honest sentence. An empty radar has several
- * very different causes (nobody was talking, everybody was off-domain, the model
- * declined them all) and they need different things from the user — so we say
- * which one it was rather than the same "no signals yet" every time.
+ * Turn the funnel counts into one honest sentence.
+ *
+ * The gates backfill now, so an empty radar means discovery genuinely found
+ * nothing — the reasons narrowed accordingly, and they name the search itself
+ * (which words were tried, how far back it looked) rather than the thresholds,
+ * because the thresholds can no longer be the cause.
  */
 function emptyReason(result: ScanResult): string | null {
   if (result.surfaced > 0) return null;
   const s = result.stages;
-  if (result.status === "budget_exhausted") return "You've hit this month's signal cap.";
+  if (result.status === "budget_exhausted") return "You've hit this month's lead cap.";
   if (result.status === "no_icp") return "Tell me what you sell and who buys it first.";
   if (result.status === "unavailable") return "The X data source isn't connected yet, so there's nothing to scan.";
+  if (s.candidates === 0) {
+    const words = s.discovery.vocabulary.slice(0, 4);
+    const tried = words.length ? ` I searched for ${words.map((w) => `"${w}"`).join(", ")}.` : "";
+    return (
+      `Nobody on X has posted anything matching your category in the last few weeks.${tried} ` +
+      `If those aren't the words your buyers use, edit targeting — describing the problem they have ` +
+      `finds more people than describing what you sell.`
+    );
+  }
   if (!s.hasIcpVector) {
     return "Your targeting hasn't been indexed yet — open Edit targeting and save it once to fix this.";
   }
-  if (s.candidates === 0) {
-    return "Nobody on X matched your category this round. If that keeps happening, widen what you sell in Edit targeting — a broad category finds more than a precise one.";
+  if (s.intentConsidered === 0) {
+    return "Found people in your category, but every one of them was in your 'not my buyer' list. Loosen those exclusions in Edit targeting.";
   }
-  if (s.intentPassed === 0) {
-    return "People are talking in your category, but nobody was actually asking for anything. That's a quiet week, not a problem.";
-  }
-  if (s.nichePassed === 0) {
-    return `People were asking for things, but none close enough to what you sell. Sharpening "who buys it" in Edit targeting helps here.`;
-  }
-  if (s.composeFailed > 0 && s.composeFailed === s.composed) {
-    return "Found candidates but couldn't draft replies for them — that's on my side, they'll still be here next scan.";
-  }
-  return "No real buyers this round. Yoinky will keep looking.";
+  return "Found people talking in your category, but nothing close enough to what you sell to be worth your time. Yoinky will keep looking.";
+}
+
+/** A short, honest note under a scan that had to reach to fill the six. */
+function stretchNote(result: ScanResult): string | null {
+  if (result.surfaced === 0 || result.stages.backfilled === 0) return null;
+  const n = result.stages.backfilled;
+  return `${n} of these ${n === 1 ? "is a stretch" : "are stretches"} — a quiet round, so I widened the net rather than show you an empty screen. Mark the misses "Not a fit" and I'll tighten it.`;
 }
 
 /**
@@ -200,7 +208,13 @@ export async function scanBuyerSignals(userId: string): Promise<ScanResponse> {
   const signals = await listBuyerSignals(userId);
   // The funnel counts are the thing you need when a user says "it found nobody".
   console.log(`buyer scan user=${userId} status=${result.status} surfaced=${result.surfaced}`, result.stages);
-  return { status: result.status, surfaced: result.surfaced, signals, reason: emptyReason(result) };
+  return {
+    status: result.status,
+    surfaced: result.surfaced,
+    signals,
+    reason: emptyReason(result),
+    note: stretchNote(result),
+  };
 }
 
 export type BuyerScanJobState = "queued" | "running" | "done" | "failed" | "unknown";

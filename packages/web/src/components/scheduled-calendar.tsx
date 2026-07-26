@@ -1,17 +1,46 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowLeft01Icon, ArrowRight01Icon, Add01Icon } from "@hugeicons/core-free-icons";
+import {
+  ArrowLeft01Icon,
+  ArrowRight01Icon,
+  Add01Icon,
+  Image01Icon,
+  Cancel01Icon,
+  Video01Icon,
+} from "@hugeicons/core-free-icons";
 import panel from "./panel.module.css";
 import styles from "./scheduled-calendar.module.css";
+
+interface MediaView {
+  id: string;
+  kind: "image" | "gif" | "video";
+  url: string;
+  mimeType: string;
+  byteSize: number;
+  altText: string | null;
+}
 
 interface Post {
   id: string;
   platform: string;
   content: string;
   scheduledFor: string; // ISO
+  media?: MediaView[];
 }
+
+/**
+ * The same rule the server enforces (backend scheduling/service.ts#containsLink).
+ * Duplicated deliberately: the server is authoritative, but finding out a link is
+ * refused only AFTER pressing Schedule is a bad way to learn it, so the composer
+ * says so while you're still typing. Kept character-identical to the server
+ * regex so the two can't disagree about what counts as a link.
+ */
+const LINK_RE = /(https?:\/\/|www\.)\S+|\b[a-z0-9-]+\.(?:com|io|co|net|org|xyz|app|dev|ai|me|so)\b\S*/i;
+
+const ACCEPT = "image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime";
+const MAX_ATTACHMENTS = 4;
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = [
@@ -24,10 +53,13 @@ const dayKey = (d: Date): string => `${d.getFullYear()}-${d.getMonth()}-${d.getD
 export function ScheduledCalendar({
   posts: initial,
   usage,
+  media,
 }: {
   posts: Post[];
   /** This month's scheduling usage — cap null = unlimited (Scale). */
   usage: { used: number; cap: number | null };
+  /** Whether media will actually publish, and the reason when it won't. */
+  media: { canPostMedia: boolean; warning: string | null };
 }) {
   const [posts, setPosts] = useState<Post[]>(initial);
   const now = new Date();
@@ -79,7 +111,7 @@ export function ScheduledCalendar({
           <div>
             <div className={panel.title}>Scheduled</div>
             <div className={panel.subtitle}>
-              Your posting calendar. Tap any day to queue a post.
+              Your posting calendar. Tap any day to queue a post, with images or video.
               {" · "}
               {usage.cap === null ? "Unlimited this month" : `${usage.used}/${usage.cap} this month`}
             </div>
@@ -139,6 +171,14 @@ export function ScheduledCalendar({
                     <span className={styles.chipTime}>
                       {new Date(p.scheduledFor).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
                     </span>{" "}
+                    {p.media && p.media.length > 0 && (
+                      <HugeiconsIcon
+                        icon={p.media[0]!.kind === "video" ? Video01Icon : Image01Icon}
+                        size={11}
+                        strokeWidth={2}
+                        aria-label={`${p.media.length} attachment${p.media.length === 1 ? "" : "s"}`}
+                      />
+                    )}{" "}
                     {p.content}
                   </div>
                 ))}
@@ -152,6 +192,7 @@ export function ScheduledCalendar({
       {modalDay && (
         <AddPostModal
           day={modalDay}
+          mediaReady={media}
           onClose={() => setModalDay(null)}
           onScheduled={(p) => {
             setPosts((prev) => [...prev, p]);
@@ -165,10 +206,12 @@ export function ScheduledCalendar({
 
 function AddPostModal({
   day,
+  mediaReady,
   onClose,
   onScheduled,
 }: {
   day: Date;
+  mediaReady: { canPostMedia: boolean; warning: string | null };
   onClose: () => void;
   onScheduled: (p: Post) => void;
 }) {
@@ -176,13 +219,66 @@ function AddPostModal({
   const [time, setTime] = useState("09:00");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [attachments, setAttachments] = useState<MediaView[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const label = day.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" });
 
+  // Live link check, so the refusal arrives while typing rather than on submit.
+  const linkFound = LINK_RE.test(content);
+  const hasVideo = attachments.some((a) => a.kind !== "image");
+  // X's rule: one video/GIF, or up to four images — never mixed.
+  const canAttachMore = hasVideo ? false : attachments.length < MAX_ATTACHMENTS;
+
+  async function addFiles(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    setErr(null);
+    setUploading(true);
+    try {
+      for (const file of Array.from(files)) {
+        if (!canAttachMoreAfter(attachments.length)) break;
+        const form = new FormData();
+        form.append("file", file);
+        const res = await fetch("/api/schedule/media", { method: "POST", body: form });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.media) {
+          setErr(data.error ?? "couldn't attach that file");
+          break;
+        }
+        setAttachments((prev) => [...prev, data.media as MediaView]);
+      }
+    } catch {
+      setErr("couldn't attach that file");
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  function canAttachMoreAfter(count: number): boolean {
+    return !hasVideo && count < MAX_ATTACHMENTS;
+  }
+
+  async function removeAttachment(m: MediaView) {
+    setAttachments((prev) => prev.filter((a) => a.id !== m.id));
+    // Staged uploads are cleaned up server-side; a failure here just leaves an
+    // orphan the sweep collects, so it must not block the user.
+    await fetch("/api/schedule/media", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id: m.id, url: m.url }),
+    }).catch(() => {});
+  }
+
   async function schedule() {
     const text = content.trim();
-    if (!text) {
-      setErr("write something to post first");
+    if (!text && attachments.length === 0) {
+      setErr("write something, or attach an image");
+      return;
+    }
+    if (linkFound) {
+      setErr("links tank reach on X, so scheduled posts can't contain one. drop it and post it as the first reply instead.");
       return;
     }
     const [hh, mm] = time.split(":").map(Number);
@@ -197,7 +293,11 @@ function AddPostModal({
       const res = await fetch("/api/schedule", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ content: text, scheduledFor: when.toISOString() }),
+        body: JSON.stringify({
+          content: text,
+          scheduledFor: when.toISOString(),
+          mediaIds: attachments.map((a) => a.id),
+        }),
       });
       const data = await res.json();
       if (res.status === 402) {
@@ -212,7 +312,13 @@ function AddPostModal({
         setErr(data.error ?? "could not schedule");
         return;
       }
-      onScheduled({ id: data.id, platform: "x", content: text, scheduledFor: when.toISOString() });
+      onScheduled({
+        id: data.id,
+        platform: "x",
+        content: text,
+        scheduledFor: when.toISOString(),
+        media: attachments,
+      });
     } catch {
       setErr("could not schedule");
     } finally {
@@ -230,22 +336,82 @@ function AddPostModal({
           value={content}
           onChange={(e) => setContent(e.target.value)}
           rows={5}
-          placeholder="What do you want to post? (no links, they tank reach)"
+          placeholder="What do you want to post?"
           autoFocus
         />
+
+        {/* The link rule, stated before it's broken and again the moment it is. */}
+        <div className={linkFound ? styles.linkWarn : styles.linkHint}>
+          {linkFound
+            ? "That's a link — X suppresses reach on posts that send people off-platform, so this won't schedule. Post the link as the first reply instead."
+            : "No links: they tank reach on X. Put yours in the first reply once this is live."}
+        </div>
+
+        {attachments.length > 0 && (
+          <div className={styles.mediaStrip}>
+            {attachments.map((m) => (
+              <div key={m.id} className={styles.mediaItem}>
+                {m.kind === "video" ? (
+                  <video className={styles.mediaThumb} src={m.url} muted playsInline preload="metadata" />
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img className={styles.mediaThumb} src={m.url} alt={m.altText ?? ""} />
+                )}
+                <button
+                  className={styles.mediaRemove}
+                  onClick={() => void removeAttachment(m)}
+                  aria-label="Remove attachment"
+                >
+                  <HugeiconsIcon icon={Cancel01Icon} size={12} strokeWidth={2.4} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className={styles.modalRow}>
           <label className={styles.timeLabel}>
             Time
             <input className={styles.timeInput} type="time" value={time} onChange={(e) => setTime(e.target.value)} />
           </label>
+          <button
+            className={styles.attachBtn}
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading || !canAttachMore}
+            title={
+              hasVideo
+                ? "A video can't be posted alongside anything else"
+                : canAttachMore
+                  ? "Attach an image or video"
+                  : `Up to ${MAX_ATTACHMENTS} images per post`
+            }
+          >
+            <HugeiconsIcon icon={Image01Icon} size={14} strokeWidth={1.8} />
+            {uploading ? "Uploading…" : attachments.length > 0 ? "Add more" : "Add media"}
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept={ACCEPT}
+            multiple
+            hidden
+            onChange={(e) => void addFiles(e.target.files)}
+          />
           <span className={styles.platformTag}>Posts to X</span>
         </div>
+
+        {/* Media only publishes if the stored X token carries media.write. Said
+         *  here, at attach time, rather than discovered when the post fires. */}
+        {attachments.length > 0 && !mediaReady.canPostMedia && mediaReady.warning && (
+          <div className={styles.linkWarn}>{mediaReady.warning}</div>
+        )}
+
         {err && <div className={styles.modalErr}>{err}</div>}
         <div className={styles.modalActions}>
           <button className={styles.ghost} onClick={onClose}>
             Cancel
           </button>
-          <button className="btnPrimary" onClick={schedule} disabled={saving}>
+          <button className="btnPrimary" onClick={schedule} disabled={saving || uploading || linkFound}>
             {saving ? "Scheduling…" : "Schedule"}
           </button>
         </div>

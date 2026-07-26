@@ -24,6 +24,63 @@ which is where it's most useful. Both share one Postgres and one `users` row.
 
 <!-- Keep newest-first. Update this whenever a change ships that a reader of the repo should know about. -->
 
+- **2026-07-26 — Buyer Radar surfaces six leads instead of drafting replies;
+  Compose can search the web; Agent Mode interviews you; scheduled posts take
+  media.** Four fixes, one theme: the product knew how to do the work and was
+  refusing, stalling, or asking the wrong question.
+
+  **Buyer Radar found nobody, and now finds six.** Two root causes. First, query
+  distillation restated the seller's own one-liner — a founder writes "AI
+  ghostwriter for B2B founders" and roughly nobody on X types the seller's category
+  name; buyers type the *job* ("need someone to write my linkedin posts"), the
+  *role* ("ghostwriter"), or the *pain* ("no time to post"). `buyer-queries.v2` now
+  does explicit keyword **research** first and builds queries from that. Second, the
+  model had a veto (`fires:false`), so an empty radar was usually the model
+  declining everything rather than search finding nothing. That veto is gone —
+  **and so is the drafted reply**, because the useful output of a radar is the lead,
+  not a reply you have to judge and rewrite. Cards now show the intent type, the
+  tweet, a one-line read of what the person wants, and "Reply on X". Both gates
+  became rankers with floors, discovery climbs a four-rung **widening ladder**
+  (lookback → author cooldown → bare vocabulary), and `TARGET_SIGNALS_PER_SCAN = 6`
+  is a contract: a weak lead is a one-second skip, an empty screen is unactionable.
+  When it has to reach, it says so. **Scale is now 300 leads/month, not
+  "unlimited"** — every lead is a paid X search plus an embedding billed per user,
+  so the old `∞` was a promise the economics couldn't keep and nothing enforced.
+
+  **Compose can look outward.** It used to refuse two ways: no voice profile → "run
+  /voice build"; nothing in memory → "capture some thinking on it first". So the most
+  obvious request there is — "write me a post about \<thing in the news\>" — got a
+  maintenance instruction, because by definition you hadn't said anything about it
+  yet. Now a cold retrieval triggers **live research** (X search + news + cached
+  trends) and drafts from that plus your positions, and two new tools let the brain
+  go looking on purpose: `find_trends` (what's being said right now) and
+  `offer_angles` (2-3 takes you could credibly make, each with a hook). The chat
+  prompt gained a rule: never answer "I don't have anything from you on that" and
+  stop. **It also can't strand any more** — a typing indicator now lives for the
+  whole turn rather than per-step, a turn that produces no text emits a closing
+  message instead of silence, and drafting streams its six internal stages.
+
+  **Agent Mode asks instead of presenting pills.** The old page showed three preset
+  source pills, two example chips and three dropdowns before you'd said anything —
+  which made you pick from the product's vocabulary rather than being asked what you
+  wanted posted. It's a conversation now: what the agent is *for*, what shape of
+  post, which angles, which hooks, then cadence and delivery — one question at a
+  time, with suggested answers generated from *your* niche that arrive **as part of
+  each question** rather than sitting in the UI in advance. Code owns the question
+  order and when it's done; the model only extracts answers and phrases the question,
+  so it can't wrap up early with a half-specified agent. On the last turn it builds
+  the agent **and runs it once**, streaming the pipeline — an agent you have to
+  remember to press "run" on is a config screen.
+
+  **Scheduled posts take images, GIFs and video.** Upload in the calendar, stored on
+  Vercel Blob, uploaded to X at publish time (v2 media endpoints; chunked with
+  transcode polling for video). X's real rules are enforced in code, not trusted from
+  the UI — 4 images, or one video, or one GIF, never mixed — and checked when you
+  schedule rather than when it fires. `media.write` was added to the X OAuth scope,
+  so if you connected before today the composer tells you to reconnect **at attach
+  time** instead of failing silently at 9am. **Links** were already refused
+  server-side; the composer now says so while you type and disables Schedule.
+
 - **2026-07-25 — Compose and Auto Agent are chat surfaces, and they show their
   work.** Both pages were forms that framed the agent as a one-shot generator.
   **Compose** is now a transcript with the composer pinned to the bottom, talking to
@@ -223,7 +280,8 @@ which is where it's most useful. Both share one Postgres and one `users` row.
   (`null` = unlimited) + an `autoAgent` flag, split into `GROWTH`, `SCALE`, `FREE`:
   Growth = 30 scheduled posts/mo · 25 buyer intents/mo · 1 viral/day · 3
   resurfaces/wk · **no** hands-off auto-agent; Scale = all of those **unlimited** +
-  auto-agent + 5 resurfaces/wk. `entitlementsFor` maps `paid→GROWTH`,
+  auto-agent + 5 resurfaces/wk. *(Buyer leads on Scale were capped at 300/mo on
+  2026-07-26 — see the top entry.)* `entitlementsFor` maps `paid→GROWTH`,
   `scale`/`founding`/`trialing`→`SCALE` (the trial is the full Scale experience);
   paywall-off dev stays uncapped. Caps are enforced in the **shared domain layer**
   so web + Telegram inherit them: `schedulePost` (new `monthlyScheduledCount`),

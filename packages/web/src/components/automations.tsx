@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { AiMagicIcon, FireIcon, ArchiveIcon } from "@hugeicons/core-free-icons";
+import { ArrowUp01Icon } from "@hugeicons/core-free-icons";
 import panel from "./panel.module.css";
 import { useAgentStream } from "./use-agent-stream";
 import styles from "./automations.module.css";
@@ -47,43 +47,26 @@ const CADENCE_LABEL: Record<AutomationView["cadenceKind"], string> = {
   manual: "Manual",
 };
 
-// The three ways to start an agent. Custom is the free-form, govork-style path
-// and is the default; the two presets are deterministic sources that can still
-// take the brief as extra guidance.
-const MODES: { type: SourceType; icon: typeof AiMagicIcon; title: string; blurb: string }[] = [
-  { type: "custom", icon: AiMagicIcon, title: "Describe it myself", blurb: "Free-form. Say exactly what to post, in your words." },
-  { type: "trend_ride", icon: FireIcon, title: "Ride trends", blurb: "Yoinky watches your niche and rides what's moving." },
-  { type: "unlock_backlog", icon: ArchiveIcon, title: "From my backlog", blurb: "Works through the ideas already in your plan." },
-];
+/** One line of the setup conversation. */
+type Turn = { role: "user" | "assistant"; content: string };
 
-// Quick prompts that drop a starting sentence into the brief.
-const EXAMPLES = [
-  "Turn the biggest story in my niche into a punchy take in my voice.",
-  "Share one lesson from what I shipped this week.",
-  "Take a spicy opinion I'd stand behind and make it a short thread.",
-  "Reframe a customer question I keep getting as a helpful post.",
-];
-
-interface FormState {
-  id: string;
-  name: string;
-  sourceType: SourceType;
-  deliveryMode: AutomationView["deliveryMode"];
-  cadenceKind: AutomationView["cadenceKind"];
-  monthlyCap: number;
-  brief: string;
-}
-
-const BLANK: FormState = {
-  id: "",
-  name: "",
-  sourceType: "custom",
-  deliveryMode: "approval",
-  cadenceKind: "daily",
-  monthlyCap: 30,
-  brief: "",
-};
-
+/**
+ * Auto Agent is a conversation, not a form.
+ *
+ * WHAT WAS HERE BEFORE. Three preset pills ("Describe it myself" / "Ride trends" /
+ * "From my backlog"), two example-prompt chips, three dropdowns, and a brief box.
+ * All of it rendered before the user had said anything, which is the reason it's
+ * gone: pre-existing pills make you choose from the product's vocabulary instead
+ * of being asked what you actually want posted. People picked a pill, typed one
+ * sentence, and got an agent that knew nothing about their angles or their hooks.
+ *
+ * WHAT IT IS NOW. Yoinky interviews you — what the agent is for, what shape of
+ * post, which angles, which hooks, then cadence and delivery — one question at a
+ * time, with suggested answers that come from YOUR niche and arrive as part of
+ * each question rather than sitting in the UI in advance. On the last turn the
+ * server builds the agent and runs it once, so you see a real draft before you
+ * leave the page.
+ */
 export function Automations({
   initialAutomations,
   initialApprovals,
@@ -99,22 +82,75 @@ export function Automations({
 }) {
   const [automations, setAutomations] = useState(initialAutomations);
   const [approvals, setApprovals] = useState(initialApprovals);
-  const [form, setForm] = useState<FormState>({ ...BLANK });
-  const [note, setNote] = useState<string | null>(null);
+  const [turns, setTurns] = useState<Turn[]>([]);
+  /** Suggestions for the question just asked. Server-authored, per question. */
+  const [options, setOptions] = useState<string[]>([]);
+  const [input, setInput] = useState("");
   const [err, setErr] = useState("");
   const { run, activity, busy } = useAgentStream();
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-  const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setForm((f) => ({ ...f, [k]: v }));
-  const editingExisting = Boolean(form.id);
+  // Follow the conversation as it grows.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [turns, activity, busy]);
 
-  // Grow the brief box with its content.
+  // Grow the composer with its content.
   useEffect(() => {
     const ta = taRef.current;
     if (!ta) return;
     ta.style.height = "auto";
     ta.style.height = `${Math.min(ta.scrollHeight, 150)}px`;
-  }, [form.brief]);
+  }, [input]);
+
+  async function refreshApprovals() {
+    const res = await fetch("/api/automations/approvals").then((r) => r.json()).catch(() => ({ approvals: [] }));
+    setApprovals(res.approvals ?? []);
+  }
+
+  /**
+   * Send one interview turn. The whole transcript goes with it — the server is
+   * stateless and re-derives the agent spec from it each time, so a correction
+   * three turns later still lands.
+   */
+  async function send(text: string) {
+    const t = text.trim();
+    if (!t || busy) return;
+    setErr("");
+    setInput("");
+    setOptions([]);
+    const next: Turn[] = [...turns, { role: "user", content: t }];
+    setTurns(next);
+
+    await run(
+      "/api/automations/interview/stream",
+      { messages: next },
+      {
+        onMessage: (content) => setTurns((prev) => [...prev, { role: "assistant", content }]),
+        onResult: (data) => {
+          const d = (data ?? {}) as { complete?: boolean; options?: string[]; automation?: AutomationView };
+          if (d.automation) {
+            setAutomations((list) => {
+              const exists = list.some((x) => x.id === d.automation!.id);
+              return exists ? list.map((x) => (x.id === d.automation!.id ? d.automation! : x)) : [d.automation!, ...list];
+            });
+          }
+          if (d.complete) {
+            // Interview over: clear the thread so the box is ready for the next
+            // agent rather than continuing to append to a finished setup.
+            setOptions([]);
+            void refreshApprovals();
+          } else {
+            setOptions(d.options ?? []);
+          }
+        },
+        onError: (message, status) =>
+          setErr(status === 402 ? "Auto Agent is a paid feature — upgrade to set one up." : message),
+      },
+    );
+  }
 
   async function toggle(a: AutomationView) {
     const next = !a.enabled;
@@ -126,20 +162,14 @@ export function Automations({
     }).catch(() => {});
   }
 
-  async function refreshApprovals() {
-    const res = await fetch("/api/automations/approvals").then((r) => r.json()).catch(() => ({ approvals: [] }));
-    setApprovals(res.approvals ?? []);
-  }
-
   /** "Run now" — streamed, so the pipeline shows its work. */
   async function runNow(a: AutomationView) {
     setErr("");
-    setNote(null);
     await run(
       "/api/automations/run/stream",
       { id: a.id },
       {
-        onMessage: (text) => setNote(text),
+        onMessage: (content) => setTurns((prev) => [...prev, { role: "assistant", content }]),
         onResult: () => void refreshApprovals(),
         onError: (message, status) =>
           setErr(status === 402 ? "Your trial has ended — upgrade to keep the agent running." : message),
@@ -147,61 +177,17 @@ export function Automations({
     );
   }
 
-  /** Send the brief: creates (or updates) the agent, streamed. */
-  async function submit() {
-    if (busy) return;
-    if (form.sourceType === "custom" && !form.brief.trim()) {
-      setErr("Tell the agent what to do — describe it in the box.");
-      return;
-    }
-    setErr("");
-    setNote(null);
-    await run(
-      "/api/automations/save/stream",
-      { ...form, id: form.id || undefined },
-      {
-        onMessage: (text) => setNote(text),
-        onResult: (data) => {
-          const view = (data as { automation?: AutomationView } | undefined)?.automation;
-          if (view) {
-            setAutomations((list) => {
-              const exists = list.some((x) => x.id === view.id);
-              return exists ? list.map((x) => (x.id === view.id ? view : x)) : [view, ...list];
-            });
-          }
-          setForm({ ...BLANK });
-        },
-        onError: (message, status) =>
-          setErr(status === 402 ? "Auto Agent is a paid feature — upgrade to set one up." : message),
-      },
-    );
-  }
-
-  function loadForEdit(a: AutomationView) {
-    setNote(null);
-    setErr("");
-    setForm({
-      id: a.id,
-      name: a.name,
-      sourceType: a.sourceType,
-      deliveryMode: a.deliveryMode,
-      cadenceKind: a.cadenceKind,
-      monthlyCap: a.monthlyCap,
-      brief: a.brief ?? "",
-    });
-    taRef.current?.focus();
-  }
+  const started = turns.length > 0;
 
   return (
     <div className={styles.agentRoot}>
-      {/* everything you already have, at the top */}
-      <div className={styles.agentScroll}>
+      <div className={styles.agentScroll} ref={scrollRef}>
         <div className={styles.agentInner}>
           <div className={panel.head}>
             <div>
               <div className={panel.title}>Auto Agent</div>
               <div className={panel.subtitle}>
-                Describe an agent once and Yoinky runs it. You stay in control.
+                Tell Yoinky what you want posted and it&apos;ll ask you the rest, then run it.
                 {planCap !== null && ` Your plan covers ${planCap} agent posts a month.`}
               </div>
             </div>
@@ -223,17 +209,12 @@ export function Automations({
             </section>
           )}
 
-          <section className={styles.section}>
-            <div className={styles.sectionTitle}>Your agents</div>
-            {automations.length === 0 ? (
-              <div className={styles.empty}>
-                No agents yet. Describe one below in your own words and Yoinky will draft posts for you, on your
-                cadence, in your voice.
-              </div>
-            ) : (
-              automations.map((a) => (
+          {automations.length > 0 && (
+            <section className={styles.section}>
+              <div className={styles.sectionTitle}>Your agents</div>
+              {automations.map((a) => (
                 <div key={a.id} className={styles.card}>
-                  <div className={styles.cardMain} onClick={() => loadForEdit(a)}>
+                  <div className={styles.cardMain}>
                     <div className={styles.cardName}>{a.name}</div>
                     <div className={styles.cardMeta}>
                       {SOURCE_LABEL[a.sourceType]} · {CADENCE_LABEL[a.cadenceKind]} · {DELIVERY_LABEL[a.deliveryMode]} ·
@@ -254,11 +235,38 @@ export function Automations({
                     </button>
                   </div>
                 </div>
-              ))
-            )}
-          </section>
+              ))}
+            </section>
+          )}
 
-          {/* what the agent is doing, right where you're looking */}
+          {/* The opening prompt. No preset pills: the first thing on screen is a
+           *  question, and the options that follow are generated from the answer. */}
+          {!started && (
+            <section className={styles.section}>
+              <div className={styles.intro}>
+                <div className={styles.introTitle}>What do you want an agent posting for you?</div>
+                <div className={styles.introSub}>
+                  Say it however it comes out — &ldquo;keep me visible on pricing takes&rdquo;, &ldquo;post a lesson from
+                  each thing I ship&rdquo;. I&apos;ll ask about the angles, the hooks and the shape of post from there,
+                  then set it running.
+                </div>
+              </div>
+            </section>
+          )}
+
+          {turns.length > 0 && (
+            <div className={styles.thread}>
+              {turns.map((t, i) => (
+                <div
+                  key={`${i}-${t.content.slice(0, 12)}`}
+                  className={`${styles.turn} ${t.role === "user" ? styles.turnUser : styles.turnBot}`}
+                >
+                  {t.content}
+                </div>
+              ))}
+            </div>
+          )}
+
           {activity.length > 0 && (
             <div className={styles.agentActivity}>
               {activity.map((a, i) => (
@@ -272,113 +280,62 @@ export function Automations({
               ))}
             </div>
           )}
-          {note && <div className={styles.agentNote}>{note}</div>}
+
+          {/* Same guarantee as Compose: while a turn is in flight and no activity
+           *  row is spinning, something on screen still has to be moving. */}
+          {busy && !activity.some((a) => a.active) && (
+            <div className={`${styles.turn} ${styles.turnBot} ${styles.turnTyping}`} role="status" aria-label="Thinking">
+              <i />
+              <i />
+              <i />
+            </div>
+          )}
         </div>
       </div>
 
-      {/* the composer: settings directly above the box, box at the bottom */}
       <div className={styles.agentDock}>
         <div className={styles.agentDockInner}>
-          <div className={styles.chips}>
-            {MODES.map((m) => (
-              <button
-                key={m.type}
-                className={styles.chip}
-                onClick={() => set("sourceType", m.type)}
-                style={
-                  form.sourceType === m.type
-                    ? { borderColor: "var(--accent-border)", color: "var(--accent)", background: "var(--accent-soft)" }
-                    : undefined
-                }
-                title={m.blurb}
-              >
-                {m.title}
-              </button>
-            ))}
-            {form.sourceType === "custom" &&
-              EXAMPLES.slice(0, 2).map((ex) => (
-                <button key={ex} className={styles.chip} onClick={() => set("brief", ex)}>
-                  {ex.length > 42 ? `${ex.slice(0, 42)}…` : ex}
+          {/* Suggestions belong to the question that was just asked, so they only
+           *  exist after Yoinky asks something — never as standing UI furniture. */}
+          {options.length > 0 && !busy && (
+            <div className={styles.chips}>
+              {options.map((o) => (
+                <button key={o} className={styles.chip} onClick={() => void send(o)}>
+                  {o}
                 </button>
               ))}
-          </div>
-
-          <div className={styles.settingsRow}>
-            <label className={styles.settingCol}>
-              <span className={styles.settingLabel}>How it delivers</span>
-              <select
-                className={styles.settingInput}
-                value={form.deliveryMode}
-                onChange={(e) => set("deliveryMode", e.target.value as FormState["deliveryMode"])}
-              >
-                <option value="approval">Ask me first</option>
-                {canAutoAgent ? (
-                  <option value="auto">Post on its own</option>
-                ) : (
-                  <option value="auto" disabled>
-                    Post on its own (Scale)
-                  </option>
-                )}
-              </select>
-            </label>
-            <label className={styles.settingCol}>
-              <span className={styles.settingLabel}>How often</span>
-              <select
-                className={styles.settingInput}
-                value={form.cadenceKind}
-                onChange={(e) => set("cadenceKind", e.target.value as FormState["cadenceKind"])}
-              >
-                <option value="daily">Daily</option>
-                <option value="weekly">Weekly</option>
-                <option value="manual">When I run it</option>
-              </select>
-            </label>
-            <label className={styles.settingCol}>
-              <span className={styles.settingLabel}>Cap / month{planCap !== null ? ` (max ${planCap})` : ""}</span>
-              <input
-                className={styles.settingInput}
-                type="number"
-                min={1}
-                max={planCap ?? 200}
-                value={form.monthlyCap}
-                onChange={(e) => set("monthlyCap", Number(e.target.value) || 1)}
-              />
-            </label>
-          </div>
+            </div>
+          )}
 
           <div className={styles.briefBox}>
             <textarea
               ref={taRef}
               className={styles.briefInput}
-              value={form.brief}
-              onChange={(e) => set("brief", e.target.value)}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
-                  void submit();
+                  void send(input);
                 }
               }}
               rows={1}
-              placeholder={
-                form.sourceType === "custom"
-                  ? "Describe the agent in your own words…"
-                  : "Extra guidance (optional)…"
-              }
+              placeholder={started ? "Answer, or say it your own way…" : "What should the agent post for you?"}
             />
             <div className={styles.briefFooter}>
               <span className={styles.briefHint}>
                 {err ||
-                  (editingExisting
-                    ? `Updating “${form.name || "this agent"}” — Enter to save`
-                    : "Enter to create · Shift+Enter for a new line")}
+                  (canAutoAgent
+                    ? "Enter to send · Shift+Enter for a new line"
+                    : "Enter to send · hands-off posting is a Scale feature, so yours will ask you first")}
               </span>
-              {editingExisting && (
-                <button className={styles.chip} onClick={() => setForm({ ...BLANK })}>
-                  Cancel
-                </button>
-              )}
-              <button className={styles.briefSend} onClick={() => void submit()} disabled={busy}>
-                {busy ? "Working…" : editingExisting ? "Save agent" : "Create agent"}
+              <button
+                className={styles.briefSend}
+                onClick={() => void send(input)}
+                disabled={busy || !input.trim()}
+                aria-label="Send"
+              >
+                <HugeiconsIcon icon={ArrowUp01Icon} size={16} strokeWidth={2} />
               </button>
             </div>
           </div>

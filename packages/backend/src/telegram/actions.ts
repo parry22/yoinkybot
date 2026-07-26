@@ -3,8 +3,10 @@ import { config } from "../config.js";
 import { query, queryOne } from "../db/pool.js";
 import type { User } from "../lib/auth.js";
 import { entitlementsFor } from "../billing/entitlements.js";
-import { generateDraft } from "../drafting/draft.js";
+import { generateDraft, type DraftStage } from "../drafting/draft.js";
 import { repurposeContent, parseRepurposeCommand } from "../drafting/repurpose.js";
+import { anglesForTopic, formatAngles } from "../drafting/angles.js";
+import { researchTopic, renderResearch } from "../trends/research.js";
 import { searchAndSynthesize, hybridSearch } from "../memory/search.js";
 import { checkConsistency } from "../consistency/check.js";
 import { getPlan, formatPlan } from "../strategist/plan.js";
@@ -138,12 +140,22 @@ export async function connectAccount(
   return msg;
 }
 
+/**
+ * Where a tool reports its internal progress. Telegram ignores it (its affordance
+ * is the typing indicator); the web streams each one as an activity row, so a
+ * 40-second draft shows six specific steps instead of one motionless spinner.
+ */
+export interface ToolProgress {
+  onDraftStage?: (stage: DraftStage) => void;
+}
+
 /** Generate, persist, and deliver a draft with the one-tap cross-platform repurpose button. */
 export async function runDraft(
   user: User,
   topic: string,
   platform: "x" | "linkedin",
   channel: Channel,
+  progress: ToolProgress = {},
 ): Promise<string> {
   // Content gate: never draft from explicit/abusive input (it would also poison
   // the voice/memory pipeline downstream).
@@ -167,7 +179,7 @@ export async function runDraft(
     }
     // Otherwise fall through and generate — this is a free taste.
   }
-  const res = await generateDraft(user.id, topic, platform);
+  const res = await generateDraft(user.id, topic, platform, { onStage: progress.onDraftStage });
   if (!res.ok) {
     await channel.say(res.note);
     return res.note;
@@ -273,12 +285,17 @@ export async function statusText(user: User): Promise<string> {
  * Returns a short trace of what was delivered so the caller can persist it as
  * an assistant turn — next turn, the brain remembers what it actually did.
  */
-export async function executeChatTool(user: User, tool: ChatTool, channel: Channel): Promise<string> {
+export async function executeChatTool(
+  user: User,
+  tool: ChatTool,
+  channel: Channel,
+  progress: ToolProgress = {},
+): Promise<string> {
   await channel.typing?.();
 
   switch (tool.name) {
     case "draft_post":
-      return runDraft(user, tool.topic, tool.platform, channel);
+      return runDraft(user, tool.topic, tool.platform, channel, progress);
 
     case "repurpose": {
       const parsed = parseRepurposeCommand(`${tool.form} ${tool.text}`);
@@ -302,6 +319,38 @@ export async function executeChatTool(user: User, tool: ChatTool, channel: Chann
       const { answer } = await searchAndSynthesize(user.id, tool.question);
       await channel.say(answer);
       return answer;
+    }
+
+    case "find_trends": {
+      const research = await researchTopic(user.id, tool.topic);
+      if (research.posts.length === 0 && research.headlines.length === 0) {
+        const msg =
+          `couldn't find anything live on "${tool.topic}" — no x conversation in the last few days, ` +
+          `no news hits either. either it's quieter than it feels or i'm searching the wrong words. ` +
+          `want me to try a different phrasing?`;
+        await channel.say(msg);
+        return msg;
+      }
+      // What the user sees is a readable digest; what the model gets back as its
+      // trace is the same material, so it can draft from it without re-searching.
+      const top = research.posts.slice(0, 4);
+      const lines: string[] = [`here's what's live on "${tool.topic}":`];
+      for (const p of top) lines.push(`• @${p.handle} (${p.likes} likes) — ${p.text.slice(0, 200)}`);
+      for (const h of research.headlines.slice(0, 3)) lines.push(`• ${h.topic}`);
+      await channel.say(lines.join("\n\n"));
+      return renderResearch(research);
+    }
+
+    case "offer_angles": {
+      const result = await anglesForTopic(user.id, tool.topic);
+      const msg = formatAngles(result);
+      await channel.say(msg);
+      // The angles go back to the model too, so "write #2" in the next turn
+      // resolves against the same three it just showed.
+      return result.angles.length
+        ? `offered ${result.angles.length} angles on "${tool.topic}":\n` +
+            result.angles.map((a, i) => `${i + 1}) ${a.label}: ${a.angle} | hook: ${a.hook}`).join("\n")
+        : msg;
     }
 
     case "check_draft":
@@ -431,13 +480,13 @@ export interface TurnOutput {
  * turns — a 3-tool turn shows up as its fragments in history, not one opaque
  * blob. Returns the trace the loop feeds back to the model.
  */
-export function chatToolExecutor(user: User, channel: Channel) {
+export function chatToolExecutor(user: User, channel: Channel, progress: ToolProgress = {}) {
   return async (tool: ChatTool, replyBeat: string): Promise<string> => {
     if (replyBeat) {
       await channel.say(replyBeat);
       await saveTurn(user.id, "assistant", replyBeat).catch(() => {});
     }
-    const trace = await executeChatTool(user, tool, channel);
+    const trace = await executeChatTool(user, tool, channel, progress);
     // Keep history honest: the brain said "on it", this is what "it" was.
     await saveTurn(user.id, "assistant", trace.slice(0, 1500)).catch(() => {});
     return trace;

@@ -15,9 +15,9 @@ type Entry =
 
 const SUGGESTIONS = [
   { title: "Write from what I've been thinking", sub: "Turns your captures into a post in your voice" },
+  { title: "What's trending in my niche right now?", sub: "Searches X and the web live, then gives you angles" },
   { title: "What have I said about pricing?", sub: "Searches everything you've told me" },
   { title: "Reshape my last post for LinkedIn", sub: "Same idea, native to the platform" },
-  { title: "Check this draft against my positions", sub: "Flags anything that contradicts you" },
 ];
 
 /**
@@ -147,6 +147,25 @@ export function Compose({ initialDrafts }: { initialDrafts: Draft[] }) {
                   <span className={styles.activityLabel}>{a.label}</span>
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* THE ANTI-STRAND GUARANTEE. `activity` only has rows once a stage
+           *  event has arrived, and every row goes inactive the moment the next
+           *  one starts — so between the last completed step and the reply landing
+           *  there was nothing moving on screen at all, which is what read as the
+           *  page hanging. While `busy` is true and no row is currently spinning,
+           *  this bubble is. It is the one indicator whose lifetime is the whole
+           *  turn rather than one step of it. */}
+          {busy && !activity.some((a) => a.active) && (
+            <div
+              className={`${styles.msg} ${styles.msgBot} ${styles.typing}`}
+              role="status"
+              aria-label="Working on it"
+            >
+              <i />
+              <i />
+              <i />
             </div>
           )}
         </div>

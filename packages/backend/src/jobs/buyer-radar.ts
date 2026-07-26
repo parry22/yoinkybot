@@ -33,12 +33,10 @@ export async function handleBuyerRadar(): Promise<void> {
 /**
  * On-demand "Scan now", moved off the Vercel request path (docs/INTERNAL §3n).
  *
- * WHY IT HAD TO MOVE: a scan calls composeOutreach per gated candidate, and under
- * `AGENT_RUNTIME_BUYER=sdk` each of those spawns a Claude Code subprocess needing
- * a real filesystem. A Vercel serverless function is not that, so the old
- * synchronous route could not work in SDK mode at all. Running it here also
- * retires a second problem the sync route always had: several paid searches plus
- * a handful of composition loops against a 300s function ceiling.
+ * WHY IT HAD TO MOVE: a scan climbs a widening ladder of paid X searches, then
+ * embeds every candidate it kept. That is minutes of work against a 300s Vercel
+ * function ceiling, and the ladder makes the worst case longer, not shorter.
+ * Running it as a job also means an impatient refresh can't buy a second scan.
  *
  * The return value becomes the pg-boss job output, which the web app polls — so
  * the user still gets the same funnel counts and `reason` sentence, just after a

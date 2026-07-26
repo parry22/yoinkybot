@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Search01Icon, Bookmark01Icon, Comment01Icon, RadarIcon } from "@hugeicons/core-free-icons";
+import { Search01Icon, Bookmark01Icon, RadarIcon } from "@hugeicons/core-free-icons";
 import { UpgradeCTA } from "./upgrade-cta";
 import panel from "./panel.module.css";
 import styles from "./buyers-radar.module.css";
@@ -16,11 +16,18 @@ interface SignalView {
   url: string | null;
   match: number;
   why: string | null;
-  draftReply: string | null;
   intentType: string | null;
   verdict: string;
   postedAt: string | null;
 }
+
+/** Plain-language label for the intent bucket, shown as the lead's headline. */
+const INTENT_LABEL: Record<string, string> = {
+  explicit_ask: "Asking for a recommendation",
+  competitor_dissatisfaction: "Unhappy with what they use",
+  pain: "Describing the problem you solve",
+  trigger_event: "Just hit the moment they'd need you",
+};
 interface Status {
   enabled: boolean;
   hasIcp: boolean;
@@ -47,6 +54,7 @@ interface ScanOutcome {
   surfaced: number;
   signals: SignalView[];
   reason: string | null;
+  note: string | null;
 }
 
 export function BuyersRadar({
@@ -120,7 +128,11 @@ export function BuyersRadar({
       // empty radar has several causes and they need different things from you.
       if (result.surfaced === 0)
         setScanMsg(result.reason ?? "No new buyer signals this round. Yoinky will keep looking.");
-      else setScanMsg(`Found ${result.surfaced} new signal${result.surfaced === 1 ? "" : "s"}.`);
+      else
+        setScanMsg(
+          `Found ${result.surfaced} new lead${result.surfaced === 1 ? "" : "s"}.` +
+            (result.note ? ` ${result.note}` : ""),
+        );
     } catch {
       setScanMsg("scan failed");
     } finally {
@@ -164,9 +176,6 @@ export function BuyersRadar({
     }).catch(() => {});
   }
 
-  function copyDraft(text: string | null) {
-    if (text) navigator.clipboard?.writeText(text).catch(() => {});
-  }
 
   // Feature unavailable (no X data source configured) — fail closed, say so plainly.
   if (!status.enabled) {
@@ -214,7 +223,7 @@ export function BuyersRadar({
             {scanning ? "Scanning X…" : "Scan now"}
           </button>
           <span className={styles.quota}>
-            {used}/{status.cap === null ? "∞" : status.cap} signals this month
+            {used}/{status.cap === null ? "∞" : status.cap} leads this month
           </span>
           <button className={styles.editBtn} onClick={() => setEditing(true)}>
             Edit targeting
@@ -235,8 +244,8 @@ export function BuyersRadar({
 
         {!scanning && signals.length === 0 ? (
           <div className={styles.empty}>
-            No buyer signals yet. Run a scan and Yoinky will surface people on X asking for what you offer, each with a
-            reply drafted in your voice for you to approve.
+            No leads yet. Run a scan and Yoinky will surface people on X who are asking for what you offer, with a read
+            on what each one actually wants.
           </div>
         ) : (
           <div className={styles.list}>
@@ -251,6 +260,9 @@ export function BuyersRadar({
                   <div className={styles.cardSpacer} />
                   <span className={styles.matchPill}>{r.match}% match</span>
                 </div>
+                {r.intentType && INTENT_LABEL[r.intentType] && (
+                  <div className={styles.intentTag}>{INTENT_LABEL[r.intentType]}</div>
+                )}
                 <div className={styles.tweetText}>{r.content}</div>
                 {r.why && (
                   <div className={styles.whyNote}>
@@ -258,22 +270,10 @@ export function BuyersRadar({
                     {r.why}
                   </div>
                 )}
-                {r.draftReply && (
-                  <div className={styles.draftBox}>
-                    <div className={styles.draftLabel}>
-                      <HugeiconsIcon icon={Comment01Icon} size={13} strokeWidth={1.8} />
-                      Reply, in your voice
-                    </div>
-                    <div className={styles.draftText}>{r.draftReply}</div>
-                  </div>
-                )}
                 <div className={styles.cardActions}>
-                  <button className={styles.actionBtn} onClick={() => copyDraft(r.draftReply)} disabled={!r.draftReply}>
-                    Copy reply
-                  </button>
                   {r.url && (
                     <a className={styles.actionBtn} href={r.url} target="_blank" rel="noreferrer">
-                      Open on X
+                      Reply on X
                     </a>
                   )}
                   <button className={styles.actionBtn} onClick={() => act(r.id, "replied")}>
@@ -298,17 +298,17 @@ export function BuyersRadar({
 }
 
 /**
- * A scan is genuinely slow — paced X searches, then embeddings, then up to eight
- * bounded composition loops — so the wait is a minute or two. The captions track
- * the real pipeline stages (discovery → intent → niche gate → drafting) at roughly
- * the timings those stages take, so the wait reads as work rather than a hang.
+ * A scan is genuinely slow — a widening ladder of paced X searches, then an
+ * embedding per candidate — so the wait is a minute or two. The captions track
+ * the real pipeline stages at roughly the timings those stages take, so the wait
+ * reads as work rather than a hang.
  */
 const SCAN_STAGES = [
-  { at: 0, label: "Sweeping X for people in your category" },
-  { at: 15, label: "Reading what they actually asked for" },
-  { at: 40, label: "Matching each one against what you sell" },
-  { at: 70, label: "Drafting replies in your voice" },
-  { at: 110, label: "Finishing the last few" },
+  { at: 0, label: "Working out the words your buyers use" },
+  { at: 12, label: "Sweeping X for people saying them" },
+  { at: 45, label: "Widening the net to fill six" },
+  { at: 80, label: "Matching each one against what you sell" },
+  { at: 110, label: "Reading what they actually asked for" },
 ];
 
 function ScanningRadar() {
@@ -342,7 +342,7 @@ function ScanningRadar() {
         </span>
       </div>
       <div className={styles.scanStageHint}>
-        This takes a minute or two — Yoinky only surfaces someone once there's a reply worth sending.
+        This takes a minute or two — Yoinky keeps widening the search until it has six people worth your time.
       </div>
     </div>
   );
@@ -354,7 +354,7 @@ function Head() {
       <div>
         <div className={panel.title}>Buyers Radar</div>
         <div className={panel.subtitle}>
-          Find people publicly asking for what you offer, on X, and get a reply drafted in your voice to approve.
+          People on X publicly asking for what you offer, with a read on what each one actually wants. Six a scan.
         </div>
       </div>
     </div>

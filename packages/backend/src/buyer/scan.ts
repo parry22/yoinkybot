@@ -1,33 +1,45 @@
 /**
  * Buyer Radar scan orchestrator: the full pipeline for one user —
- *   discovery → DETERMINISTIC intent gate → SEMANTIC niche gate → composition
- *   agent → persist.
- * Code decides selection at every step; the model only researches/drafts/declines.
+ *   discovery → DETERMINISTIC intent gate → SEMANTIC niche gate → batched intent
+ *   read → persist.
+ * Code decides selection at every step; the model only annotates what code chose.
  *
  * The monthly budget is checked BEFORE any paid twitterapi.io call (same spirit
- * as the niche gate running before paid work in the macro-moment pipeline). A
- * fired signal consumes budget; a model decline is recorded (for dedup + tuning)
- * but does NOT. Never sends — surfaces approval-only drafts.
+ * as the niche gate running before paid work in the macro-moment pipeline).
+ * Never sends, never drafts a reply — it surfaces prospects and what they asked for.
+ *
+ * THE TARGET IS SIX. A scan that returns nothing is worse than a scan that
+ * returns six imperfect leads: the user can skip a weak lead in a second, but
+ * they cannot act on an empty screen, and "no signals" is indistinguishable from
+ * "this product is broken". So both gates below are RANKERS WITH FLOORS rather
+ * than cliffs — everything clearing the threshold passes, and if that leaves
+ * fewer than six, the next-best candidates backfill. Supply, not the gates, is
+ * what limits a scan now. Exclusions are the one hard kill that never backfills:
+ * those are the user's own "this is not my buyer" and outrank the target.
  */
 import { config } from "../config.js";
 import { query, queryOne } from "../db/pool.js";
 import { entitlementsFor } from "../billing/entitlements.js";
 import { getIcp, icpComplete } from "./icp.js";
-import { discoverCandidates } from "./discovery.js";
+import { discoverCandidates, type DiscoveryTrace } from "./discovery.js";
 import { intentScore, type IntentComponents } from "./scoring.js";
 import { applyNicheGate } from "./niche-gate.js";
-import { composeOutreach } from "./radar-agent.js";
+import { readIntents } from "./intent-read.js";
 import { effectiveThresholds } from "./calibration.js";
 
 /**
- * Hard cap on composition (LLM) calls per scan, independent of the monthly budget.
- * 5 (was 8): a scan that returns five genuinely in-market prospects each with a
- * drafted reply is already more than most people will action in one sitting, and
- * each composition is a bounded agent loop against paid search — so the per-scan
- * ceiling is the main cost lever. Previous leads persist across scans, so a
- * smaller batch costs the user nothing in coverage.
+ * Leads a scan aims to surface. Six is the product promise, not a ceiling
+ * discovered by tuning: it is enough to give the user a real choice in one
+ * sitting and small enough that they actually work through it.
  */
-const MAX_COMPOSE_PER_SCAN = 5;
+export const TARGET_SIGNALS_PER_SCAN = 6;
+
+/**
+ * Supply target handed to discovery. Several times the surfacing target on
+ * purpose — both gates subtract, so asking search for exactly six reliably ends
+ * with two.
+ */
+const CANDIDATE_TARGET = TARGET_SIGNALS_PER_SCAN * 5;
 
 export type ScanStatus = "ok" | "no_icp" | "unavailable" | "budget_exhausted";
 
@@ -39,23 +51,26 @@ export type ScanStatus = "ok" | "no_icp" | "unavailable" | "budget_exhausted";
 export interface ScanStages {
   /** Tweets returned by discovery after dedup/pre-filtering. */
   candidates: number;
-  /** Cleared the deterministic intent gate. */
+  /** Cleared the deterministic intent gate on its own merits. */
   intentPassed: number;
-  /** Also cleared the semantic niche gate. */
+  /** Reached the niche gate, including backfill below the intent threshold. */
+  intentConsidered: number;
+  /** Cleared the semantic niche gate, including backfill. */
   nichePassed: number;
-  /** Handed to the composition agent (bounded by budget + MAX_COMPOSE_PER_SCAN). */
-  composed: number;
-  /** Composition calls that errored out (model provider down/out of credit). */
-  composeFailed: number;
-  /** False when the ICP has no embedding, so the niche gate rejected everything. */
+  /** Actually surfaced this scan. */
+  surfaced: number;
+  /** How many leads had to be backfilled past a threshold to reach the target. */
+  backfilled: number;
+  /** False when the ICP has no embedding, so the niche gate can't run. */
   hasIcpVector: boolean;
+  /** What discovery had to do to find supply. */
+  discovery: DiscoveryTrace;
 }
 
 export interface ScanResult {
   status: ScanStatus;
   surfaced: number;
-  declined: number;
-  remaining: number;
+  remaining: number | null;
   stages: ScanStages;
 }
 
@@ -71,18 +86,21 @@ export async function monthlySurfacedCount(userId: string): Promise<number> {
 
 async function persistSignal(
   userId: string,
-  tweet: { id: string; text: string; url: string | null; authorHandle: string; authorName: string; authorFollowers: number; createdAt: Date },
+  tweet: {
+    id: string;
+    text: string;
+    url: string | null;
+    authorHandle: string;
+    authorName: string;
+    authorFollowers: number;
+    createdAt: Date;
+  },
   fields: {
     score: number;
     components: IntentComponents;
     intentType: string;
     nicheSimilarity: number;
-    verdict: "surfaced" | "rejected";
-    verdictReason: string | null;
-    why: string | null;
-    draftReply: string | null;
-    receiptRef: string | null;
-    agentSteps: unknown;
+    why: string;
   },
 ): Promise<void> {
   await query(
@@ -90,7 +108,7 @@ async function persistSignal(
        (user_id, profile_id, tweet_id, author_handle, author_name, author_followers, content, url,
         score, components, intent_type, niche_similarity, why, draft_reply, receipt_ref, agent_steps,
         verdict, verdict_reason, posted_at)
-     VALUES ($1,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+     VALUES ($1,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NULL,NULL,'[]','surfaced',NULL,$13)
      ON CONFLICT (user_id, tweet_id) DO NOTHING`,
     [
       userId,
@@ -105,15 +123,12 @@ async function persistSignal(
       fields.intentType,
       fields.nicheSimilarity,
       fields.why,
-      fields.draftReply,
-      fields.receiptRef,
-      JSON.stringify(fields.agentSteps ?? []),
-      fields.verdict,
-      fields.verdictReason,
       tweet.createdAt.toISOString(),
     ],
   );
 }
+
+const EMPTY_DISCOVERY: DiscoveryTrace = { vocabulary: [], queriesRun: 0, rungs: [], llmQueries: false };
 
 /**
  * Run one full scan for a user. Safe to call on-demand (web "Scan now") or from
@@ -123,15 +138,16 @@ export async function scanForUser(userId: string): Promise<ScanResult> {
   const stages: ScanStages = {
     candidates: 0,
     intentPassed: 0,
+    intentConsidered: 0,
     nichePassed: 0,
-    composed: 0,
-    composeFailed: 0,
+    surfaced: 0,
+    backfilled: 0,
     hasIcpVector: true,
+    discovery: EMPTY_DISCOVERY,
   };
-  const empty = (status: ScanStatus, remaining = 0): ScanResult => ({
+  const empty = (status: ScanStatus, remaining: number | null = 0): ScanResult => ({
     status,
     surfaced: 0,
-    declined: 0,
     remaining,
     stages,
   });
@@ -141,102 +157,114 @@ export async function scanForUser(userId: string): Promise<ScanResult> {
   const icp = await getIcp(userId);
   if (!icpComplete(icp) || !icp) return empty("no_icp");
 
-  // Budget FIRST, before any paid search. Per-plan monthly cap (Growth = 25,
-  // Scale = unlimited). A null cap means no monthly ceiling — the scan is then
-  // bounded only by MAX_COMPOSE_PER_SCAN and candidate supply.
+  // Budget FIRST, before any paid search. Per-plan monthly cap. A null cap means
+  // no monthly ceiling — the scan is then bounded only by the per-scan target.
   const cap = (await entitlementsFor(userId)).buyerIntentsPerMonth;
   const used = await monthlySurfacedCount(userId);
-  let remaining = cap === null ? MAX_COMPOSE_PER_SCAN : cap - used;
-  if (cap !== null && remaining <= 0) return empty("budget_exhausted", 0);
+  const headroom = cap === null ? TARGET_SIGNALS_PER_SCAN : cap - used;
+  if (cap !== null && headroom <= 0) return empty("budget_exhausted", 0);
+  // Never surface more than the target in one scan, and never more than the
+  // month has left.
+  const targetThisScan = Math.min(TARGET_SIGNALS_PER_SCAN, headroom);
 
   // Per-user calibrated gates (falls back to config defaults) — recalibrated
   // from the user's verdicts (buyer/calibration.ts).
   const thresholds = await effectiveThresholds(userId);
 
-  const candidates = await discoverCandidates(userId, icp);
-  stages.candidates = candidates.length;
-  if (candidates.length === 0) return { status: "ok", surfaced: 0, declined: 0, remaining, stages };
+  const discovery = await discoverCandidates(userId, icp, CANDIDATE_TARGET);
+  stages.discovery = discovery.trace;
+  stages.candidates = discovery.candidates.length;
+  if (discovery.candidates.length === 0) {
+    return { status: "ok", surfaced: 0, remaining: remainingAfter(cap, used, 0), stages };
+  }
 
-  // DETERMINISTIC intent gate.
+  // ── DETERMINISTIC intent gate, as a ranker with a floor. ──────────────────
   const ctx = {
     competitorTerms: icp.competitor_terms,
     painSignals: icp.pain_signals,
     exclusions: icp.exclusions,
     lookbackHours: config.BUYER_LOOKBACK_HOURS,
   };
-  const scored = candidates
-    .map((c) => ({ c, ...intentScore({ text: c.tweet.text, authorFollowers: c.tweet.authorFollowers, replyCount: c.tweet.replyCount, createdAt: c.tweet.createdAt, provenance: c.provenance }, ctx) }))
-    .filter((s) => s.score >= thresholds.intent)
+  const scored = discovery.candidates
+    .map((c) => ({
+      c,
+      ...intentScore(
+        {
+          text: c.tweet.text,
+          authorFollowers: c.tweet.authorFollowers,
+          replyCount: c.tweet.replyCount,
+          createdAt: c.tweet.createdAt,
+          provenance: c.provenance,
+        },
+        ctx,
+      ),
+    }))
+    // An exclusion hit is the user's own "not my buyer". It is the one thing the
+    // target never overrides, so it's dropped here and can't be backfilled.
+    .filter((s) => !s.components.excluded)
     .sort((a, b) => b.score - a.score);
-  stages.intentPassed = scored.length;
-  if (scored.length === 0) return { status: "ok", surfaced: 0, declined: 0, remaining, stages };
 
-  // SEMANTIC niche gate (needs an embedding call per candidate — only on intent-passers).
+  const clearedIntent = scored.filter((s) => s.score >= thresholds.intent);
+  stages.intentPassed = clearedIntent.length;
+  // Backfill toward a niche-gate input several times the surfacing target: the
+  // niche gate is about to subtract again.
+  const nicheInputTarget = Math.min(scored.length, Math.max(targetThisScan * 3, clearedIntent.length));
+  const considered = scored.slice(0, Math.max(clearedIntent.length, nicheInputTarget));
+  stages.intentConsidered = considered.length;
+  if (considered.length === 0) {
+    return { status: "ok", surfaced: 0, remaining: remainingAfter(cap, used, 0), stages };
+  }
+
+  // ── SEMANTIC niche gate (one embedding call per considered candidate). ────
   const niche = await applyNicheGate(
     userId,
-    scored.map((s) => s.c),
-    thresholds.niche,
+    considered.map((s) => s.c),
+    { threshold: thresholds.niche, minKeep: targetThisScan },
   );
-  const gated = niche.passed;
-  stages.nichePassed = gated.length;
+  stages.nichePassed = niche.passed.length;
   stages.hasIcpVector = niche.hasVector;
-  const scoreById = new Map(scored.map((s) => [s.c.tweet.id, s]));
+  if (niche.passed.length === 0) {
+    return { status: "ok", surfaced: 0, remaining: remainingAfter(cap, used, 0), stages };
+  }
+
+  const scoreById = new Map(considered.map((s) => [s.c.tweet.id, s]));
+
+  // Best-first by intent score, then take exactly what the target allows. The
+  // annotation call below is one request for the whole batch, so this bounds it.
+  const chosen = niche.passed
+    .slice()
+    .sort((a, b) => (scoreById.get(b.tweet.id)?.score ?? 0) - (scoreById.get(a.tweet.id)?.score ?? 0))
+    .slice(0, targetThisScan);
+
+  const reads = await readIntents(userId, icp, chosen);
 
   let surfaced = 0;
-  let declined = 0;
-  let composed = 0;
-  let composeFailed = 0;
-  for (const g of gated) {
-    if (surfaced >= remaining || composed >= MAX_COMPOSE_PER_SCAN) break;
+  let backfilled = 0;
+  for (const g of chosen) {
     const s = scoreById.get(g.tweet.id);
     if (!s) continue;
-    composed++;
-    // A composition failure is one candidate lost, not the scan. It used to
-    // propagate and abort the whole run — so a single provider hiccup (an expired
-    // key, a 402) threw away every candidate already paid for and surfaced nothing.
-    // NOT persisted: an un-composed candidate must stay eligible for the next scan.
-    let outreach;
+    const read = reads.get(g.tweet.id);
+    if (s.score < thresholds.intent || g.nicheSimilarity < 1 - thresholds.niche) backfilled++;
     try {
-      outreach = await composeOutreach(userId, g);
-    } catch (err) {
-      console.error(`buyer outreach composition failed for tweet ${g.tweet.id}`, err);
-      composeFailed++;
-      continue;
-    }
-    if (outreach.fires) {
       await persistSignal(userId, g.tweet, {
         score: s.score,
         components: s.components,
-        intentType: outreach.intentType,
+        intentType: read?.intentType ?? g.provenance,
         nicheSimilarity: g.nicheSimilarity,
-        verdict: "surfaced",
-        verdictReason: null,
-        why: outreach.why,
-        draftReply: outreach.draftReply,
-        receiptRef: outreach.receiptRef,
-        agentSteps: outreach.steps,
+        why: read?.why ?? "",
       });
       surfaced++;
-    } else {
-      // Recorded so it's deduped and feeds tuning; does NOT burn budget.
-      await persistSignal(userId, g.tweet, {
-        score: s.score,
-        components: s.components,
-        intentType: outreach.intentType,
-        nicheSimilarity: g.nicheSimilarity,
-        verdict: "rejected",
-        verdictReason: "model declined (not genuine intent)",
-        why: null,
-        draftReply: null,
-        receiptRef: null,
-        agentSteps: outreach.steps,
-      });
-      declined++;
+    } catch (err) {
+      // One bad row must not lose the other five.
+      console.error(`buyer signal persist failed for tweet ${g.tweet.id}`, err);
     }
   }
 
-  stages.composed = composed;
-  stages.composeFailed = composeFailed;
-  remaining = cap === null ? MAX_COMPOSE_PER_SCAN : Math.max(0, cap - (used + surfaced));
-  return { status: "ok", surfaced, declined, remaining, stages };
+  stages.surfaced = surfaced;
+  stages.backfilled = backfilled;
+  return { status: "ok", surfaced, remaining: remainingAfter(cap, used, surfaced), stages };
+}
+
+function remainingAfter(cap: number | null, used: number, surfaced: number): number | null {
+  return cap === null ? null : Math.max(0, cap - (used + surfaced));
 }

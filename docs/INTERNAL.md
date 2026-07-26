@@ -1311,107 +1311,127 @@ request origin, so the authorized redirect URI in Google Cloud must include
 
 ---
 
-## 3j. Buyer Radar (2026-07-22)
+## 3j. Buyer Radar (2026-07-22, reworked 2026-07-26)
 
 Finds people on X expressing purchase intent that maps to what the user sells,
-scores that intent **deterministically**, gates it **semantically** against the
-user's domain, then hands over a reply drafted in the user's voice for approval.
-It is the engagement/trend machinery specialised for buying intent. It **never
-auto-sends** (approval-only, a doctrine + ToS/spam guard) and code — not the
-model — decides who is a buyer.
+scores that intent **deterministically**, ranks it **semantically** against the
+user's domain, and surfaces the prospects with a one-line read of what each one
+actually wants. It **never auto-sends**, and code — not the model — decides who
+is a buyer.
+
+**It no longer drafts replies.** Up to 2026-07-26 each lead came with a reply
+written in the user's voice, produced by a per-candidate bounded agent loop that
+could also return `fires:false`. Both halves were removed:
+
+* The **draft reply** is gone because the useful output of a radar is the lead,
+  and a reply the user has to read, judge and usually rewrite is friction in
+  front of it. The card now shows the intent type, the tweet, the read, and
+  "Reply on X".
+* The **model's veto is gone**, which matters more. `fires:false` made the model
+  the last gate, so an empty radar was usually the model declining everything
+  rather than search finding nothing — indistinguishable from the outside, and it
+  is what "the radar finds nobody" actually was. Annotation is now one cheap
+  BATCHED call (`buyer/intent-read.ts` + `buyer-intent-read.v1`) that returns a
+  `why` and a `confidence` used for ORDERING ONLY. It cannot drop a candidate, and
+  anything it fails to annotate falls back to a deterministic line built from the
+  scoring components (`fallbackWhy`), so a model outage costs phrasing, not leads.
+
+**Six leads a scan is the contract.** `TARGET_SIGNALS_PER_SCAN = 6`. A scan that
+returns nothing is worse than one returning six imperfect leads: a weak lead is a
+one-second skip, an empty screen is unactionable and reads as a broken product.
+So both gates became **rankers with floors**:
+
+* Intent: everything clearing `thresholds.intent` passes; if that is fewer than
+  the target, the next-best by score backfill.
+* Niche: everything under `thresholds.niche` passes, then nearest-under-
+  `BUYER_NICHE_CEILING`, then simply nearest, until `minKeep` is met.
+* **Exclusions never backfill.** An `exclusions` hit is the user's own "this is
+  not my buyer" and outranks the target — dropped before ranking, permanently.
+
+`stages.backfilled` counts how many leads had to reach past a threshold, and
+`stretchNote` turns that into an honest line under the results ("2 of these are
+stretches — a quiet round, so I widened the net"). Supply, not the gates, is what
+limits a scan now.
+
+**Keyword research, not query restatement (`buyer-queries.v2`).** v1 asked
+straight for queries and got back the product one-liner in search syntax. That is
+the root cause of the empty radar: a founder writes "AI ghostwriter for B2B
+founders" and roughly nobody on X types the seller's own category name. Buyers
+describe the **job** ("need someone to write my linkedin posts"), the **role**
+("ghostwriter", "content person") or the **pain** ("no time to post") — three
+vocabularies the seller's phrasing never contains. v2 therefore does an explicit
+expansion step FIRST (`vocabulary`: job / role / pain / jargon terms) and builds
+queries from that, including two deliberately wide ones. The vocabulary is
+returned to the caller and reused by the ladder's last rung.
+`buyerVocabulary()` is the deterministic fallback and draws on the buyer
+description as well as the product line — an ICP with only "who buys it" filled in
+used to produce zero queries. The user's own `pain_signals` are placed FIRST in
+the vocabulary because they are the only terms already in the buyer's voice, and
+appending them let a wordy one-liner crowd them out of the length cap.
+
+**THE query invariant still holds: never AND a run of bare words.** X requires
+every unquoted word to appear in the same tweet, so
+`("looking for" OR "recommend") AI ghostwriter that turns founders` matches
+nobody, ever. Vocabulary goes in as an OR-group (`orGroup`), and a pain phrasing
+stands alone as a quoted phrase. `tooNarrow` enforces this on LLM-distilled
+queries before they cost a paid search; `discovery.test.ts` guards the fallback.
+
+**The widening ladder (`buyer/discovery.ts`, `LADDER`).** Everything downstream
+subtracts, so discovery's job is supply. Rather than one pass plus one retry, it
+climbs four rungs, each loosening exactly ONE constraint, stopping as soon as the
+candidate target (`TARGET_SIGNALS_PER_SCAN × 5`) is met — a healthy niche never
+pays for rungs 2-4:
+
+| rung | loosens |
+|---|---|
+| `in-window` | nothing — all queries, `BUYER_LOOKBACK_HOURS` |
+| `widened` | lookback × `BUYER_WIDEN_FACTOR`, strongest 4 queries |
+| `cooldown-off` | ignores the repeat-author cooldown |
+| `bare-vocabulary` | drops the intent phrase entirely, searches vocabulary alone |
+
+`DiscoveryTrace` (`vocabulary`, `queriesRun`, `rungs`, `llmQueries`) rides out on
+`stages.discovery`, so an empty radar can name the rung it died on and `emptyReason`
+can tell the user **which words were actually searched** — the single most useful
+thing when they say "it found nobody".
+
+**The pipeline (`buyer/scan.ts` → `scanForUser`).** Budget first (before any paid
+call) → discovery → deterministic intent gate → semantic niche gate → one batched
+intent read → persist. Steps 3 and 4 are unchanged in substance:
+
+3. **Deterministic intent gate (`buyer/scoring.ts#intentScore`).** Pure,
+   unit-tested. Components: marker strength (curated lexicon + the user's
+   `pain_signals`), query provenance, question presence, competitor mention, steep
+   recency decay, a follower **reachability band** (NOT monotonic — a mid-size
+   account beats an egg and a megaphone), a **crowding penalty** (the inverse of
+   buzz: many existing replies = a lost race), and the exclusion hard-kill.
+4. **Semantic niche gate (`buyer/niche-gate.ts`).** Candidate tweets batch-
+   embedded and cosine-compared to `icp_embedding`. The ICP vector is fetched ONCE
+   and distance computed in-process — pgvector's `<=>` per candidate was a DB
+   round-trip per tweet for what is arithmetic. Fails closed only when the ICP has
+   no vector at all (`stages.hasIcpVector`, so the UI says so rather than showing a
+   mystery-empty radar).
 
 **ICP, distinct from the brand profile.** `brand_profiles` is "who I am / who
 reads me"; the buyer is "who is in-market for my thing". `icp_profiles`
 (migration `0022`, one row/user, `buyer/icp.ts`) stores `product_oneliner`,
 `buyer_description`, `pain_signals[]`, `competitor_terms[]`, `exclusions[]`, and
-an `icp_embedding` (the niche-gate vector, recomputed on every save). Captured
-just-in-time via a minimal web intake (3-4 fields, pre-filled from
-`brand_profiles`), editable anytime.
+an `icp_embedding` (recomputed on every save). Captured just-in-time via a minimal
+web intake, pre-filled from `brand_profiles`, editable anytime.
 
-**The pipeline (`buyer/scan.ts` → `scanForUser`).**
-1. **Budget first.** `monthlySurfacedCount` vs `BUYER_MONTHLY_SIGNAL_CAP` is
-   checked BEFORE any paid call — a user at their cap never triggers a search.
-2. **Discovery (`buyer/discovery.ts`).** The ICP is distilled into intent
-   queries by `buyer-queries.v1` (LLM) with a deterministic fallback composing
-   `pain × product × competitor` across four buckets (explicit_ask,
-   competitor_dissatisfaction, pain, trigger_event). Queries run through
-   `searchTweets` (advanced_search, `since_time` recency, `-filter:replies`,
-   page cap), deduped against `buyer_signals` (tweet id + author cooldown), the
-   user's own tweets dropped. If a pass finds nothing at all, the strongest three
-   queries retry once over `BUYER_LOOKBACK_HOURS × BUYER_WIDEN_FACTOR` — an empty
-   radar is worse than an old candidate that still has to clear both gates.
-
-   **THE query invariant: never AND a run of bare words.** X requires every
-   unquoted word to appear in the same tweet, so
-   `("looking for" OR "recommend") AI ghostwriter that turns founders` matches
-   nobody, ever. The category must be an OR-group (`categoryGroup` → e.g.
-   `("landing page" OR copywriting OR landing)`), and a pain phrasing stands
-   alone as a quoted phrase rather than having the category AND-ed onto it.
-   `tooNarrow` enforces this on LLM-distilled queries before they cost a paid
-   search; `discovery.test.ts` guards the fallback. This was the bug that made
-   the radar return zero prospects for every user (fixed 2026-07-23): measured
-   live, the bare-phrase form returned 0 at every lookback window while the
-   OR-group form returned a full page inside 72h. The funnel on one real ICP went
-   from `0 → 0 → 0` to `91 candidates → 51 intent → 18 niche`.
-3. **Deterministic intent gate (`buyer/scoring.ts#intentScore`).** Pure,
-   unit-tested. Components: marker strength (a curated lexicon + the user's
-   `pain_signals`), query provenance, question presence, competitor mention,
-   steep recency decay, a follower **reachability band** (NOT monotonic — a
-   mid-size account beats an egg and a megaphone), a **crowding penalty** (the
-   inverse of buzz: many existing replies = a lost race), and an **exclusion
-   hard-kill** (any `exclusions` hit → score 0). Compared to `INTENT_THRESHOLD`.
-4. **Semantic niche gate (`buyer/niche-gate.ts`).** Candidate tweet embedded and
-   cosine-compared to `icp_embedding`; rejects `dist >= BUYER_NICHE_THRESHOLD`.
-   Only candidates clearing BOTH gates reach the agent. Fail-closed if the ICP
-   has no vector (reported as `stages.hasIcpVector` so the UI can say so rather
-   than showing a mystery-empty radar). The ICP vector is fetched ONCE and the
-   distance computed in-process — pgvector's `<=>` per candidate was a DB
-   round-trip per tweet for what is arithmetic. `0.55` is measured, not
-   conservative-by-default: on live data it passed ~⅓ of intent-clearing
-   candidates and was what killed the off-domain crypto/event noise.
-5. **Composition agent (`buyer/radar-agent.ts` + `buyer-outreach.v1`).** Bounded
-   `runToolLoop` (`MAX_BUYER_TOOL_CALLS`), tools in `buyer/tools.ts` (no imports):
-   `get_icp`, `get_voice_profile`, `get_positions`, `get_content_pillars`,
-   `search_memory` (the moat — lead with the user's own prior take, not a pitch),
-   `get_thread_context` (degradable enrichment). Output: `fires`, `why` (Yoinky's
-   casual chatter, `casualize`d), `draft_reply` (the public reply,
-   `POST_WRITING_RULES` + `enforceStyle`, never casualized). `fires:false` is a
-   suppression escape hatch (sarcasm/rhetorical/offering-not-seeking) — recorded
-   as `rejected`, costs nothing, does NOT burn the budget. Single-shot fallback
-   on loop error (same posture as `consistency/check.ts`).
+**Plan cap: Scale is 300/month, not unlimited.** Every lead is a paid
+twitterapi.io search plus an embedding, billed **per user** rather than shared
+across the fleet like trends — so "unlimited" was a promise the unit economics
+could not keep, and the radar showed an `∞` that nothing enforced. 300 ≈ 50 scans
+of six, far past what anyone works through, and it is a real number the screen can
+count down. Growth stays 25. Enforced in `entitlementsFor().buyerIntentsPerMonth`
+and asserted in `entitlements.test.ts`.
 
 **Persistence + verdicts.** `buyer_signals` doubles as the dedup ledger and the
-tuning surface: `verdict` ∈ `surfaced|replied|skipped|not_a_fit|rejected`,
-`components`/`agent_steps` stored inspectable. A fired signal consumes monthly
-budget; a decline does not. The **author cooldown only counts authors actually
-surfaced** — a `rejected` row is a model decline the user never saw, and blocking
-that author for three weeks shrank the candidate pool with every scan. A
-composition that *errors* (provider down/out of credit) is not persisted at all,
-so the candidate stays eligible next scan; it also no longer aborts the run, which
-used to throw away every candidate already paid for.
-
-**`ScanResult.stages` — why an empty radar is now legible.** `candidates →
-intentPassed → nichePassed → composed / composeFailed` plus `hasIcpVector`,
-logged on every scan and turned into one plain sentence by `emptyReason`
-(`web/buyers-radar.ts`). Without it, "0 signals" is indistinguishable from "the
-pipeline is broken" — which is exactly how a dead query set stayed invisible. The
-causes need different things from the user (widen the category / sharpen the
-buyer / nothing, it was a quiet week), so the UI says which one it was.
-
-**Delivery is the web app (v1, pull-only).** `web/buyers-radar.ts` (read model
-`listBuyerSignals`, `buyerRadarStatus`, ICP get/save, `scanBuyerSignals`,
-`setBuyerSignalVerdict`) → routes `/api/buyers-radar/{scan,icp,verdict}` →
-`components/buyers-radar.tsx` (ICP intake, "Scan now", per-signal reply +
-open/copy/skip/not-a-fit). A scan is genuinely slow (paced X searches →
-embeddings → up to eight bounded composition loops, a minute or two), so
-`ScanningRadar` replaces the empty state with a centred radar sweep whose
-captions track the real pipeline stages at roughly their real timings — the wait
-reads as work rather than a hang. CSS-only motion, `prefers-reduced-motion`
-respected. The proactive recurring path (`jobs/buyer-radar.ts`,
-queue `buyer.radar`, surfacing type `buyer_signal`) ships **DARK**
-(`BUYER_RADAR_PROACTIVE=false`) — enable per rollout after observing search-budget
-behavior in prod (twitterapi.io has hit `402 Credits` before, and buyer search is
-per-user O(users), not a shared pool like trends/viral).
+tuning surface: `verdict` ∈ `surfaced|replied|skipped|not_a_fit`,
+`components` stored inspectable. `draft_reply` is now always NULL (the column
+stays — dropping it would lose history). The **author cooldown only counts authors
+actually surfaced**, and rung 3 ignores it entirely when supply is short. A failed
+persist loses one lead, not the batch.
 
 **Recalibration (`buyer/calibration.ts`, migration `0023`).** Verdicts feed a
 per-user override of the two gates, re-derived deterministically (mirrors
@@ -1494,7 +1514,10 @@ add its own budget gate first.
 select → moderate the seed (`assertClean`) → compose via `generateDraft` (feed
 voice, metered, voice+pillars+reach) → persist an `automation_runs` row → deliver.
 The seed leads with the user's nearest position so `generateDraft`'s memory
-retrieval hits (it declines on empty). A `brief` on a **preset** source is
+retrieval hits. (It used to DECLINE on an empty retrieval, which made that seed
+construction load-bearing; since 2026-07-26 it falls back to live research instead
+— see §3o — so a cold retrieval degrades rather than skipping the run.) A `brief`
+on a **preset** source is
 appended as "Extra guidance from me"; on a `custom` source it is the seed itself. Every gating transition is an atomic claim
 (`store.claimRun`: `UPDATE … WHERE id=$1 AND status=$expected RETURNING`), so a
 duplicate tick / double tap / redelivered job can't double-draft/DM/post.
@@ -1566,6 +1589,165 @@ Additive only — no new tables, no migration. The standalone `/app/diagnosis` a
 `/app/plan` routes still exist but Growth is the surfaced home for both.
 
 ---
+
+## 3o. Compose research + Agent Mode interview + post media (2026-07-26)
+
+Three surfaces fixed in one pass. Each had the same underlying shape: the product
+knew how to do the work but refused, stalled, or asked the wrong question.
+
+### Compose could not look outward, and said so
+
+`generateDraft` had two hard refusals: no voice profile → "run /voice build once
+you have ~50 memories", and no retrieval hits → "capture some thinking on it
+first". Between them, the most obvious request you can make of the product — "write
+me a post about \<thing in the news\>" — was answered with a maintenance
+instruction, because by definition the user hadn't said anything about it yet.
+
+* **No voice profile is no longer a refusal.** Falls back to `NO_VOICE_TRAITS`
+  (write from their own material, avoid generic phrasing) — which is exactly what
+  `drafting/angle-draft.ts` has always done, so the two paths now agree instead of
+  contradicting each other. The caveat rides out on the draft's `note`.
+* **A cold retrieval triggers live research** (`trends/research.ts#researchTopic`):
+  live X search via twitterapi.io (the primary source — this is a product about X),
+  the cached `trends` table, and the news/web provider chain, all best-effort and
+  in parallel. The draft is then grounded in that plus the user's stated positions,
+  labelled by `kind` so the prompt can tell a prior thought from a live tweet.
+* **The only refusal left** is research empty AND no positions — genuinely no
+  material, and saying so is honest rather than evasive.
+
+**Two new chat tools** (`telegram/chat-tools.ts`), which is what was actually
+missing — the brain had no way to look outward at all:
+
+| tool | what it does |
+|---|---|
+| `find_trends {topic}` | live X + news for what's being said right now. The counterpart to `search_memory`: that one is eyes on the user, this is eyes on the world. |
+| `offer_angles {topic}` | 2-3 distinct takes THEY could credibly make, grounded in research + their positions, each with a hook (`drafting/angles.ts`, reusing `generate-angles.v1`). |
+
+`converse.v3` gained an explicit rule: **never answer "I don't have anything from
+you on that" and stop.** Having nothing is the start of the job — research, offer
+angles, then draft.
+
+### Compose stranding
+
+Two distinct causes, both fixed:
+
+* **Nothing on screen between steps.** `activity` rows only exist once a `stage`
+  event arrives, and each goes inactive when the next starts — so between the last
+  completed step and the reply landing, nothing moved. There is now a typing bubble
+  whose lifetime is the **whole turn** (`busy && !activity.some(a => a.active)`) —
+  the one indicator that isn't per-step.
+* **Turns that ended silently.** Under enforced structured output the model
+  frequently returns `reply: ""`; if no tool spoke either, the transcript never
+  gained a line. `runWebChatTurnStreaming` now tracks whether *anything* reached
+  the user and emits a closing message if not, and wraps the turn so a mid-turn
+  throw emits `error` (which closes the activity list) instead of leaving a
+  spinning row forever.
+
+Drafting's internal stages are also forwarded now: `ToolProgress.onDraftStage`
+threads through `chatToolExecutor` → `executeChatTool` → `runDraft` →
+`generateDraft`, so a 40-second draft shows six specific steps (including the new
+`research` stage) rather than one motionless "Writing a post".
+
+### Agent Mode: an interview, not a form with pills
+
+The old surface rendered three preset source pills, two example chips and three
+dropdowns **before the user had said anything**. That framing was the bug: it made
+people choose from the product's vocabulary instead of being asked what they
+wanted posted, so most agents were built from one pill and one sentence and knew
+nothing about the user's angles or hooks.
+
+`automations/interview.ts` + `automation-interview.v1` replace it with a
+conversation. **Code owns the structure, the model owns the words:**
+
+* `SLOTS` is the ask order, and it is deliberate: `purpose` first (it shapes every
+  later option), then the three that decide whether the writing is any good
+  (`postTypes`, `angles`, `hooks`), then `source`, `cadence`, `delivery`. `name` is
+  **never asked** — it's inferred, because being interviewed about a label wastes a
+  turn.
+* The model does exactly two things per turn: extract what's been said into slots,
+  and phrase the ONE question code selected. It cannot decide the interview is
+  over and cannot invent a slot — otherwise a model that likes wrapping up builds
+  half-specified agents, the exact failure the form at least didn't have.
+* **Stateless.** The client posts the whole transcript each turn and the spec is
+  re-derived from scratch, so no interview table, nothing to sweep, and a late
+  correction ("actually, weekly") lands for free where incremental state would
+  have needed an edit path.
+* **Suggestions belong to the question.** `options[]` is generated per question
+  from the user's own niche/pillars and rendered as chips — so they exist *after*
+  Yoinky asks something, never as standing UI furniture. That is the distinction
+  from the pills that were removed.
+* Model failure falls back to hand-written questions per slot, so setup never
+  dead-ends.
+
+`specToAutomationInput` folds the three writing slots into the **brief**, which is
+what `automations/run.ts` actually hands to `generateDraft` — this is the whole
+point of the interview. `angles` double as `pillar_scope` (a hard "stay within"
+constraint on the seed). `BRIEF_MAX` rose 1000 → 2000: the brief is now a
+structured four-part instruction, and truncating it dropped the hook rules.
+
+**It runs itself once on completion.** `runAutomationInterviewStreaming` builds the
+agent and immediately fires one manual run, streaming the pipeline stages. An agent
+you have to remember to go and press "run" on is a config screen, not an agent —
+and the first run surfaces a real draft while the user is still on the page, so a
+misread brief is caught now rather than at 9am tomorrow. A failed first run is
+**not** a setup failure and is reported as such.
+
+### Media on scheduled posts (migration `0029`)
+
+Images, GIFs and video on scheduled posts, end to end.
+
+**Storage: Vercel Blob, public access.** The web route holds
+`BLOB_READ_WRITE_TOKEN` and is the only place that does; it `put()`s the file and
+stages a `scheduled_post_media` row holding the URL. Postgres never carries bytes.
+**Public, not private, deliberately**: the publisher runs on Railway, and a public
+URL is a plain `fetch` with no storage credential and no `@vercel/blob` dependency
+there — which is what makes the path verifiable end to end. Pathnames carry a
+random suffix, and the content is media the user is scheduling to post publicly
+within hours.
+
+**Staged, then attached.** Uploads happen while the user is still typing, so the
+post row doesn't exist yet: rows with `scheduled_post_id IS NULL` are staged, and
+`schedulePost` binds them (`attachMediaToPost`, ownership in the WHERE clause)
+**before** queueing the job, rolling the post back if the count doesn't match.
+
+**X's rules are enforced in code, not trusted from the UI** (`validateMediaSet`,
+unit-tested): up to 4 images, OR one video, OR one GIF — never mixed. Checked at
+schedule time (`validateStagedSet`) so a bad set is refused immediately rather
+than at publish time.
+
+**Upload path (`social/media.ts`).** v2 media endpoints, which accept the same
+OAuth 2.0 user-context token the post call already uses — the older v1.1 upload
+host requires OAuth 1.0a, which this codebase has no signing path for. Images go
+in one request; video/GIF go INIT → APPEND (4MB chunks) → FINALIZE → **poll until
+transcoding succeeds**, because posting before it finishes fails. `external_media_id`
+is remembered so a retry doesn't re-upload bytes. Media failure fails the whole
+post rather than publishing the text alone — someone who attached a chart meant the
+chart to be part of the point.
+
+**`media.write` was added to the X OAuth scope**, so tokens minted before
+2026-07-26 can post text but not media. `hasMediaScope` checks the stored
+`post_scopes` and the composer says "reconnect your X account" **at attach time** —
+the alternative is finding out at the scheduled time.
+
+**LinkedIn media is deliberately not built.** Its media flow is a different
+(versioned REST) API from the `/v2/ugcPosts` call `publish.ts` makes, and the web
+scheduler only queues X posts. It fails with a plain reason rather than being
+half-implemented.
+
+### Links in scheduled posts
+
+Already refused server-side (`containsLink`, unchanged). The composer now states
+the rule before it's broken and flags it live as you type, and disables Schedule —
+finding out only after pressing the button was a bad way to learn it. The regex is
+duplicated character-identical to the server's so the two cannot disagree.
+
+### Model routing for local development
+
+`MODEL_CHAT` is the single model switch. Production is `x-ai/grok-4.5` on **both**
+Vercel and Railway. `packages/backend/.env` (local, gitignored) overrides it to
+`x-ai/grok-4.1-fast` so development doesn't bill frontier prices. Same vendor on
+purpose — a cheap model from another family changes the JSON behaviour every prompt
+here relies on, which would let bugs through that only appear on the real one.
 
 ## 3n. Agent SDK runtime (2026-07-24, IN PROGRESS — Phase 0/1)
 

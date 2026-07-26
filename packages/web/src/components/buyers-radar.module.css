@@ -475,27 +475,19 @@
   margin-bottom: 12px;
 }
 
-.draftBox {
-  background: var(--chat-bg);
-  border: 0.5px solid var(--accent-border);
-  border-radius: var(--radius-md, 12px);
-  padding: 12px 14px;
-  margin-bottom: 12px;
-}
-.draftLabel {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+/* What kind of lead this is, above the tweet — the headline now that there is
+   no drafted reply to lead with. */
+.intentTag {
+  display: inline-block;
   font-size: 11px;
   font-weight: 500;
-  color: var(--accent);
-  margin-bottom: 6px;
-}
-.draftText {
-  font-size: 14px;
-  color: var(--ink-900);
-  line-height: 1.55;
-  white-space: pre-wrap;
+  letter-spacing: 0.01em;
+  color: var(--ink-500);
+  background: var(--chat-bg);
+  border: 0.5px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 10px;
+  margin-bottom: 8px;
 }
 
 .ghostBtn {
