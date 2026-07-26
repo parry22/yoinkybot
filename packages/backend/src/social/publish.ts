@@ -48,7 +48,7 @@ export async function resolveWriteAuth(userId: string, platform: Platform): Prom
   return { accessToken: row.post_access_token, authorUrn: row.post_author_urn };
 }
 
-async function publishToX(auth: WriteAuth, content: string): Promise<PublishResult> {
+async function publishToX(auth: WriteAuth, content: string, mediaIds: string[] = []): Promise<PublishResult> {
   try {
     const res = await fetch("https://api.x.com/2/tweets", {
       method: "POST",
@@ -56,7 +56,9 @@ async function publishToX(auth: WriteAuth, content: string): Promise<PublishResu
         Authorization: `Bearer ${auth.accessToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ text: content }),
+      body: JSON.stringify(
+        mediaIds.length > 0 ? { text: content, media: { media_ids: mediaIds } } : { text: content },
+      ),
       signal: AbortSignal.timeout(PUBLISH_TIMEOUT_MS),
     });
     const body = (await res.json().catch(() => ({}))) as { data?: { id?: string }; detail?: string; title?: string };
@@ -106,7 +108,16 @@ async function publishToLinkedIn(auth: WriteAuth, content: string): Promise<Publ
   }
 }
 
-/** Publish `content` to `platform` using the account's stored write auth. */
-export async function publish(auth: WriteAuth, platform: Platform, content: string): Promise<PublishResult> {
-  return platform === "x" ? publishToX(auth, content) : publishToLinkedIn(auth, content);
+/**
+ * Publish `content` to `platform` using the account's stored write auth.
+ * `mediaIds` are platform media ids already uploaded by social/media.ts — X only;
+ * LinkedIn ignores them (its media flow is a different API, see media.ts).
+ */
+export async function publish(
+  auth: WriteAuth,
+  platform: Platform,
+  content: string,
+  mediaIds: string[] = [],
+): Promise<PublishResult> {
+  return platform === "x" ? publishToX(auth, content, mediaIds) : publishToLinkedIn(auth, content);
 }

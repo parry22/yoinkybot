@@ -19,6 +19,13 @@ import {
 import { runAutomationOnce } from "../automations/run.js";
 import { automationStageLabel, type Emit } from "./stream.js";
 import { approveRun, rejectRun, applyEdit } from "../automations/approval.js";
+import {
+  runInterviewTurn,
+  specToAutomationInput,
+  describeSpec,
+  BRIEF_MAX,
+  type InterviewMessage,
+} from "../automations/interview.js";
 import type { Automation, SourceType, DeliveryMode, CadenceKind } from "../automations/types.js";
 
 export interface AutomationView {
@@ -93,7 +100,6 @@ export type AutomationFormInput = Record<string, unknown>;
 const SOURCE_TYPES: SourceType[] = ["trend_ride", "unlock_backlog", "custom"];
 const DELIVERY_MODES: DeliveryMode[] = ["approval", "auto"];
 const CADENCE_KINDS: CadenceKind[] = ["daily", "weekly", "manual"];
-const BRIEF_MAX = 1000;
 
 function sanitize(input: AutomationFormInput): AutomationInput {
   const name = typeof input.name === "string" ? input.name.trim() : "";
@@ -176,6 +182,81 @@ export async function saveAutomationStreaming(
       : `**${view.name}** is live — ${DELIVERY_COPY[view.deliveryMode]}, ${CADENCE_COPY[view.cadenceKind]}, up to ${view.monthlyCap} posts a month. Run it now, or leave it to its schedule.`,
   });
   emit({ type: "result", data: { automation: view } });
+}
+
+/**
+ * One turn of the Auto Agent setup conversation, streamed.
+ *
+ * The interview replaced a form whose three preset pills sat in the UI before the
+ * user had said anything (see automations/interview.ts for why that was the
+ * problem). It is stateless: the client sends the whole transcript back each turn.
+ *
+ * When the interview completes, this does the last two things in one go — builds
+ * the agent AND runs it once immediately. That matters: an agent you have to
+ * remember to go and press "run" on is a config screen, not an agent. The first
+ * run also surfaces a real draft while the user is still on the page, so a
+ * misread brief is caught now rather than at 9am tomorrow.
+ */
+export async function runAutomationInterviewStreaming(
+  userId: string,
+  messages: InterviewMessage[],
+  emit: Emit,
+): Promise<void> {
+  const turn = await runInterviewTurn(userId, messages);
+
+  if (!turn.complete) {
+    emit({ type: "message", text: turn.reply });
+    emit({ type: "result", data: { complete: false, options: turn.options, spec: turn.spec } });
+    return;
+  }
+
+  emit({ type: "message", text: turn.reply });
+  emit({ type: "stage", label: "Setting up the agent" });
+
+  const input = specToAutomationInput(turn.spec);
+  let view: AutomationView;
+  try {
+    view = await saveAutomationFromWeb(userId, input);
+  } catch (err) {
+    if (err instanceof ModerationError) {
+      emit({ type: "error", message: err.reason });
+      return;
+    }
+    console.error("automation interview save failed", err);
+    emit({ type: "error", message: "Couldn't set that agent up — try again." });
+    return;
+  }
+
+  emit({
+    type: "message",
+    text: `**${view.name}** is live — ${describeSpec(turn.spec)}, up to ${view.monthlyCap} posts a month.`,
+  });
+
+  // Fire it once now. A failure here is NOT a setup failure: the agent exists and
+  // its schedule stands, so the honest report is "built, but the first run found
+  // nothing" rather than an error that implies nothing was created.
+  emit({ type: "stage", label: "Running it once to show you" });
+  try {
+    const res = await runAutomationOnce(
+      (await getAutomation(view.id, userId))!,
+      { manual: true, onStage: (s) => emit({ type: "stage", label: automationStageLabel(s) }) },
+    );
+    if (res.status === "awaiting_approval") {
+      emit({ type: "message", text: "First one's drafted and waiting for your approval above." });
+    } else if (res.status === "scheduled") {
+      emit({ type: "message", text: "First one's drafted and queued to post." });
+    } else {
+      emit({
+        type: "message",
+        text: `Agent's set up. Its first run found nothing to post yet${res.reason ? ` (${res.reason})` : ""} — it'll pick things up on its schedule.`,
+      });
+    }
+  } catch (err) {
+    console.error("automation interview first run failed", err);
+    emit({ type: "message", text: "Agent's set up. Its first run didn't complete — hit Run now to retry." });
+  }
+
+  emit({ type: "result", data: { complete: true, automation: view, spec: turn.spec } });
 }
 
 /** Plain-language echo of the config, so the agent confirms what it just built. */

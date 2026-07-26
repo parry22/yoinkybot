@@ -76,11 +76,17 @@ const GROWTH: Omit<Entitlements, "plan"> = {
   macroMatching: true,
 };
 
-// Scale (the 'scale'/'founding' plan, and the trial): everything uncapped + the
-// hands-off auto agent. `null` = unlimited.
+// Scale (the 'scale'/'founding' plan, and the trial): the high-ceiling tier plus
+// the hands-off auto agent. `null` = unlimited.
 const SCALE: Omit<Entitlements, "plan"> = {
   scheduledPostsPerMonth: null,
-  buyerIntentsPerMonth: null,
+  // 300/month, NOT unlimited. Every buyer lead is a paid twitterapi.io search
+  // plus an embedding, billed per user rather than shared across the fleet like
+  // trends — so "unlimited" was a promise the unit economics could not keep, and
+  // the UI showed an ∞ that nothing enforced. 300 is ~50 scans of six leads a
+  // month, far past what anyone works through, and it is a real number the
+  // screen can count down.
+  buyerIntentsPerMonth: 300,
   viralPerDay: null,
   // 90/month ≈ 3 a day: a real hands-off cadence, but still a hard ceiling so a
   // runaway automation can't post unbounded. Not `null` on purpose.

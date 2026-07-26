@@ -137,6 +137,10 @@ export {
   runAutomationOnceWeb,
   saveAutomationStreaming,
   runAutomationOnceStreaming,
+  // The setup conversation that replaced the preset-pill form: one turn per call,
+  // stateless (the client sends the transcript back), and on the last turn it
+  // builds the agent and runs it once.
+  runAutomationInterviewStreaming,
   listPendingApprovalsWeb,
   listAutomationRunsWeb,
   actOnRunWeb,
@@ -144,13 +148,26 @@ export {
   type PendingApprovalView,
   type RunView,
 } from "./web/automations.js";
+export type { AgentSpec, InterviewMessage } from "./automations/interview.js";
 
 // Chat history for hydrating the transcript
 export { loadChatHistory, type ChatHistoryEntry } from "./web/chat-history.js";
 
 // Scheduled posts (read model for the Scheduled screen)
-export { listScheduled, type ScheduledPost } from "./scheduling/service.js";
+export { listScheduled, cancelScheduled, containsLink, type ScheduledPost } from "./scheduling/service.js";
 export { createWebScheduledPost } from "./web/scheduled.js";
+// Scheduled-post media: the web route owns the Blob upload (it holds the token),
+// then stages the row here; the publisher on Railway fetches the URL at post time.
+export {
+  stageMedia,
+  discardStagedMedia,
+  mediaReadiness,
+  mediaForScheduledPosts,
+  ACCEPTED_MEDIA_TYPES,
+  MEDIA_LIMITS,
+  type StagedMediaView,
+  type MediaReadiness,
+} from "./web/media.js";
 
 // Content moderation (shared gate; ModerationError → 400 at the web boundary)
 export { moderateText, assertClean, ModerationError, MODERATION_MESSAGE } from "./moderation/filter.js";

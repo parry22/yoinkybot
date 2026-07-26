@@ -82,7 +82,11 @@ export function buildAuthUrl(userId: string, platform: Platform, returnTo?: stri
       response_type: "code",
       client_id: config.X_CLIENT_ID!,
       redirect_uri: REDIRECT("x"),
-      scope: "tweet.read tweet.write users.read offline.access",
+      // media.write is what lets a scheduled post carry an image or video
+      // (social/media.ts). Tokens minted BEFORE this scope was added don't have
+      // it, so an existing connection can post text but will fail on media until
+      // the user reconnects — the scheduler says so rather than failing silently.
+      scope: "tweet.read tweet.write users.read media.write offline.access",
       state,
       code_challenge: challenge,
       code_challenge_method: "S256",

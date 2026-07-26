@@ -12,7 +12,7 @@ import { converseWithUser } from "../telegram/conversation.js";
 import { chatToolExecutor, deliverTurnOutput } from "../telegram/actions.js";
 import { ensureBoss } from "../jobs/boss.js";
 import { collectingChannel } from "./channel.js";
-import { streamingChannel, toolLabel, type Emit } from "./stream.js";
+import { streamingChannel, toolLabel, draftStageLabel, type Emit } from "./stream.js";
 
 /** One steady-state chat turn: bounded multi-tool loop, capture, final reply. */
 export async function runWebChatTurn(user: User, text: string): Promise<{ messages: string[] }> {
@@ -36,17 +36,45 @@ export async function runWebChatTurn(user: User, text: string): Promise<{ messag
  */
 export async function runWebChatTurnStreaming(user: User, text: string, emit: Emit): Promise<void> {
   await ensureBoss();
-  const channel = streamingChannel(emit);
-  const execute = chatToolExecutor(user, channel);
+  // Tracks whether anything at all has reached the user this turn. A turn that
+  // ends having said nothing is the "it just sits there" failure — the activity
+  // rows tick over, the last one finishes, and the transcript never gains a line,
+  // so the page looks frozen at exactly the moment the work finished. The tail
+  // below guarantees a closing message rather than trusting the model to produce
+  // one (under structured output it frequently returns reply:"").
+  let said = false;
+  const spoke: Emit = (event) => {
+    if (event.type === "message" && event.text.trim()) said = true;
+    emit(event);
+  };
+  const channel = streamingChannel(spoke);
+  // Drafting is the slowest thing a turn can do (retrieval, sometimes live
+  // research, then a long generation). Its internal stages are forwarded so that
+  // wait reads as six specific steps rather than one unmoving "Writing a post".
+  const execute = chatToolExecutor(user, channel, {
+    onDraftStage: (stage) => emit({ type: "stage", label: draftStageLabel(stage) }),
+  });
 
   emit({ type: "stage", label: "Thinking it through" });
 
-  const result = await converseWithUser(user.id, text, {
-    executeTool: async (tool, replyBeat) => {
-      emit({ type: "stage", label: toolLabel(tool.name) });
-      return execute(tool, replyBeat);
-    },
-  });
-  await deliverTurnOutput(user, text, result, channel);
+  try {
+    const result = await converseWithUser(user.id, text, {
+      executeTool: async (tool, replyBeat) => {
+        emit({ type: "stage", label: toolLabel(tool.name) });
+        return execute(tool, replyBeat);
+      },
+    });
+    await deliverTurnOutput(user, text, result, channel);
+    if (!said) {
+      // Reached only when the model returned an empty reply AND no tool spoke.
+      spoke({ type: "message", text: "that one came back empty on my side. say it again and i'll have another go?" });
+    }
+  } catch (err) {
+    console.error("streamed chat turn failed mid-turn", err);
+    // An error event still closes the UI's activity list, so the page never
+    // stays stuck on a spinning row.
+    emit({ type: "error", message: "That turn broke on my side — try again." });
+    return;
+  }
   emit({ type: "result" });
 }

@@ -2,6 +2,7 @@ import { getBoss, QUEUES } from "../jobs/boss.js";
 import { query, queryOne } from "../db/pool.js";
 import type { Platform } from "../lib/types.js";
 import { entitlementsFor, withinCap, remainingFor } from "../billing/entitlements.js";
+import { attachMediaToPost } from "../social/media.js";
 
 /**
  * A link ANYWHERE in a scheduled post's body is refused outright — not stripped,
@@ -46,10 +47,19 @@ export interface ScheduleResult {
 /** Queue a post for publishing at `scheduledFor`. Rejects past/invalid times. */
 export async function schedulePost(
   userId: string,
-  input: { platform: Platform; content: string; scheduledFor: Date; draftId?: string },
+  input: {
+    platform: Platform;
+    content: string;
+    scheduledFor: Date;
+    draftId?: string;
+    /** Staged scheduled_post_media ids to bind to this post once it exists. */
+    mediaIds?: string[];
+  },
 ): Promise<ScheduleResult> {
   const content = input.content.trim();
-  if (!content) return { ok: false, reason: "nothing to post" };
+  const mediaIds = input.mediaIds ?? [];
+  // A post carrying media needs no text — an image on its own is a valid tweet.
+  if (!content && mediaIds.length === 0) return { ok: false, reason: "nothing to post" };
   if (containsLink(content)) {
     return {
       ok: false,
@@ -80,6 +90,18 @@ export async function schedulePost(
     [userId, input.platform, content, input.draftId ?? null, when.toISOString()],
   );
   if (!row) return { ok: false, reason: "couldn't save that" };
+
+  // Bind staged uploads before the job is queued, so the publisher can never
+  // fire against a post whose attachments haven't been claimed yet.
+  if (mediaIds.length > 0) {
+    const attached = await attachMediaToPost(userId, row.id, mediaIds);
+    if (attached !== mediaIds.length) {
+      // Ownership/staging mismatch — roll the post back rather than publish a
+      // post that silently lost an attachment.
+      await query(`DELETE FROM scheduled_posts WHERE id = $1`, [row.id]);
+      return { ok: false, reason: "those attachments are no longer available — re-upload them" };
+    }
+  }
 
   const jobId = await getBoss().send(
     QUEUES.scheduledPost,

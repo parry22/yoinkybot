@@ -50,6 +50,8 @@ const TOOL_LABELS: Record<string, string> = {
   draft_post: "Writing a post in your voice",
   repurpose: "Reshaping it for the platform",
   search_memory: "Searching everything you've told me",
+  find_trends: "Searching X and the web for what's live",
+  offer_angles: "Working out angles you could take",
   check_draft: "Checking it against your positions",
   show_plan: "Pulling up your plan",
   show_positions: "Reading your stated positions",
@@ -70,6 +72,7 @@ export function toolLabel(name: string): string {
 const DRAFT_STAGE_LABELS: Record<string, string> = {
   voice: "Loading your voice profile",
   memory: "Retrieving relevant memories",
+  research: "Nothing of yours on this — searching X for what's live",
   evidence: "Reading what's actually worked for you",
   context: "Checking what's live on X right now",
   writing: "Writing the draft",

@@ -91,6 +91,8 @@ const TOOL_BEATS: Record<string, string> = {
   draft_post: "on it, drafting that now",
   repurpose: "reworking it now",
   search_memory: "checking what you've told me",
+  find_trends: "seeing what's actually live on this",
+  offer_angles: "working out a few ways to take this",
   check_draft: "checking that against your positions",
   show_plan: "pulling up your plan",
   show_positions: "pulling up your positions",

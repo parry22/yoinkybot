@@ -24,16 +24,18 @@ describe("entitlementsForPlan (Growth vs Scale differentiation)", () => {
     expect(e.drafting).toBe(true);
   });
 
-  it("Scale is uncapped (null) with auto-agent on", () => {
+  it("Scale is high-ceiling with auto-agent on", () => {
     const e = entitlementsForPlan("scale");
     expect(e.plan).toBe("scale");
     expect(e.scheduledPostsPerMonth).toBeNull();
-    expect(e.buyerIntentsPerMonth).toBeNull();
     expect(e.viralPerDay).toBeNull();
     expect(e.autoAgent).toBe(true);
-    // Auto Agent is the one deliberate exception to "Scale = unlimited": a
-    // hands-off poster needs a hard ceiling so a runaway can't post unbounded.
+    // The two deliberate exceptions to "Scale = unlimited", both because the
+    // work behind them is metered per-user rather than shared: a hands-off
+    // poster needs a ceiling so a runaway can't post unbounded, and every buyer
+    // lead is a paid X search plus an embedding.
     expect(e.automationPostsPerMonth).toBe(90);
+    expect(e.buyerIntentsPerMonth).toBe(300);
     expect(e.maxResurfacePerWeek).toBe(5);
   });
 
@@ -42,7 +44,7 @@ describe("entitlementsForPlan (Growth vs Scale differentiation)", () => {
       const e = entitlementsForPlan(plan);
       expect(e.autoAgent).toBe(true);
       expect(e.scheduledPostsPerMonth).toBeNull();
-      expect(e.buyerIntentsPerMonth).toBeNull();
+      expect(e.buyerIntentsPerMonth).toBe(300);
     }
   });
 });

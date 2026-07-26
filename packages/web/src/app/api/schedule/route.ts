@@ -12,13 +12,25 @@ export async function POST(req: Request) {
   if (!(await requirePaid(user)))
     return NextResponse.json({ error: "upgrade_required" }, { status: 402 });
 
-  const body = (await req.json().catch(() => ({}))) as { content?: unknown; scheduledFor?: unknown };
+  const body = (await req.json().catch(() => ({}))) as {
+    content?: unknown;
+    scheduledFor?: unknown;
+    mediaIds?: unknown;
+  };
   const content = typeof body.content === "string" ? body.content.trim() : "";
   const scheduledFor = typeof body.scheduledFor === "string" ? body.scheduledFor : "";
-  if (!content || !scheduledFor) return NextResponse.json({ error: "content and time required" }, { status: 400 });
+  const mediaIds = Array.isArray(body.mediaIds)
+    ? body.mediaIds.filter((m): m is string => typeof m === "string").slice(0, 4)
+    : [];
+  if (!scheduledFor) return NextResponse.json({ error: "time required" }, { status: 400 });
+  // An image on its own is a valid post, so text is only required when nothing
+  // is attached.
+  if (!content && mediaIds.length === 0) {
+    return NextResponse.json({ error: "write something or attach media" }, { status: 400 });
+  }
 
   try {
-    const res = await createWebScheduledPost(user.id, content, scheduledFor);
+    const res = await createWebScheduledPost(user.id, content, scheduledFor, mediaIds);
     if (!res.ok) {
       // The monthly cap → 429 + Scale CTA; every other rejection (links, bad
       // time) stays a plain 400.

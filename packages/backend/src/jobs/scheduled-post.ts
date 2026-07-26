@@ -1,6 +1,7 @@
 import { query, queryOne } from "../db/pool.js";
 import { dmChannel } from "../telegram/bot.js";
 import { publish, publishConfigured, resolveWriteAuth } from "../social/publish.js";
+import { mediaForPost, uploadMediaFor } from "../social/media.js";
 import type { Platform } from "../lib/types.js";
 import type { ScheduledPostJob } from "./boss.js";
 
@@ -49,7 +50,25 @@ export async function handleScheduledPost(job: ScheduledPostJob): Promise<void> 
     return;
   }
 
-  const result = await publish(auth, platform, post.content);
+  // Media goes up first and separately: the platform wants ids on the post call,
+  // and a video can take minutes to transcode. A media failure fails the whole
+  // post rather than quietly publishing the text alone — someone who attached a
+  // chart meant the chart to be part of the point.
+  const media = await mediaForPost(job.scheduledPostId).catch(() => []);
+  let mediaIds: string[] = [];
+  if (media.length > 0) {
+    const uploaded = await uploadMediaFor(auth, platform, media);
+    if (!uploaded.ok) {
+      await fail(uploaded.error ?? "media upload failed");
+      await channel.say(
+        `your scheduled ${label} post didn't go out — i couldn't upload the ${media.length === 1 ? "attachment" : "attachments"}: ${uploaded.error ?? "unknown error"}`,
+      );
+      return;
+    }
+    mediaIds = uploaded.mediaIds;
+  }
+
+  const result = await publish(auth, platform, post.content, mediaIds);
   if (!result.ok) {
     await fail(result.error ?? "unknown publish error");
     await channel.say(`your scheduled ${label} post didn't go through: ${result.error ?? "unknown error"}`);

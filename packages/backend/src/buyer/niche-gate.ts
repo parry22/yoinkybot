@@ -54,22 +54,35 @@ function parseVector(raw: string | null | undefined): number[] | null {
 }
 
 /**
- * When nothing clears the absolute threshold, rescue the top-K nearest
- * candidates inside a hard ceiling instead of returning an empty radar. A short
- * tweet and a paragraph-length ICP rarely land inside a tight fixed distance
- * (verified live 2026-07-24: every on-topic candidate sat just above the old
- * 0.55 cliff, so ZERO signals ever surfaced) — and the composition agent
- * downstream researches each candidate and declines off-fit ones anyway, so the
- * cliff was doing the agent's job badly. K stays small so the rescue can't
- * flood composition with noise.
+ * The gate is a RANKER WITH A FLOOR, not a cliff.
+ *
+ * A short tweet and a paragraph-length ICP rarely land inside a tight fixed
+ * distance (verified live 2026-07-24: every on-topic candidate sat just above
+ * the old 0.55 cutoff, so ZERO signals ever surfaced). So: everything under
+ * `threshold` passes outright, and when that leaves fewer than `minKeep` the
+ * nearest remaining candidates are pulled in — first under BUYER_NICHE_CEILING,
+ * and if the radar is still empty, the nearest of what's left regardless.
+ *
+ * That last step is deliberate and is new. Domain similarity is a RANKING signal
+ * here, not a truth: the fallback only ever fires when the alternative is
+ * showing the user nothing, it is bounded by minKeep, and the candidate already
+ * cleared the deterministic intent gate to get this far. Its distance is stored
+ * on the row and shown as "% match", so a weak rescue is visibly weak rather
+ * than silently presented as a strong lead.
  */
-const RESCUE_TOP_K = 3;
+export interface NicheGateOpts {
+  threshold?: number;
+  /** Fill to at least this many candidates when the threshold underdelivers. */
+  minKeep?: number;
+}
 
 export async function applyNicheGate(
   userId: string,
   candidates: BuyerCandidate[],
-  threshold: number = config.BUYER_NICHE_THRESHOLD,
+  opts: NicheGateOpts = {},
 ): Promise<NicheGateResult> {
+  const threshold = opts.threshold ?? config.BUYER_NICHE_THRESHOLD;
+  const minKeep = Math.max(0, opts.minKeep ?? 0);
   if (candidates.length === 0) return { passed: [], hasVector: true };
 
   const row = await queryOne<{ icp_embedding: string | null }>(
@@ -92,9 +105,19 @@ export async function applyNicheGate(
   }
   scored.sort((a, b) => a.dist - b.dist);
 
-  let kept = scored.filter((s) => s.dist < threshold);
-  if (kept.length === 0) {
-    kept = scored.filter((s) => s.dist < config.BUYER_NICHE_CEILING).slice(0, RESCUE_TOP_K);
+  const kept = scored.filter((s) => s.dist < threshold);
+  if (kept.length < minKeep) {
+    const already = new Set(kept.map((s) => s.candidate.tweet.id));
+    const fill = (pool: typeof scored) => {
+      for (const s of pool) {
+        if (kept.length >= minKeep) break;
+        if (already.has(s.candidate.tweet.id)) continue;
+        already.add(s.candidate.tweet.id);
+        kept.push(s);
+      }
+    };
+    fill(scored.filter((s) => s.dist < config.BUYER_NICHE_CEILING));
+    fill(scored);
   }
   return {
     passed: kept.map((s) => ({ ...s.candidate, nicheSimilarity: Math.round((1 - s.dist) * 1000) / 1000 })),

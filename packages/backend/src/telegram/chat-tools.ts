@@ -25,6 +25,14 @@ export const chatToolSchema = z.discriminatedUnion("name", [
     text: z.string().min(1),
   }),
   z.object({ name: z.literal("search_memory"), question: z.string().min(1) }),
+  // What's happening RIGHT NOW on a topic: live X search + cached trends + news.
+  // The counterpart to search_memory — that one looks inward at what the user has
+  // said, this one looks outward at what the world is saying.
+  z.object({ name: z.literal("find_trends"), topic: z.string().min(1) }),
+  // Two-three ways they could take a topic, grounded in live research + their own
+  // positions. The move when they want to post about something they haven't
+  // thought out loud about yet, so there is nothing in memory to draft from.
+  z.object({ name: z.literal("offer_angles"), topic: z.string().min(1) }),
   z.object({ name: z.literal("check_draft"), text: z.string().min(1) }),
   z.object({ name: z.literal("show_plan") }),
   z.object({ name: z.literal("show_positions") }),
