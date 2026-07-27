@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { put, del } from "@vercel/blob";
 import { getSessionUser } from "@/lib/session";
 import { requirePaid } from "@/lib/entitlements";
+import { rateLimited } from "@/lib/rate-limit";
 import { stageMedia, discardStagedMedia, ACCEPTED_MEDIA_TYPES, MEDIA_LIMITS } from "@yoink/backend/web";
 
 export const runtime = "nodejs";
@@ -31,6 +32,10 @@ export async function POST(req: Request) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   if (!(await requirePaid(user))) return NextResponse.json({ error: "upgrade_required" }, { status: 402 });
+  // Burst guard — each accepted upload is up to 100MB of Blob storage we pay for,
+  // and a staged row survives until the sweeper collects it.
+  const limited = await rateLimited(user.id, "media_upload");
+  if (limited) return limited;
 
   let form: FormData;
   try {

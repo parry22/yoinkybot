@@ -4,6 +4,7 @@ import { config } from "../config.js";
 import { query } from "../db/pool.js";
 import { publishConfigured } from "../social/publish.js";
 import { afterOAuthConnected } from "../telegram/connect-auth.js";
+import { readConnectTicket } from "../lib/connect-tickets.js";
 import type { Platform } from "../lib/types.js";
 
 /**
@@ -45,10 +46,24 @@ interface PendingAuth {
 
 /** Only ever honor a `redirect` that's on the web app's own trusted origin —
  *  this is a browser redirect target after OAuth, so an unbounded value here
- *  would be an open-redirect vector. */
-function safeReturnTo(raw: string | undefined): string | undefined {
+ *  would be an open-redirect vector.
+ *
+ *  Compare parsed ORIGINS, never string prefixes: `startsWith(WEB_APP_URL)`
+ *  matched `https://app.meetyoinky.com.evil.com/...` because a prefix has no
+ *  authority boundary. Anything unparseable, or on any other scheme/host/port,
+ *  is dropped. */
+export function safeReturnTo(raw: string | undefined): string | undefined {
   if (!raw) return undefined;
-  return raw.startsWith(config.WEB_APP_URL) ? raw : undefined;
+  try {
+    const target = new URL(raw);
+    const allowed = new URL(config.WEB_APP_URL);
+    if (target.origin !== allowed.origin) return undefined;
+    // Belt and braces: only ever bounce to a normal web scheme.
+    if (target.protocol !== "http:" && target.protocol !== "https:") return undefined;
+    return target.toString();
+  } catch {
+    return undefined;
+  }
 }
 const pending = new Map<string, PendingAuth>();
 const STATE_TTL_MS = 10 * 60 * 1000;
@@ -189,13 +204,19 @@ const DONE_HTML = (msg: string) =>
   `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><body style="font-family:system-ui;max-width:32rem;margin:4rem auto;padding:0 1rem"><p>${msg}</p><p>You can close this tab and return to Telegram.</p></body>`;
 
 export async function oauthRoutes(app: FastifyInstance): Promise<void> {
-  app.get<{ Params: { platform: string }; Querystring: { u?: string; redirect?: string } }>(
+  app.get<{ Params: { platform: string }; Querystring: { t?: string; redirect?: string } }>(
     "/oauth/:platform/start",
     async (req, reply) => {
       const platform = req.params.platform as Platform;
       if (platform !== "x" && platform !== "linkedin") return reply.code(404).send("unknown platform");
-      const userId = req.query.u;
-      if (!userId) return reply.code(400).send("missing user");
+      // Identity comes from a minted ticket, never from the query string — see
+      // the ConnectTicket comment above for what `?u=<user id>` allowed.
+      const userId = readConnectTicket(req.query.t, platform);
+      if (!userId) {
+        return reply
+          .type("text/html")
+          .send(DONE_HTML("That connect link has expired. Head back to Telegram and tap connect again."));
+      }
       const url = buildAuthUrl(userId, platform, req.query.redirect);
       if (!url) return reply.code(503).send(`${platform} posting isn't configured on this instance`);
       return reply.redirect(url);

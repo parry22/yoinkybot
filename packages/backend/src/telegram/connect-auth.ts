@@ -5,6 +5,7 @@ import { publishConfigured } from "../social/publish.js";
 import { startConnect } from "../strategist/connect.js";
 import { getState, setState } from "../strategist/state.js";
 import { sendTelegram } from "./bot.js";
+import { mintConnectTicket } from "../lib/connect-tickets.js";
 import type { Platform } from "../lib/types.js";
 
 /**
@@ -65,7 +66,15 @@ async function anyConnected(userId: string): Promise<boolean> {
   return Number(row?.n ?? 0) > 0;
 }
 
-const authUrl = (userId: string, platform: Platform) => `${config.PUBLIC_URL}/oauth/${platform}/start?u=${userId}`;
+/**
+ * The consent link. Carries an opaque, short-lived ticket — NOT the user id.
+ * `?u=<users.id>` on an unauthenticated route meant anyone who could construct
+ * the URL could steer the consent at any account; see lib/connect-tickets.ts.
+ * Minted fresh every time the offer is rendered, so the 15-minute window starts
+ * when the user actually sees the button.
+ */
+const authUrl = (userId: string, platform: Platform) =>
+  `${config.PUBLIC_URL}/oauth/${platform}/start?t=${mintConnectTicket(userId, platform)}`;
 
 function offerKeyboard(userId: string, platform: Platform, withSkip: boolean): InlineKeyboard {
   const kb = new InlineKeyboard().url(`🔗 connect ${label(platform)}`, authUrl(userId, platform));

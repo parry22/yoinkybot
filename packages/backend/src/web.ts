@@ -172,6 +172,17 @@ export {
 // In-app feedback (Feature Request / Bug Report from the Account menu)
 export { submitFeedback, type FeedbackType, type FeedbackInput } from "./web/feedback.js";
 
+// Per-user burst rate limiting for the money-spending routes (see lib/rate-limit.ts).
+// Sits under the paywall and above the monthly caps: the caps bound the month,
+// this bounds the minute.
+export {
+  consumeRateLimit,
+  rateLimitMessage,
+  RATE_LIMITS,
+  type RateLimitBucket,
+  type RateLimitResult,
+} from "./lib/rate-limit.js";
+
 // Content moderation (shared gate; ModerationError → 400 at the web boundary)
 export { moderateText, assertClean, ModerationError, MODERATION_MESSAGE } from "./moderation/filter.js";
 

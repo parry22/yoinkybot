@@ -62,12 +62,15 @@ export async function approveRun(userId: string, runId: string): Promise<{ ok: b
 }
 
 export async function rejectRun(userId: string, runId: string): Promise<{ ok: boolean; reason?: string }> {
+  // Ownership FIRST, exactly like approveRun/applyEdit. claimRun is a bare
+  // compare-and-set on id+status with no user_id in its WHERE, so calling it
+  // straight off a caller-supplied runId let an authenticated user reject
+  // another user's pending draft.
+  const run = await getRun(runId, userId);
+  if (!run) return { ok: false, reason: "not found" };
+  if (run.status === "expired") return { ok: false, reason: EXPIRY_NOTE };
   const claimed = await claimRun(runId, "awaiting_approval", "rejected");
-  if (!claimed) {
-    // Distinguish "you already answered this" from "we aged it out on you".
-    const run = await getRun(runId, userId);
-    return { ok: false, reason: run?.status === "expired" ? EXPIRY_NOTE : undefined };
-  }
+  if (!claimed) return { ok: false, reason: undefined };
   await setRunStatus(runId, "rejected", "user_rejected");
   return { ok: true };
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/session";
 import { requirePaid } from "@/lib/entitlements";
+import { rateLimited } from "@/lib/rate-limit";
 import { enqueueBuyerScan, buyerScanProgress } from "@yoink/backend/web";
 
 export const runtime = "nodejs";
@@ -26,6 +27,12 @@ export async function POST() {
   // monthly cap (Growth 25 / Scale ∞) is enforced inside the scan itself.
   if (!(await requirePaid(user)))
     return NextResponse.json({ error: "upgrade_required" }, { status: 402 });
+  // Burst guard. A scan is the single most expensive thing a user can trigger
+  // (several paid searches + a composition loop per gated candidate), and the
+  // monthly cap is enforced inside the scan — i.e. AFTER the spend starts. This
+  // bounds how many can be kicked off in a window.
+  const limited = await rateLimited(user.id, "buyer_scan");
+  if (limited) return limited;
   try {
     const ticket = await enqueueBuyerScan(user.id);
     // 202: accepted, not finished. The client polls GET for the outcome.

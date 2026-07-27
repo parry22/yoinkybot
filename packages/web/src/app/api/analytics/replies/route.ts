@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/session";
 import { requirePaid } from "@/lib/entitlements";
+import { rateLimited } from "@/lib/rate-limit";
 import { getReplyAnalytics } from "@yoink/backend/web";
 
 export const runtime = "nodejs";
@@ -27,6 +28,9 @@ export async function GET() {
       },
       { status: 402 },
     );
+  // Burst guard — each call is a billed twitterapi.io timeline read.
+  const limited = await rateLimited(user.id, "analytics_replies");
+  if (limited) return limited;
   try {
     const data = await getReplyAnalytics(user.id);
     return NextResponse.json(data);

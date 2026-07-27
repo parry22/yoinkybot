@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/session";
 import { requirePaid } from "@/lib/entitlements";
+import { rateLimited } from "@/lib/rate-limit";
 import { runWebChatTurn } from "@yoink/backend/web";
 
 export const runtime = "nodejs";
@@ -13,6 +14,10 @@ export async function POST(req: Request) {
   // Parity with Telegram (chat is walled once the trial lapses) — no LLM spend for free users.
   if (!(await requirePaid(user)))
     return NextResponse.json({ error: "upgrade_required" }, { status: 402 });
+  // Burst guard: the paywall says "may spend", the monthly cap says "how much";
+  // this says "how fast". See backend lib/rate-limit.ts.
+  const limited = await rateLimited(user.id, "chat");
+  if (limited) return limited;
 
   const body = (await req.json().catch(() => ({}))) as { text?: unknown };
   const text = typeof body.text === "string" ? body.text.trim() : "";

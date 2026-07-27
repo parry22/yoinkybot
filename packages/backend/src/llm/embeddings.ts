@@ -24,7 +24,13 @@ function resolveProvider(): EmbeddingProvider {
       baseUrl: config.QWEN_BASE_URL,
       apiKey: config.QWEN_API_KEY,
       model: config.QWEN_EMBEDDING_MODEL,
-      costPer1M: 0, // placeholder until DashScope pricing is confirmed
+      // DashScope text-embedding-v4 list price. It was 0 as a placeholder, which
+      // silently zeroed every embedding line in usage telemetry whenever the
+      // Qwen fallback was the active provider — and embeddings run on EVERY
+      // buyer lead and every performance read, so the under-report compounded.
+      // Deliberately rounded UP: an over-estimate shows in the budget, an
+      // under-estimate hides.
+      costPer1M: 0.07,
     };
   }
   throw new Error("no embedding provider configured (set OPENAI_API_KEY or QWEN_API_KEY)");

@@ -4,6 +4,14 @@ import { getBot } from "../telegram/bot.js";
 
 export type FeedbackType = "feature_request" | "bug_report";
 
+/**
+ * Hard daily ceiling per user, enforced here rather than only at the route so
+ * ANY caller (a future Telegram command, a script) inherits it. The web route's
+ * burst limiter (lib/rate-limit.ts, 5/hour) is the first line; this is the one
+ * that stops a patient drip from filling the operator's inbox overnight.
+ */
+const MAX_PER_DAY = 12;
+
 export interface FeedbackInput {
   type: string;
   category: string;
@@ -17,11 +25,24 @@ export interface FeedbackInput {
  * process has no bot instance. Both are best-effort — the DB row is the source
  * of truth and a delivery failure never throws.
  */
-export async function submitFeedback(userId: string, input: FeedbackInput): Promise<{ ok: boolean }> {
+export async function submitFeedback(
+  userId: string,
+  input: FeedbackInput,
+): Promise<{ ok: boolean; reason?: string }> {
   const type: FeedbackType = input.type === "bug_report" ? "bug_report" : "feature_request";
   const category = (input.category ?? "").trim().slice(0, 120);
   const message = (input.message ?? "").trim().slice(0, 4000);
   if (!message) return { ok: false };
+
+  // Daily ceiling. Counted BEFORE the insert so the row itself doesn't count,
+  // and before any delivery so a capped user costs us nothing.
+  const today = await queryOne<{ n: string }>(
+    `SELECT count(*)::text n FROM feedback WHERE user_id = $1 AND created_at >= now() - interval '24 hours'`,
+    [userId],
+  );
+  if (Number(today?.n ?? 0) >= MAX_PER_DAY) {
+    return { ok: false, reason: "that's a lot of feedback for one day — I've got it, give me a chance to read it" };
+  }
 
   await query(`INSERT INTO feedback (user_id, type, category, message) VALUES ($1, $2, $3, $4)`, [
     userId,

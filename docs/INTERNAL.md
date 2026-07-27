@@ -1840,6 +1840,80 @@ publishes.**
   (`0033_attempt_guards_and_approval_expiry`), and Telegram scheduling respects the
   user's **timezone**.
 
+## 3r. Pre-launch security + abuse hardening (2026-07-27, round 3)
+
+A security-audit sweep. Migration `0036_rate_limits` is new. Nothing here changes
+product behaviour for a well-behaved user; all of it changes what a hostile or
+runaway one can do.
+
+**Cross-tenant write in `rejectRun` (`automations/approval.ts`).** `approveRun`
+and `applyEdit` both established ownership with `getRun(runId, userId)` before
+acting. `rejectRun` went straight to `claimRun(runId, …)`, and `claimRun`'s WHERE
+is `id = $1 AND status = $2` — no `user_id`. So an authenticated user holding
+another user's `runId` could reject that user's pending Auto Agent draft.
+Ownership is now checked first, exactly like the other two. (The expiry-vs-double-tap
+distinction the old code got from the post-hoc `getRun` is preserved: the
+ownership read now provides it up front.)
+
+**Open redirect in the OAuth return (`routes/oauth.ts`).** `safeReturnTo` was
+`raw.startsWith(config.WEB_APP_URL)`. A string prefix has no authority boundary,
+so `https://app.meetyoinky.com.evil.com/…` passed and the user was bounced there
+immediately after completing consent. It now parses both sides and compares
+`URL.origin`, and rejects any non-http(s) scheme. Guarded by
+`routes/oauth.test.ts` (suffixed lookalike, credentials-prefix, `javascript:`,
+protocol-relative).
+
+**Identity in the OAuth start URL (`routes/oauth.ts`, `lib/connect-tickets.ts`,
+`telegram/connect-auth.ts`).** `/oauth/:platform/start` took `?u=<raw users.id>`
+on an UNAUTHENTICATED route — the code acknowledged this and called a signed
+token "strictly better". It is worse than the comment implied: it is an
+account-linking primitive in both directions (hand a victim a link carrying the
+attacker's id and the victim's X write token lands on the attacker's row; use a
+leaked victim id and the attacker grafts their account onto the victim's).
+Identity has left the URL. The bot — which has an authenticated Telegram
+context — mints an opaque 32-byte **connect ticket**, platform-bound, 15-minute
+TTL, reusable inside its window (backing out of X's consent screen must not
+dead-end). Held in memory next to the PKCE map, for the same single-instance
+reason; a restart yields an honest "start the connect again" page rather than a
+wrong-account bind. `lib/connect-tickets.test.ts` covers it.
+
+**Burst rate limiting (`lib/rate-limit.ts`, `web/src/lib/rate-limit.ts`,
+migration `0036`).** The only backstops on paid work were the monthly entitlement
+caps and the fleet-wide daily LLM budget. Neither bounds a *burst*: a paid user
+(or a stolen session) could fire many concurrent `chat/stream`, `draft` or Buyer
+Radar scans and spend a day's model + twitterapi.io budget in minutes, with the
+monthly cap only catching up afterwards. There is now a per-`(user, bucket)`
+fixed-window counter sitting directly under `requirePaid` on every money-spending
+route.
+* **Postgres, not an in-process map** — the web app is Vercel functions, so an
+  in-memory counter bounds one ephemeral instance rather than one user. Neon is
+  already on the hot path of all these routes.
+* **One atomic statement**: the window resets lazily inside the same UPSERT that
+  increments, so two simultaneous requests can never both read a stale count, and
+  there is no sweeper.
+* **Fails open.** These limits protect the budget, not correctness; a Neon blip
+  must not take Compose down.
+* Buckets and limits live in one `RATE_LIMITS` table in `lib/rate-limit.ts` so
+  they're reviewable as a set. Wired into: chat (+stream), draft, buyer scan,
+  automation run (+stream), interview/save streams, verdict, inspiration refresh,
+  media upload, reply analytics, feedback.
+* Rejections are `429` with `Retry-After` and an `error` string, which the
+  existing client paths (`useAgentStream`'s pre-stream branch) already render.
+
+**Feedback flood (`web/feedback.ts`, `api/feedback/route.ts`).** Every submission
+fans out to a Resend email *and* a Telegram DM to the operator, and the endpoint
+was unbounded for any signed-in user. Two limits: 5/hour at the route (burst) and
+a hard 12/24h inside `submitFeedback` itself, so any future caller — a Telegram
+command, a script — inherits the ceiling. The daily count is taken *before* the
+insert and before any delivery, so a capped user costs nothing.
+
+**Embedding cost under-reporting (`llm/embeddings.ts`).** The DashScope/Qwen
+provider carried `costPer1M: 0` as a placeholder, which silently zeroed every
+embedding line in usage telemetry whenever that fallback was active — and
+embeddings run on every buyer lead and every performance read, so the
+under-report compounded. Now `0.07`, deliberately rounded up: an over-estimate
+shows up in the budget, an under-estimate hides.
+
 ## 3n. Agent SDK runtime (2026-07-24, IN PROGRESS — Phase 0/1)
 
 Migrating the bounded agent loops (§3c) + eventually the chat brain (§3a) off the
@@ -2133,11 +2207,13 @@ public domain.
 
 ## 4. Data model
 
-Schema is a linear migration chain in `src/db/migrations/` (`0001`…`0027`),
+Schema is a linear migration chain in `src/db/migrations/` (`0001`…`0036`),
 applied on boot and via `pnpm db:migrate` (`src/db/migrate.ts`). pgvector is
 required for embedding columns. (`0026` widens `automations.source_type` to allow
 `custom` and adds `automations.brief`; `0027` widens `subscriptions.plan` to allow
-`scale`.)
+`scale`; `0035` hardens billing; `0036` adds `rate_limits`.) The runner applies by
+sorted filename and skips anything already in `schema_migrations`, so the missing
+`0032` number is cosmetic.
 
 Design invariants:
 - **Identity** — `users` can be keyed by `telegram_id`, `email`, `x_user_id`, or
@@ -2158,6 +2234,9 @@ Design invariants:
   (`resetUserData`) clears it with everything else.
 - `profile_id` is stored separately from `user_id` on memories/positions/moments
   (agency prep); they are equal in v1.
+- **`rate_limits` (`0036`)** is one row per `(user_id, bucket)` — a fixed-window
+  counter, not history. It is disposable: dropping the table costs nothing but a
+  reset window, and every row cascades on user delete.
 
 When adding a migration: next number in sequence, forward-only (no down
 migrations), and it must apply cleanly on a fresh DB and an existing one.

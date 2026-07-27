@@ -1,5 +1,6 @@
 import { getSessionUser } from "@/lib/session";
 import { requirePaid } from "@/lib/entitlements";
+import { rateLimited } from "@/lib/rate-limit";
 import { runWebChatTurnStreaming, type AgentEvent } from "@yoink/backend/web";
 import { sseResponse } from "@/lib/sse";
 
@@ -19,6 +20,10 @@ export async function POST(req: Request) {
   const user = await getSessionUser();
   if (!user) return Response.json({ error: "unauthorized" }, { status: 401 });
   if (!(await requirePaid(user))) return Response.json({ error: "upgrade_required" }, { status: 402 });
+  // Burst guard: the paywall says "may spend", the monthly cap says "how much";
+  // this says "how fast". See backend lib/rate-limit.ts.
+  const limited = await rateLimited(user.id, "chat");
+  if (limited) return limited;
 
   const body = (await req.json().catch(() => ({}))) as { text?: unknown };
   const text = typeof body.text === "string" ? body.text.trim() : "";

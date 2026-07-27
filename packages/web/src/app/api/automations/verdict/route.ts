@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/session";
 import { requirePaid } from "@/lib/entitlements";
+import { rateLimited } from "@/lib/rate-limit";
 import { actOnRunWeb } from "@yoink/backend/web";
 
 export const runtime = "nodejs";
@@ -20,6 +21,10 @@ export async function POST(req: Request) {
   // who still has approvals pending gets a 402 rather than free re-drafts.
   if (!(await requirePaid(user)))
     return NextResponse.json({ error: "upgrade_required" }, { status: 402 });
+  // Burst guard: the paywall says "may spend", the monthly cap says "how much";
+  // this says "how fast". See backend lib/rate-limit.ts.
+  const limited = await rateLimited(user.id, "automation_verdict");
+  if (limited) return limited;
   const instruction = typeof body.instruction === "string" ? body.instruction : undefined;
   return NextResponse.json(await actOnRunWeb(user.id, runId, action, instruction));
 }
