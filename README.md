@@ -24,6 +24,34 @@ which is where it's most useful. Both share one Postgres and one `users` row.
 
 <!-- Keep newest-first. Update this whenever a change ships that a reader of the repo should know about. -->
 
+- **2026-07-27 — LLM cost down ~47%: real prompt caching + two-model routing.**
+  Detail in `docs/INTERNAL.md` §3s. Measured first: 3,612 production
+  `usage_events` re-priced at Grok rates said an average user costs $5.71/mo on a
+  $9 plan, and that **chat is 75-85% of the bill** while every per-plan
+  entitlement cap governs about $1. No usage limits were added.
+
+  **Caching was configured but not working — 2.8% hit rate.** Only 2 of 36
+  callsites passed a cache key; `conversation.ts` ended its key with
+  `randomUUID()`, so affinity held within a turn and was discarded between turns
+  (a cold prefix re-billed the ~5.7k-token stable header on every message); and
+  `converse.v3` put per-message retrieval *second* in the prompt, which makes
+  everything after it uncacheable no matter how stable. Keys now default on, are
+  stable per user per day, and the prompt is ordered slowest-changing first. The
+  prices were also wrong: Grok's cached rate is $0.30/M, not $0.50.
+
+  **`tier` now picks the model, not just the reasoning effort.** `classify_mention`
+  alone was 44% of all calls — paying $2/$6 to decide "is this tweet a question?"
+  is waste. Voice-bearing work stays on Grok 4.5; mechanical JSON work goes to
+  `z-ai/glm-4.7-flash`, picked by a six-model bake-off (5/5 valid JSON, agrees
+  with Grok on every unambiguous case, and the GLM-specific JSON repair in the
+  gateway is already tuned to it). Note `reasoning: { enabled: false }` is
+  load-bearing there, not an optimization — it's a reasoning model, and at effort
+  `low` it burned the whole token budget thinking and returned nothing.
+
+  Growth typical $5.71 → **$3.01**; Scale power $50.89 → **$27.09** (margin −$4.64
+  → +$19.16). Growth break-even moves 7.0 → 15.1 chat turns/day.
+  `LLM_CHEAP_ROUTING=false` reverts the routing in one env var.
+
 - **2026-07-27 — Pre-launch security + abuse hardening.** A security-audit sweep.
   Full detail in `docs/INTERNAL.md` §3r. Nothing changes for a well-behaved user;
   all of it changes what a hostile or runaway one can do.

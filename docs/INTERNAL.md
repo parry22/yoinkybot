@@ -1961,6 +1961,93 @@ embeddings run on every buyer lead and every performance read, so the
 under-report compounded. Now `0.07`, deliberately rounded up: an over-estimate
 shows up in the budget, an under-estimate hides.
 
+## 3s. Cost: real prompt caching + two-model routing (2026-07-27, round 4)
+
+Driven by measuring, not guessing: 3,612 production `usage_events` re-priced at
+Grok 4.5 rates said an average user costs **$5.71/mo** on a **$9** Growth plan,
+a power user **$34.78**, and that **chat alone is 75-85% of it** while every
+per-plan entitlement cap governs about **$1**. Two changes, no usage limits
+added. Result: **−47%**, verified per event type.
+
+**The prices in the code were wrong.** Pulled live from the OpenRouter models API:
+Grok's cached-input rate is **$0.30/M, not $0.50** (6.7x cheaper than fresh, not
+4x — the caching upside was under-stated), and GLM 5.2 was recorded at
+$0.54/$1.76 when it is $0.812/$2.552. Re-check with
+`curl -s https://openrouter.ai/api/v1/models | jq '.data[] | select(.id=="x-ai/grok-4.5") | .pricing'`.
+
+### Caching (the measured hit rate was 2.8%)
+
+Three reasons it wasn't working, all fixed:
+* **Only 2 of 36 callsites passed a `cacheKey`.** `llmCall` now defaults one
+  (`{eventType}:{hashedUserId}`) so affinity is on by default, not opt-in.
+* **`conversation.ts` ended its key with `randomUUID()`** — affinity held inside
+  one turn and was thrown away between turns. A new key every turn means a new
+  upstream and a cold prefix, so the ~5.7k-token stable header was re-billed at
+  full rate on every message. Now stable per user per day (dated so affinity
+  still rebalances, and a user whose context changed isn't pinned to a stale
+  node). **This one line is most of the caching win.**
+* **`converse.v3`'s block order defeated it.** Caching is prefix-based, and
+  `MEMORIES RELEVANT TO THIS MESSAGE` — per-message retrieval, different every
+  turn — sat *second*. Everything after a volatile block is uncacheable however
+  stable it is. Reordered slowest-changing first (profile → throughline → goal →
+  voice → positions), volatile tail last. **The model sees identical information.**
+
+Confirmed live: OpenRouter reports `prompt_tokens_details.cached_tokens`, and a
+real call through the gateway came back 128/255 cached.
+
+### Two-model routing
+
+The single-model policy held while every call was product-critical. It isn't:
+`classify_mention` alone was **44% of all calls**, and paying $2/$6 to decide "is
+this tweet a question?" is waste. `tier` now selects the MODEL as well as the
+reasoning effort — `frontier` → Grok 4.5 (anything voice-bearing), everything
+else → `MODEL_CHEAP`. Three prompts were re-tiered to `cheap` because they emit
+JSON we consume rather than prose the user reads: `macro-match` (relevance
+scoring), `trend-clusters` (grouping; also the single most expensive call at
+~4.6k in / 1.5k out), `voice-profile` (derives traits — drafting still *writes*
+in the voice on frontier).
+
+**`z-ai/glm-4.7-flash`, chosen by bake-off, not by price alone.** Six candidates
+were run against real `classify_mention` cases. GLM 4.7 Flash: 5/5 valid JSON,
+and it agreed with Grok on every unambiguous case (all models "missed" the same
+one, where their reading was the defensible one and the test's expectation was
+wrong). It's also the cheapest of the open models, and the GLM family already
+ran 2,501 production calls here — the JSON recovery ladder in `gateway.ts` is
+*already* tuned to its specific quirks (trailing commas, single objects wrapped
+in an array). A cheaper model we'd never run would be a reliability gamble.
+
+> **`reasoning: { enabled: false }` on the cheap tier is not an optimization — it
+> is the difference between working and not.** GLM 4.7 Flash is a reasoning
+> model: at effort `"low"` it spent the entire 80-token budget of
+> `classify_mention` on an internal monologue and returned `content: null`,
+> `finish_reason: "length"` — **0/4 valid**. With reasoning off it is 5/5.
+> Reasoning tokens also bill at the *output* rate, so this is the second-largest
+> saving after the model swap itself.
+
+The cheap tier always goes over OpenRouter even when `LLM_TRANSPORT=xai`, since
+api.x.ai serves Grok and nothing else — transport is now a per-request decision.
+Without an OpenRouter key it falls back to the product model rather than failing.
+`LLM_CHEAP_ROUTING=false` reverts everything in one env var.
+
+### Result
+
+| | before | after | |
+|---|---|---|---|
+| Growth typical | $5.71 | **$3.01** | −47% |
+| Growth power | $34.78 | **$17.31** | −50% |
+| Scale typical | $11.42 | **$6.18** | −46% |
+| Scale power | $50.89 | **$27.09** | −47% |
+
+Per call: `classify_mention` 25x cheaper, `trend_clusters` 21x, `voice` 18x, a
+chat turn $0.0273 → $0.0175. Growth break-even moves **7.0 → 15.1 chat
+turns/day**; the 400-calls/day ceiling drops $161 → $103/mo. Scale power goes
+from −$4.64 to **+$19.16** margin.
+
+**Watch item:** `extract` and `link` build the memory graph, and they now run on
+the cheap model. Degraded extraction is a slow, quiet failure — worse memories
+make everything downstream worse. It ran on GLM 5.2 in production for months, so
+the family is proven here, but this is the one to spot-check.
+
 ## 3n. Agent SDK runtime (2026-07-24, IN PROGRESS — Phase 0/1)
 
 Migrating the bounded agent loops (§3c) + eventually the chat brain (§3a) off the

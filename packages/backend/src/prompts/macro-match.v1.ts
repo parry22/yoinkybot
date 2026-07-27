@@ -10,7 +10,10 @@ export interface MacroMatchVars {
 export const macroMatch: Prompt<MacroMatchVars> = {
   id: "macro-match",
   version: 1,
-  tier: "frontier",
+  // cheap tier (2026-07-27): this scores RELEVANCE between a trend and the
+  // user's stated positions and emits JSON we consume — the user never reads a
+  // word of it. The take that follows is what needs Grok, not the matching.
+  tier: "cheap",
   system: `You gate a rare, premium notification: "the internet is talking about the exact
 thing this person has a stated position on, right now."
 

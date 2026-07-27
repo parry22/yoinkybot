@@ -181,7 +181,19 @@ export async function converseWithUser(
   // prefix. `now` is computed ONCE here (not per iteration) so the front of the
   // user message is byte-identical across the turn's iterations — only the
   // appended tool notes at the tail change (spec §2/§6 prefix stability).
-  const cacheKey = `chat:${hashForCacheKey(userId)}:${randomUUID()}`;
+  //
+  // The key is STABLE PER USER PER DAY. It used to end in `randomUUID()`, which
+  // held affinity inside one turn and threw it away between turns — a new key
+  // every turn means a new upstream server and a cold prefix, so the ~5.7k-token
+  // stable header (persona, profile, throughline, positions) was re-billed at the
+  // full input rate on every single turn. That is the single biggest reason the
+  // measured cache hit rate was 2.8%. Chat is ~95% input by volume and a cached
+  // Grok token is 6.7x cheaper, so this one line is most of the caching win.
+  //
+  // Dated rather than permanent so affinity still rebalances across servers daily,
+  // and so a user whose stable context changed materially isn't pinned forever to
+  // a node holding a stale prefix.
+  const cacheKey = `chat:${hashForCacheKey(userId)}:${new Date().toISOString().slice(0, 10)}`;
   const nowIso = new Date().toISOString();
   let forceFinal = false;
   let userTurnSaved = false;

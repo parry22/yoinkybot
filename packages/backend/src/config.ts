@@ -60,6 +60,28 @@ const schema = z.object({
   // before flipping LLM_TRANSPORT=xai — it may be "grok-4.5" or a dated variant.
   XAI_MODEL: z.string().default("grok-4.5"),
 
+  // ── Two-model routing (2026-07-27) ───────────────────────────────────────
+  // The single-model policy held while every call was product-critical. It isn't:
+  // measured production usage says the highest-VOLUME events are mechanical
+  // classification (classify_mention alone was 44% of all calls), and paying
+  // Grok's $2/$6 for "is this tweet a question?" is pure waste.
+  //
+  // So `tier` now picks the MODEL as well as the reasoning effort:
+  //   frontier            → MODEL_CHAT   (Grok 4.5 — anything voice-bearing)
+  //   cheap/cheap_floor/none → MODEL_CHEAP (mechanical/structural work)
+  //
+  // GLM 4.7 Flash is the default cheap model on purpose: the GLM family already
+  // ran 2,501 production calls in this codebase, and the JSON recovery ladder in
+  // llm/gateway.ts is ALREADY tuned to its specific quirks (trailing commas,
+  // single objects wrapped in an array). A cheaper model we've never run would be
+  // a reliability gamble; this one is a known quantity. Verified live on
+  // OpenRouter 2026-07-27: $0.06/M in, $0.01/M cached, $0.40/M out, 202k context.
+  //
+  // Set LLM_CHEAP_ROUTING=false to send everything back to MODEL_CHAT — a
+  // one-env-var rollback if cheap-tier quality ever disappoints.
+  MODEL_CHEAP: z.string().default("z-ai/glm-4.7-flash"),
+  LLM_CHEAP_ROUTING: z.coerce.boolean().default(true),
+
   // ── Claude Agent SDK runtime (agent-runtime migration; docs/INTERNAL §3n) ──
   // The bounded agent loops (+ eventually the chat brain) can run on the Claude
   // Agent SDK instead of the bespoke llm/tool-loop.ts runner. The SDK spawns a

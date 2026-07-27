@@ -7,7 +7,9 @@ export interface VoiceProfileVars {
 export const voiceProfile: Prompt<VoiceProfileVars> = {
   id: "voice-profile",
   version: 1,
-  tier: "frontier",
+  // cheap tier (2026-07-27): this DERIVES voice traits into JSON; it does not
+  // write in the voice. Drafting reads the traits and stays frontier.
+  tier: "cheap",
   system: `You build a voice profile from a person's raw thinking (voice notes, notes) and
 published writing. The profile will steer drafting so output sounds like THEM, not like AI.
 

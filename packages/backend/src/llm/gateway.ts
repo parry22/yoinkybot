@@ -68,20 +68,76 @@ export interface LlmResponse {
   finishReason?: string;
 }
 
-// Approximate $/1M tokens for margin visibility. `cachedIn` = the discounted rate
-// for prompt-cache hits (~4x cheaper on Grok 4.5). CONFIRM from the xAI/OpenRouter
-// console before trusting — figures below checked 2026-07-24.
+// $/1M tokens. `cachedIn` = the prompt-cache-hit rate, which is the whole reason
+// the caching work exists: on Grok 4.5 a cached input token is 6.7x cheaper than
+// a fresh one, and our chat prompt is ~95% input by volume.
+//
+// PULLED LIVE from the OpenRouter models API on 2026-07-27. The previous figures
+// were stale in BOTH directions and under-reported the cache upside: Grok's
+// cached rate was recorded as $0.50 when it is $0.30, and GLM 5.2 as
+// $0.54/$1.76 when it is $0.812/$2.552. Re-check with:
+//   curl -s https://openrouter.ai/api/v1/models | jq '.data[] | select(.id=="x-ai/grok-4.5") | .pricing'
 const PRICE: Record<string, { in: number; cachedIn: number; out: number }> = {
-  "x-ai/grok-4.5": { in: 2.0, cachedIn: 0.5, out: 6.0 }, // OpenRouter id
-  "grok-4.5": { in: 2.0, cachedIn: 0.5, out: 6.0 }, // xAI-direct id
-  "z-ai/glm-5.2": { in: 0.54, cachedIn: 0.54, out: 1.76 }, // historical; no separate cached rate known
+  "x-ai/grok-4.5": { in: 2.0, cachedIn: 0.3, out: 6.0 }, // OpenRouter id
+  "grok-4.5": { in: 2.0, cachedIn: 0.3, out: 6.0 }, // xAI-direct id
+  "z-ai/glm-4.7-flash": { in: 0.06, cachedIn: 0.01, out: 0.4 }, // the cheap tier
+  "z-ai/glm-5.2": { in: 0.812, cachedIn: 0.151, out: 2.552 }, // historical
+  // Alternates worth knowing, priced live the same day — swap via MODEL_CHEAP.
+  "deepseek/deepseek-v4-flash": { in: 0.14, cachedIn: 0.028, out: 0.28 },
+  "google/gemini-2.5-flash-lite": { in: 0.1, cachedIn: 0.01, out: 0.4 },
+  "openai/gpt-5-nano": { in: 0.05, cachedIn: 0.005, out: 0.4 },
 };
 
-/** Price row for a model id, tolerant of the OpenRouter vs xAI naming split. */
+/** Price row for a model id, tolerant of the OpenRouter vs xAI naming split.
+ *  An unknown model prices at 0 — visible as a suspicious $0 line in
+ *  usage_events rather than a wrong number, which is the failure mode we want. */
 function priceFor(model: string): { in: number; cachedIn: number; out: number } {
   if (PRICE[model]) return PRICE[model]!;
   if (model.includes("grok-4.5")) return PRICE["grok-4.5"]!;
   return { in: 0, cachedIn: 0, out: 0 };
+}
+
+/**
+ * Which model + transport serves this tier.
+ *
+ * frontier → MODEL_CHAT (Grok 4.5): anything the user reads as Yoinky's voice —
+ *   drafts, takes, replies, the chat turn, the diagnosis.
+ * cheap / cheap_floor / none → MODEL_CHEAP: mechanical and structural work whose
+ *   output is JSON we consume, never prose the user sees.
+ *
+ * The cheap tier ALWAYS goes over OpenRouter, even when LLM_TRANSPORT=xai —
+ * api.x.ai serves Grok and nothing else, so a cheap-tier call there would 404.
+ * That makes transport a per-REQUEST decision, not a per-process one.
+ */
+export interface RouteEnv {
+  cheapRouting: boolean;
+  openRouterKey?: string;
+  transport: "openrouter" | "xai";
+  chatModel: string;
+  cheapModel: string;
+  xaiModel: string;
+}
+
+/** Live config as a RouteEnv. Split out so `routeFor` is testable without env. */
+const liveRouteEnv = (): RouteEnv => ({
+  cheapRouting: config.LLM_CHEAP_ROUTING,
+  openRouterKey: config.OPENROUTER_API_KEY,
+  transport: config.LLM_TRANSPORT,
+  chatModel: config.MODEL_CHAT,
+  cheapModel: config.MODEL_CHEAP,
+  xaiModel: config.XAI_MODEL,
+});
+
+export function routeFor(tier: Tier, env: RouteEnv = liveRouteEnv()): { model: string; xai: boolean } {
+  // The cheap model lives on OpenRouter, so without a key there is nothing to
+  // route TO — fall back to the product model rather than failing the call.
+  // Only reachable under LLM_TRANSPORT=xai; the OpenRouter transport needs that
+  // key for every call anyway.
+  if (tier !== "frontier" && env.cheapRouting && env.openRouterKey) {
+    return { model: env.cheapModel, xai: false };
+  }
+  const xai = env.transport === "xai";
+  return { model: xai ? env.xaiModel : env.chatModel, xai };
 }
 
 /** Cost of one call. `cachedIn` tokens (a subset of `tokensIn`) bill at the
@@ -157,12 +213,19 @@ export async function fetchWithTimeout(
  *  spreads across providers, and not all accept response_format — that 400 must
  *  degrade, not kill the turn). Both transports speak the OpenAI chat shape. */
 async function callModel(req: LlmRequest, useJsonMode: boolean, sendReasoning = true): Promise<LlmResponse> {
-  const xai = config.LLM_TRANSPORT === "xai";
+  // Model AND transport now follow the tier — see routeFor.
+  const { model, xai } = routeFor(req.tier);
+  const cheapModel = !xai && model !== config.MODEL_CHAT;
   const apiKey = xai ? config.XAI_API_KEY : config.OPENROUTER_API_KEY;
   if (!apiKey) throw new Error(`${xai ? "XAI_API_KEY" : "OPENROUTER_API_KEY"} not configured`);
   const baseUrl = xai ? config.XAI_BASE_URL : config.OPENROUTER_BASE_URL;
-  const model = xai ? config.XAI_MODEL : config.MODEL_CHAT;
   const effort = reasoningEffort(req.tier);
+  // Cache affinity is worthless if only 2 of 36 callsites opt in, which is what
+  // the 2.8% measured hit rate was telling us. Every call now carries a key by
+  // default: same event + same user → same upstream → warm prefix. A caller can
+  // still pass its own (the chat loop does, to hold one key across a turn).
+  const cacheKey =
+    req.cacheKey ?? (req.userId ? `${req.eventType}:${hashForCacheKey(req.userId)}` : req.eventType);
 
   const headers: Record<string, string> = {
     authorization: `Bearer ${apiKey}`,
@@ -192,7 +255,23 @@ async function callModel(req: LlmRequest, useJsonMode: boolean, sendReasoning = 
     // xAI-native reasoning param + cache-affinity header (spec §3). NOTE: verify
     // grok-4.5 accepts reasoning_effort in the console before relying on it.
     if (sendReasoning) body.reasoning_effort = effort;
-    if (req.cacheKey) headers["x-grok-conv-id"] = req.cacheKey;
+    headers["x-grok-conv-id"] = cacheKey;
+  } else if (cheapModel) {
+    headers["HTTP-Referer"] = "https://t.me/yoinkyybot";
+    headers["X-Title"] = "Yoinky";
+    // REASONING OFF — not "low". GLM 4.7 Flash is a reasoning model, and this is
+    // the difference between the cheap tier working and returning nothing at all:
+    // with effort "low" it spent the entire 80-token budget of classify_mention
+    // on an internal monologue and came back `content: null`,
+    // `finish_reason: "length"` (measured 0/4 valid). With reasoning disabled it
+    // is 5/5 valid JSON and agrees with Grok on every unambiguous case.
+    // Reasoning tokens also bill at the OUTPUT rate, so this is the second-largest
+    // saving here after the model swap itself.
+    body.reasoning = { enabled: false };
+    // No provider `ignore` list: that allowlist was tuned for the frontier model,
+    // and over-constraining a cheap model's provider pool costs availability for
+    // work whose whole point is being disposable.
+    body.session_id = cacheKey;
   } else {
     headers["HTTP-Referer"] = "https://t.me/yoinkyybot";
     headers["X-Title"] = "Yoinky";
@@ -200,7 +279,7 @@ async function callModel(req: LlmRequest, useJsonMode: boolean, sendReasoning = 
     if (sendReasoning) body.reasoning = { effort };
     const ignore = config.OPENROUTER_PROVIDER_IGNORE.split(",").map((s) => s.trim()).filter(Boolean);
     if (ignore.length) body.provider = { ignore };
-    if (req.cacheKey) body.session_id = req.cacheKey;
+    body.session_id = cacheKey;
   }
 
   const res = await fetchWithTimeout(`${baseUrl}/chat/completions`, {

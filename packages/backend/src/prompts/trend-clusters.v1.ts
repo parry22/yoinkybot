@@ -29,7 +29,10 @@ export interface TrendClustersVars {
 export const trendClusters: Prompt<TrendClustersVars> = {
   id: "trend-clusters",
   version: 1,
-  tier: "frontier",
+  // cheap tier (2026-07-27): grouping tweets into topics is a structural
+  // judgment, not authored output, and at ~4.6k in / 1.5k out it was the most
+  // expensive single call in the system. Fleet-wide, so this is shared spend.
+  tier: "cheap",
   system: `You are given a batch of recent tweets (last ~24h) pulled around a set of professional
 topics. Your job: find the distinct THINGS PEOPLE ARE TALKING ABOUT RIGHT NOW — the clusters where
 multiple different accounts are reacting to the same event, launch, announcement, or take.

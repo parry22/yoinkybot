@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { extractJson, salvageTruncatedJson, asObject, cost, reasoningEffort, hashForCacheKey } from "./gateway.js";
+import { extractJson, salvageTruncatedJson, asObject, cost, reasoningEffort, hashForCacheKey, routeFor, type RouteEnv } from "./gateway.js";
 
-describe("cost (cached input bills ~4x cheaper)", () => {
+describe("cost (cached input bills ~6.7x cheaper)", () => {
   it("splits fresh vs cached input and adds output at the output rate", () => {
-    // grok-4.5: $2 in / $0.50 cachedIn / $6 out per 1M.
+    // grok-4.5, priced live from the OpenRouter models API 2026-07-27:
+    // $2 in / $0.30 cachedIn / $6 out per 1M. (The cached rate was recorded as
+    // $0.50 until then, which UNDER-stated the caching upside.)
     // 1M input of which 500k cached, 100k output:
-    //   fresh 500k*2 + cached 500k*0.5 + out 100k*6 = 1_000_000 + 250_000 + 600_000 = 1.85M $-units /1e6
-    expect(cost("x-ai/grok-4.5", 1_000_000, 500_000, 100_000)).toBeCloseTo(1.85, 6);
+    //   fresh 500k*2 + cached 500k*0.3 + out 100k*6 = 1_000_000 + 150_000 + 600_000 = 1.75M /1e6
+    expect(cost("x-ai/grok-4.5", 1_000_000, 500_000, 100_000)).toBeCloseTo(1.75, 6);
   });
   it("charges full input when nothing is cached", () => {
     expect(cost("grok-4.5", 1_000_000, 0, 0)).toBeCloseTo(2.0, 6);
@@ -16,6 +18,60 @@ describe("cost (cached input bills ~4x cheaper)", () => {
   });
   it("falls back to zero for an unknown model (never NaN)", () => {
     expect(cost("mystery-model", 1000, 100, 1000)).toBe(0);
+  });
+});
+
+describe("routeFor (two-model routing)", () => {
+  const env: RouteEnv = {
+    cheapRouting: true,
+    openRouterKey: "sk-test",
+    transport: "openrouter",
+    chatModel: "x-ai/grok-4.5",
+    cheapModel: "z-ai/glm-4.7-flash",
+    xaiModel: "grok-4.5",
+  };
+
+  it("frontier stays on the product model", () => {
+    expect(routeFor("frontier", env).model).toBe("x-ai/grok-4.5");
+  });
+
+  it("every non-frontier tier goes to the cheap model", () => {
+    for (const t of ["cheap", "cheap_floor", "none"] as const) {
+      expect(routeFor(t, env).model).toBe("z-ai/glm-4.7-flash");
+    }
+  });
+
+  /**
+   * api.x.ai serves Grok and nothing else, so a cheap-tier call routed there
+   * would 404. Transport has to follow the tier, not the process-wide setting.
+   */
+  it("forces the cheap tier onto OpenRouter even when the transport is xai", () => {
+    const r = routeFor("cheap", { ...env, transport: "xai" });
+    expect(r.xai).toBe(false);
+    expect(r.model).toBe("z-ai/glm-4.7-flash");
+  });
+
+  it("keeps frontier on xai-direct when that transport is selected", () => {
+    const r = routeFor("frontier", { ...env, transport: "xai" });
+    expect(r.xai).toBe(true);
+    expect(r.model).toBe("grok-4.5");
+  });
+
+  it("falls back to the product model when there is no OpenRouter key to route to", () => {
+    const r = routeFor("cheap", { ...env, transport: "xai", openRouterKey: undefined });
+    expect(r.model).toBe("grok-4.5");
+    expect(r.xai).toBe(true);
+  });
+
+  it("LLM_CHEAP_ROUTING=false sends everything back to the product model", () => {
+    expect(routeFor("cheap", { ...env, cheapRouting: false }).model).toBe("x-ai/grok-4.5");
+  });
+
+  it("the cheap model is priced, and far cheaper on both input and output", () => {
+    const frontier = cost("x-ai/grok-4.5", 1000, 0, 1000);
+    const cheap = cost("z-ai/glm-4.7-flash", 1000, 0, 1000);
+    expect(cheap).toBeGreaterThan(0); // priced, not an unknown model silently at $0
+    expect(cheap).toBeLessThan(frontier / 5);
   });
 });
 

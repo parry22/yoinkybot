@@ -192,17 +192,40 @@ must follow the casual register above (lowercase, no memo tone) even when you're
 tool. respond with ONLY valid JSON:
 {"reply": "...", "tool": {"name": "...", ...args} | null, "capture": true|false, "offer_angles": true|false}`,
   render: (v) => {
+    /**
+     * BLOCK ORDER IS A COST DECISION, NOT A STYLE ONE.
+     *
+     * Prompt caching is prefix-based: the provider can only reuse the longest
+     * byte-identical HEAD of the prompt. Everything from the first changed
+     * character onward is re-billed at the full input rate.
+     *
+     * `MEMORIES RELEVANT TO THIS MESSAGE` is per-message retrieval — it changes
+     * every single turn — and it used to sit SECOND, right after positions. That
+     * put a volatile block near the front of a ~5.7k-token prompt, so almost
+     * nothing after it could ever be cached, no matter how stable it was.
+     *
+     * So: slowest-changing first, fastest-changing last. Identity and strategy
+     * (profile, throughline, goal, voice, positions) barely move between turns
+     * and now form one long cacheable head; retrieval, counters and the clock go
+     * at the tail, immediately before the conversation and the new message which
+     * are volatile by nature anyway.
+     *
+     * The model sees exactly the same information either way.
+     */
     const block: string[] = [];
+
+    // ── stable head: changes only when the user's profile/strategy changes ──
+    if (v.profile) block.push(`THEIR STATED PROFILE (what they told us they're building — honor it, especially any off-limits topics):\n${v.profile}`);
+    if (v.throughline) block.push(`THEIR THROUGHLINE (what they're becoming known for):\n${v.throughline}`);
+    if (v.goal) block.push(`THEIR STATED GOAL:\n${v.goal}`);
+    if (v.voiceTraits) block.push(`THEIR VOICE:\n${JSON.stringify(v.voiceTraits)}`);
     block.push(
       `THEIR STATED POSITIONS:\n${v.positions.length ? v.positions.map((p) => `- ${p}`).join("\n") : "(none captured yet)"}`,
     );
-    block.push(
-      `MEMORIES RELEVANT TO THIS MESSAGE:\n${
-        v.relevantMemories.length
-          ? v.relevantMemories.map((m) => `- (${m.kind}, ${m.created_at.slice(0, 10)}) ${m.content}`).join("\n")
-          : "(nothing closely related found)"
-      }`,
-    );
+    if (v.pendingUnlocks?.length)
+      block.push(`UNDEVELOPED UNLOCK IDEAS (push these):\n${v.pendingUnlocks.map((u) => `- ${u}`).join("\n")}`);
+
+    // ── slow-moving: shifts a few times a day at most ──
     if (v.recentMoments.length) {
       block.push(
         `RECENT MOMENTS THEY ENGAGED WITH:\n${v.recentMoments.map((m) => `- ${m.title}${m.theme ? ` [${m.theme}]` : ""} (${m.verdict})`).join("\n")}`,
@@ -213,18 +236,21 @@ tool. respond with ONLY valid JSON:
         `STORY ANGLES ALREADY WAITING FOR THEM:\n${v.pendingAngles.map((a) => `- ${a.title}: ${a.hooks.join(" / ")}`).join("\n")}`,
       );
     }
-    if (v.profile) block.push(`THEIR STATED PROFILE (what they told us they're building — honor it, especially any off-limits topics):\n${v.profile}`);
-    if (v.throughline) block.push(`THEIR THROUGHLINE (what they're becoming known for):\n${v.throughline}`);
-    if (v.goal) block.push(`THEIR STATED GOAL:\n${v.goal}`);
-    if (v.pendingUnlocks?.length)
-      block.push(`UNDEVELOPED UNLOCK IDEAS (push these):\n${v.pendingUnlocks.map((u) => `- ${u}`).join("\n")}`);
-    if (v.voiceTraits) block.push(`THEIR VOICE:\n${JSON.stringify(v.voiceTraits)}`);
     if (v.relationship) {
       block.push(
         `HOW WORKING TOGETHER HAS ACTUALLY BEEN GOING (computed facts — weave in naturally when relevant, ` +
           `never recite as a report; if something's been ignored repeatedly, ask why instead of pushing again):\n${v.relationship}`,
       );
     }
+
+    // ── volatile tail: different on essentially every turn ──
+    block.push(
+      `MEMORIES RELEVANT TO THIS MESSAGE:\n${
+        v.relevantMemories.length
+          ? v.relevantMemories.map((m) => `- (${m.kind}, ${m.created_at.slice(0, 10)}) ${m.content}`).join("\n")
+          : "(nothing closely related found)"
+      }`,
+    );
     block.push(`(They have ${v.memoryCount} things captured so far. Onboarding stage: ${v.stage ?? "new"}.)`);
     if (v.now) block.push(`CURRENT TIME (UTC): ${v.now} — resolve any scheduling time relative to this.`);
 
