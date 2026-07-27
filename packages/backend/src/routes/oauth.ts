@@ -86,6 +86,12 @@ export function buildAuthUrl(userId: string, platform: Platform, returnTo?: stri
       // (social/media.ts). Tokens minted BEFORE this scope was added don't have
       // it, so an existing connection can post text but will fail on media until
       // the user reconnects — the scheduler says so rather than failing silently.
+      //
+      // offline.access is what returns a refresh token. X's access tokens last
+      // ~2 hours, so without renewal almost every scheduled post would fire
+      // against a dead one; social/publish.ts#ensureWriteAuth spends the refresh
+      // token before each publish. A connection made without this scope has no
+      // refresh token and is treated as needing re-consent once it expires.
       scope: "tweet.read tweet.write users.read media.write offline.access",
       state,
       code_challenge: challenge,
@@ -121,6 +127,10 @@ async function storeToken(
         post_refresh_token = EXCLUDED.post_refresh_token,
         post_token_expires_at = EXCLUDED.post_token_expires_at,
         post_scopes = EXCLUDED.post_scopes,
+        -- Re-consenting IS the fix for a dead credential, so clear the flag the
+        -- publisher sets when it gives up on one (social/publish.ts). Leaving it
+        -- set would keep telling the user to reconnect an account they just did.
+        post_reauth_required_at = NULL,
         post_author_urn = COALESCE(EXCLUDED.post_author_urn, connected_accounts.post_author_urn)`,
     [userId, platform, "connected-for-posting", tok.accessToken, tok.refreshToken ?? null, expiresAt, tok.scope ?? null, tok.authorUrn ?? null],
   );

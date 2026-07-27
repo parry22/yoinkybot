@@ -90,6 +90,13 @@ export async function bumpWarmup(id: string): Promise<void> {
 }
 
 // ── caps (counted from automation_runs; a "post" = a run that reached delivery) ──
+//
+// 'awaiting_approval' counts on purpose: the agent did the work and spent the
+// model call, so it is a produced post whether or not the user has answered yet.
+// What makes that safe is that an unanswered approval now EXPIRES (see
+// expireStaleApprovals) into a status outside this set, handing the quota back.
+// Before the reaper existed, five ignored DMs permanently consumed a Growth
+// user's whole monthly Auto Agent allowance.
 const DELIVERED_STATUSES = "('awaiting_approval','approved','scheduled','posted')";
 
 /** Posts this automation has produced this calendar month (monthly_cap gate). */
@@ -180,6 +187,44 @@ export async function setRunScheduled(runId: string, scheduledPostId: string): P
     runId,
     scheduledPostId,
   ]);
+}
+
+/** An approval that aged out, with the context needed to tell the user why. */
+export interface ExpiredApproval {
+  id: string;
+  user_id: string;
+  automation_name: string;
+  draft_body: string | null;
+}
+
+/**
+ * Age out approvals nobody answered. Fleet-wide, one statement, called from the
+ * automation tick — no new queue for something this cheap.
+ *
+ * WHY THIS HAS TO EXIST. `awaiting_approval` counts against
+ * entitlements.automationPostsPerMonth (Growth = 5) and `stampRun` has already
+ * fired, so the automation produces a fresh approval the next day regardless.
+ * With no expiry, a user who ignored five approval DMs had their Auto Agent
+ * silently dead until the calendar month rolled over, the cap held by five
+ * drafts they were never going to act on, and nothing anywhere said so.
+ *
+ * The transition is a compare-and-set on `status` inside the UPDATE, so it can
+ * never race the user tapping approve/reject at the same moment: whichever
+ * statement lands first wins and the other matches no row.
+ */
+export async function expireStaleApprovals(maxAgeHours: number): Promise<ExpiredApproval[]> {
+  return query<ExpiredApproval>(
+    `UPDATE automation_runs r
+        SET status = 'expired',
+            verdict_reason = $2,
+            updated_at = now()
+       FROM automations a
+      WHERE a.id = r.automation_id
+        AND r.status = 'awaiting_approval'
+        AND r.created_at < now() - make_interval(hours => $1::int)
+      RETURNING r.id, r.user_id, a.name AS automation_name, r.draft_body`,
+    [maxAgeHours, `expired unanswered after ${maxAgeHours}h — the monthly Auto Agent slot was released`],
+  );
 }
 
 export async function setRunStatus(runId: string, status: RunStatus, reason?: string): Promise<void> {

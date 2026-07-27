@@ -5,6 +5,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowUp01Icon } from "@hugeicons/core-free-icons";
 import panel from "./panel.module.css";
 import { useAgentStream } from "./use-agent-stream";
+import { UpgradeCTA } from "./upgrade-cta";
 import styles from "./automations.module.css";
 
 type SourceType = "trend_ride" | "unlock_backlog" | "custom";
@@ -87,6 +88,10 @@ export function Automations({
   const [options, setOptions] = useState<string[]>([]);
   const [input, setInput] = useState("");
   const [err, setErr] = useState("");
+  /** A 402 is a wall, not an error: it gets the upgrade link rather than a line
+   *  of grey hint text with nothing to click. Holds the wall's own copy, since
+   *  "you can't set one up" and "the one you have can't run" are different walls. */
+  const [paywall, setPaywall] = useState<string | null>(null);
   const { run, activity, busy } = useAgentStream();
   const taRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -119,6 +124,7 @@ export function Automations({
     const t = text.trim();
     if (!t || busy) return;
     setErr("");
+    setPaywall(null);
     setInput("");
     setOptions([]);
     const next: Turn[] = [...turns, { role: "user", content: t }];
@@ -146,8 +152,10 @@ export function Automations({
             setOptions(d.options ?? []);
           }
         },
-        onError: (message, status) =>
-          setErr(status === 402 ? "Auto Agent is a paid feature — upgrade to set one up." : message),
+        onError: (message, status) => {
+          if (status === 402) setPaywall("Auto Agent is a paid feature — upgrade to set one up.");
+          else setErr(message);
+        },
       },
     );
   }
@@ -165,14 +173,17 @@ export function Automations({
   /** "Run now" — streamed, so the pipeline shows its work. */
   async function runNow(a: AutomationView) {
     setErr("");
+    setPaywall(null);
     await run(
       "/api/automations/run/stream",
       { id: a.id },
       {
         onMessage: (content) => setTurns((prev) => [...prev, { role: "assistant", content }]),
         onResult: () => void refreshApprovals(),
-        onError: (message, status) =>
-          setErr(status === 402 ? "Your trial has ended — upgrade to keep the agent running." : message),
+        onError: (message, status) => {
+          if (status === 402) setPaywall("Your trial has ended — upgrade to keep the agent running.");
+          else setErr(message);
+        },
       },
     );
   }
@@ -187,11 +198,24 @@ export function Automations({
             <div>
               <div className={panel.title}>Auto Agent</div>
               <div className={panel.subtitle}>
-                Tell Yoinky what you want posted and it&apos;ll ask you the rest, then run it.
-                {planCap !== null && ` Your plan covers ${planCap} agent posts a month.`}
+                Tell Yoinky what you want posted — say it however it comes out — and it&apos;ll ask about the angles,
+                hooks and shape of post from there, then set it running.
+                {/* A cap of 0 is the free plan, not an allowance: "Your plan covers
+                 *  0 agent posts a month" read like a broken counter, so the zero
+                 *  case drops the sentence and shows the wall below instead. */}
+                {planCap !== null && planCap > 0 && ` Your plan covers ${planCap} agent posts a month.`}
               </div>
             </div>
           </div>
+
+          {planCap === 0 && (
+            <section className={styles.section}>
+              <UpgradeCTA
+                message="Your plan doesn't include agent posts — upgrade and Yoinky starts writing them for you."
+                plan="growth"
+              />
+            </section>
+          )}
 
           {approvals.length > 0 && (
             <section className={styles.section}>
@@ -200,6 +224,7 @@ export function Automations({
                 <ApprovalCard
                   key={a.runId}
                   approval={a}
+                  onPaywall={setPaywall}
                   onResolved={(runId) => setApprovals((list) => list.filter((x) => x.runId !== runId))}
                   onEdited={(runId, draft) =>
                     setApprovals((list) => list.map((x) => (x.runId === runId ? { ...x, draft } : x)))
@@ -236,21 +261,6 @@ export function Automations({
                   </div>
                 </div>
               ))}
-            </section>
-          )}
-
-          {/* The opening prompt. No preset pills: the first thing on screen is a
-           *  question, and the options that follow are generated from the answer. */}
-          {!started && (
-            <section className={styles.section}>
-              <div className={styles.intro}>
-                <div className={styles.introTitle}>What do you want an agent posting for you?</div>
-                <div className={styles.introSub}>
-                  Say it however it comes out — &ldquo;keep me visible on pricing takes&rdquo;, &ldquo;post a lesson from
-                  each thing I ship&rdquo;. I&apos;ll ask about the angles, the hooks and the shape of post from there,
-                  then set it running.
-                </div>
-              </div>
             </section>
           )}
 
@@ -295,6 +305,12 @@ export function Automations({
 
       <div className={styles.agentDock}>
         <div className={styles.agentDockInner}>
+          {paywall && (
+            <div style={{ marginBottom: 10 }}>
+              <UpgradeCTA message={paywall} plan="growth" />
+            </div>
+          )}
+
           {/* Suggestions belong to the question that was just asked, so they only
            *  exist after Yoinky asks something — never as standing UI furniture. */}
           {options.length > 0 && !busy && (
@@ -324,10 +340,7 @@ export function Automations({
             />
             <div className={styles.briefFooter}>
               <span className={styles.briefHint}>
-                {err ||
-                  (canAutoAgent
-                    ? "Enter to send · Shift+Enter for a new line"
-                    : "Enter to send · hands-off posting is a Scale feature, so yours will ask you first")}
+                {err || (canAutoAgent ? "" : "Hands-off posting is a Scale feature, so yours will ask you first")}
               </span>
               <button
                 className={styles.briefSend}
@@ -349,10 +362,14 @@ function ApprovalCard({
   approval,
   onResolved,
   onEdited,
+  onPaywall,
 }: {
   approval: ApprovalView;
   onResolved: (runId: string) => void;
   onEdited: (runId: string, draft: string) => void;
+  /** Verdicts are paid work (an "edit" re-drafts through the model), so a 402 has
+   *  to surface — silently doing nothing looked like a broken button. */
+  onPaywall: (message: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [instruction, setInstruction] = useState("");
@@ -366,6 +383,10 @@ function ApprovalCard({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ runId: approval.runId, action, instruction: action === "edit" ? instruction : undefined }),
       });
+      if (res.status === 402) {
+        onPaywall("Upgrade to approve, edit or reject what your agent wrote.");
+        return;
+      }
       const data = await res.json();
       if (action === "edit") {
         if (data.ok && data.draft) {

@@ -52,3 +52,14 @@
   opacity: 0.6;
   cursor: default;
 }
+
+/* Clerk renders its own avatar button; this just gives it the same 38px tap
+ * target and vertical centring as the icon buttons either side of it. */
+.user {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+}

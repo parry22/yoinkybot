@@ -127,6 +127,16 @@ export async function runAutomationOnce(
       source_ref: item.sourceRef,
       verdict_reason: draft.note || "draft declined",
     });
+    // STAMP THE DAY EVEN THOUGH NOTHING SHIPPED. A declined draft is recorded
+    // `skipped`, which counts against no cap, and this path used to return
+    // without touching `last_run_at` — so isDue() still said yes, and the next
+    // tick three hours later ran the whole pipeline again. A source the model
+    // keeps refusing (off-limits topic, unusable seed) therefore burned eight
+    // full LLM compositions a day, every day, bounded only by the global 400/day
+    // gateway cap. The composition is the expensive part and it has already
+    // happened; charging the automation its day is what makes the loop
+    // terminate. Same stamp the success path does below, deliberately.
+    await stampRun(automation.id);
     return { status: "skipped", runId: run.id, reason: draft.note || "draft declined" };
   }
 

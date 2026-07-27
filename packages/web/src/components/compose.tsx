@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Copy01Icon, CheckmarkCircle02Icon, ArrowUp01Icon } from "@hugeicons/core-free-icons";
+import { Copy01Icon, Tick02Icon, ArrowUp01Icon } from "@hugeicons/core-free-icons";
 import { useAgentStream } from "./use-agent-stream";
+import { UpgradeCTA } from "./upgrade-cta";
 import styles from "./chat.module.css";
 
 type Draft = { id: string; content: string; platform: string; created_at?: string };
@@ -45,6 +46,9 @@ export function Compose({ initialDrafts }: { initialDrafts: Draft[] }) {
   );
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
+  /** A 402 isn't an error message, it's a wall — it gets the upgrade link, not
+   *  a grey line of hint text you can't act on. */
+  const [paywalled, setPaywalled] = useState(false);
   const { run, activity, busy } = useAgentStream();
   const scrollRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -70,6 +74,7 @@ export function Compose({ initialDrafts }: { initialDrafts: Draft[] }) {
     const t = text.trim();
     if (!t || busy) return;
     setError("");
+    setPaywalled(false);
     setInput("");
     add({ kind: "user", id: uid(), text: t });
 
@@ -85,7 +90,8 @@ export function Compose({ initialDrafts }: { initialDrafts: Draft[] }) {
           else add({ kind: "agent", id: uid(), text: msg });
         },
         onError: (message, status) => {
-          setError(status === 402 ? "Your trial has ended — upgrade to keep composing." : message);
+          if (status === 402) setPaywalled(true);
+          else setError(message);
         },
       },
     );
@@ -125,15 +131,31 @@ export function Compose({ initialDrafts }: { initialDrafts: Draft[] }) {
               </div>
             </>
           ) : (
-            entries.map((e) =>
-              e.kind === "draft" ? (
-                <DraftCard key={e.id} content={e.content} platform={e.platform} />
-              ) : (
-                <div key={e.id} className={`${styles.msg} ${e.kind === "user" ? styles.msgUser : styles.msgBot}`}>
+            entries.map((e, i) => {
+              // Only open a gap when the speaker changes, so a multi-part agent
+              // answer reads as one answer rather than three loose blocks.
+              const prev = entries[i - 1];
+              const speaker = e.kind === "user" ? "user" : "agent";
+              const prevSpeaker = prev ? (prev.kind === "user" ? "user" : "agent") : null;
+              const gap = prevSpeaker !== null && prevSpeaker !== speaker ? styles.turnGap : "";
+
+              // A drafted post and an ordinary reply are the same object on
+              // screen — plain agent text. The draft only differs in carrying a
+              // copy action, because a post is a thing you take somewhere.
+              if (e.kind === "draft") {
+                return (
+                  <AgentMessage key={e.id} text={e.content} className={gap} copyable />
+                );
+              }
+              if (e.kind === "agent") {
+                return <AgentMessage key={e.id} text={e.text} className={gap} />;
+              }
+              return (
+                <div key={e.id} className={`${styles.msg} ${styles.msgUser} ${gap}`}>
                   {e.text}
                 </div>
-              ),
-            )
+              );
+            })
           )}
 
           {activity.length > 0 && (
@@ -172,6 +194,14 @@ export function Compose({ initialDrafts }: { initialDrafts: Draft[] }) {
       </div>
 
       <div className={styles.composerWrap}>
+        {/* Sits above the composer at the composer's own width (--content-width
+            is set on .root) so the wall reads as part of the input, not as a
+            message in the thread. */}
+        {paywalled && (
+          <div style={{ width: "var(--content-width)", marginInline: "auto", marginBottom: 10 }}>
+            <UpgradeCTA message="Your trial has ended — upgrade to keep composing." plan="growth" />
+          </div>
+        )}
         <div className={styles.composer}>
           {/* Placeholder is short on purpose: the box is one row until you type,
               and a longer one wraps to two lines and clips on a narrow phone. */}
@@ -185,7 +215,9 @@ export function Compose({ initialDrafts }: { initialDrafts: Draft[] }) {
             rows={1}
           />
           <div className={styles.composerFooter}>
-            <span className={styles.hint}>{error || "Enter to send · Shift+Enter for a new line"}</span>
+            <span className={`${styles.hint} ${error ? styles.hintError : ""}`}>
+              {error}
+            </span>
             <button
               className={styles.send}
               onClick={() => void send(input)}
@@ -213,30 +245,47 @@ function extractDraft(msg: string): string | null {
   return (m[1] ?? "").split("\n\n📎 pair it with:")[0]!.trim() || null;
 }
 
-function DraftCard({ content, platform }: { content: string; platform: string }) {
+/**
+ * An agent turn: bare text on the canvas, with the copy affordance sitting
+ * *under* it rather than in a header bar above it. `copyable` is on for drafts —
+ * the only agent output you'd actually want on your clipboard.
+ */
+export function AgentMessage({
+  text,
+  className = "",
+  copyable = false,
+}: {
+  text: string;
+  className?: string;
+  copyable?: boolean;
+}) {
   const [copied, setCopied] = useState(false);
+
+  function copy() {
+    navigator.clipboard
+      ?.writeText(text)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1600);
+      })
+      .catch(() => {});
+  }
+
   return (
-    <div className={styles.draftCard}>
-      <div className={styles.draftTop}>
-        <span className={styles.draftPill}>{platform === "linkedin" ? "LinkedIn" : "X"} draft</span>
-        <span className={styles.draftSpacer} />
-        <button
-          className={styles.copyBtn}
-          onClick={() => {
-            navigator.clipboard
-              ?.writeText(content)
-              .then(() => {
-                setCopied(true);
-                setTimeout(() => setCopied(false), 1600);
-              })
-              .catch(() => {});
-          }}
-        >
-          <HugeiconsIcon icon={copied ? CheckmarkCircle02Icon : Copy01Icon} size={13} strokeWidth={1.8} />
-          {copied ? "Copied" : "Copy"}
-        </button>
-      </div>
-      <div className={styles.draftBody}>{content}</div>
+    <div className={`${styles.msgBlock} ${className}`}>
+      <div className={`${styles.msg} ${styles.msgBot}`}>{text}</div>
+      {copyable && (
+        <div className={styles.actions}>
+          <button
+            className={`${styles.iconBtn} ${copied ? styles.iconBtnDone : ""}`}
+            onClick={copy}
+            aria-label={copied ? "Copied" : "Copy"}
+            title={copied ? "Copied" : "Copy"}
+          >
+            <HugeiconsIcon icon={copied ? Tick02Icon : Copy01Icon} size={15} strokeWidth={1.8} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

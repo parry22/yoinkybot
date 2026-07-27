@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/session";
-import { createCheckout, setIntendedPlan, trialInfo } from "@yoink/backend/web";
+import { billingOverview, createCheckout, setIntendedPlan, config } from "@yoink/backend/web";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,6 +19,9 @@ export const maxDuration = 60;
  *
  * Robustness: the local `trialing` row already grants access, so if Dodo isn't
  * configured or the call fails, we fall back to the app.
+ *
+ * Like /api/billing/checkout, a user who already has a Dodo subscription is sent
+ * to the portal rather than allowed to mint a second one.
  */
 export async function GET(req: Request) {
   const origin = new URL(req.url).origin;
@@ -31,9 +34,20 @@ export async function GET(req: Request) {
   if (planParam) await setIntendedPlan(user.id, planParam).catch(() => {});
 
   try {
-    const info = await trialInfo(user.id).catch(() => null);
+    // One read for both the duplicate-subscription check and the trial days —
+    // billingOverview already carries trialInfo.
+    const ov = await billingOverview(user.id).catch(() => null);
+    if (ov?.hasDodoSubscription) {
+      return NextResponse.redirect(new URL("/api/billing/portal", origin));
+    }
+    const info = ov?.trial ?? null;
     const trialDays = info?.onTrial ? Math.max(1, info.daysLeft) : 0;
-    const { url } = await createCheckout(user.id, user.email, plan, trialDays > 0 ? { trialDays } : {});
+    const { url } = await createCheckout(user.id, user.email, plan, {
+      ...(trialDays > 0 ? { trialDays } : {}),
+      // Web buyers return to Settings, not to the Telegram bot that
+      // CHECKOUT_RETURN_URL points at in production.
+      returnUrl: `${config.WEB_APP_URL}/app/settings`,
+    });
     return NextResponse.redirect(url);
   } catch (err) {
     console.error("start-trial checkout failed (falling back to local trial)", err);

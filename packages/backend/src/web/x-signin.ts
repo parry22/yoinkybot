@@ -12,8 +12,18 @@ import { ensureBoss } from "../jobs/boss.js";
 import { startConnect } from "../strategist/connect.js";
 
 export interface XConnectStatus {
+  /**
+   * A usable X connection: the account row exists AND its history read hasn't
+   * failed. This used to be a bare `Boolean(row)`, which counted a `failed` row
+   * as fully connected — the web gate then didn't fire and the user sat in an
+   * empty app forever with nothing telling them the read had died.
+   */
   connected: boolean;
   status: string | null; // pending | ingesting | ingested | failed | null
+  /** The history read is queued or running — connected, but there's no data yet. */
+  reading: boolean;
+  /** The history read failed (private/near-empty account, bad handle, or the pull errored). */
+  failed: boolean;
   postCount: number;
 }
 
@@ -51,5 +61,11 @@ export async function getXConnectStatus(userId: string): Promise<XConnectStatus>
     [userId],
   );
   const r = row[0];
-  return { connected: Boolean(r), status: r?.status ?? null, postCount: r?.post_count ?? 0 };
+  const status = r?.status ?? null;
+  const failed = status === "failed";
+  // 'pending' is also the state a connect gets stuck in when no scrape provider
+  // is configured (finalizeXConnect only enqueues the read when a key exists),
+  // so it must read as "still working", never as "done".
+  const reading = status === "pending" || status === "ingesting";
+  return { connected: Boolean(r) && !failed, status, reading, failed, postCount: r?.post_count ?? 0 };
 }

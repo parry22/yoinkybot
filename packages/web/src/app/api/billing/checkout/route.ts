@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/session";
-import { createCheckout } from "@yoink/backend/web";
+import { billingOverview, createCheckout, config } from "@yoink/backend/web";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,6 +11,14 @@ export const maxDuration = 60;
  * checkout page. Reached from the trial pill's "Upgrade" link and Settings.
  * `plan` mirrors the landing plans — founding, scale, or (default) the paid
  * Growth product.
+ *
+ * Anyone who ALREADY has a Dodo subscription is sent to the customer portal
+ * instead. This route used to mint a second subscription unconditionally (the
+ * portal route checked, this one didn't), and the on_hold path made that easy to
+ * hit: a dunning customer got classified as an expired trialist, the pill
+ * pointed here, and they ended up paying twice while Dodo was still retrying the
+ * first card. The portal is also the right place to CHANGE plans, which is what
+ * an existing subscriber clicking "upgrade" actually wants.
  */
 export async function GET(req: Request) {
   const origin = new URL(req.url).origin;
@@ -22,7 +30,16 @@ export async function GET(req: Request) {
     planParam === "founding" ? "founding" : planParam === "scale" ? "scale" : "paid";
 
   try {
-    const { url } = await createCheckout(user.id, user.email, plan);
+    const ov = await billingOverview(user.id);
+    if (ov.hasDodoSubscription) {
+      return NextResponse.redirect(new URL("/api/billing/portal", origin));
+    }
+    // Web buyers come back to Settings. The shared CHECKOUT_RETURN_URL points at
+    // the Telegram bot in production, which is right for a Telegram buyer and
+    // wrong for someone who never left the browser.
+    const { url } = await createCheckout(user.id, user.email, plan, {
+      returnUrl: `${config.WEB_APP_URL}/app/settings`,
+    });
     return NextResponse.redirect(url);
   } catch (err) {
     console.error("web checkout failed", err);

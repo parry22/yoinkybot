@@ -116,12 +116,14 @@ export async function handleIngestProfile(job: IngestProfileJob): Promise<void> 
       return;
     }
 
-    // The pull is done, so the post count — and therefore the reading time —
-    // is now a fact, not a guess. Tell them before the silent stretch starts.
+    // The pull is done, so the reading time is now a fact, not a guess. Tell them
+    // before the silent stretch starts. The post count itself stays out of the
+    // message — it's an implementation detail, and quoting it just invites the
+    // user to wonder whether the number is enough.
     const eta = estimateIngestMinutes(usable.length);
     await sendTelegram(
       job.userId,
-      `got ${usable.length} posts from your last ~3 months on ${label}. ` +
+      `got your last ~3 months on ${label}. ` +
         `give me about ${eta} minute${eta === 1 ? "" : "s"} to actually read them, then i'll come back with the full read.`,
     ).catch(() => {});
 

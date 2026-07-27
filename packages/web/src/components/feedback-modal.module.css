@@ -1,0 +1,100 @@
+.form {
+  display: flex;
+  flex-direction: column;
+}
+
+.title {
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--ink-900);
+}
+
+.sub {
+  color: var(--ink-500);
+  font-size: 13px;
+  margin-top: 4px;
+  margin-bottom: 16px;
+}
+
+.field {
+  display: block;
+  margin-bottom: 14px;
+}
+
+.label {
+  display: block;
+  font-size: 12px;
+  color: var(--ink-600);
+  margin-bottom: 6px;
+}
+
+.select,
+.textarea {
+  width: 100%;
+  border: 0.5px solid var(--stroke);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink-900);
+  font: inherit;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.select {
+  height: 44px;
+  padding: 0 12px;
+  cursor: pointer;
+  /* Native select arrow stays; just make the control match .field styling. */
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--ink-500) 50%),
+    linear-gradient(135deg, var(--ink-500) 50%, transparent 50%);
+  background-position: calc(100% - 18px) 19px, calc(100% - 13px) 19px;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+.textarea {
+  padding: 10px 12px;
+  line-height: 1.5;
+  resize: vertical;
+  min-height: 96px;
+}
+
+.select:focus,
+.textarea:focus {
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.err {
+  color: #e5484d;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.doneWrap {
+  text-align: center;
+  padding: 12px 4px 4px;
+}
+
+.doneTitle {
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--ink-900);
+  margin-bottom: 8px;
+}
+
+.doneBody {
+  color: var(--ink-600);
+  font-size: 14px;
+  line-height: 1.5;
+  margin-bottom: 20px;
+}

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/session";
-import { billingOverview, createCustomerPortal } from "@yoink/backend/web";
+import { billingOverview, createCustomerPortal, config } from "@yoink/backend/web";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,7 +22,9 @@ export async function GET(req: Request) {
     if (!ov.dodoCustomerId) {
       return NextResponse.redirect(new URL("/api/billing/start-trial", origin));
     }
-    const { url } = await createCustomerPortal(ov.dodoCustomerId);
+    // Back to Settings, not to the Telegram bot that CHECKOUT_RETURN_URL points
+    // at in production — cancelling from the web app should return to the web app.
+    const { url } = await createCustomerPortal(ov.dodoCustomerId, `${config.WEB_APP_URL}/app/settings`);
     return NextResponse.redirect(url);
   } catch (err) {
     console.error("billing portal failed", err);

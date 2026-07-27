@@ -121,7 +121,7 @@ export async function bestTimeAdvisory(userId: string, settings: UserSettings, c
   const result = computeBestWindow(posts, tz);
   const label = DAYPART_LABEL[result.daypart];
   const basis = result.personalized
-    ? `based on your last ${result.sampleSize} posts' engagement`
+    ? "based on your own posts' engagement"
     : "general best-practice default — post a bit more and I'll personalize this to your own data";
 
   if (isInRecommendedWindow(candidateWhenMs, tz, result)) {

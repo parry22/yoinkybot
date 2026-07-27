@@ -475,6 +475,14 @@
   margin-bottom: 12px;
 }
 
+/* The radar glyph is 13px but the text line box is ~19.5px tall, so a plain
+   flex-start leaves the icon riding above the first line's cap height. Pin it
+   from shrinking and nudge it down so it optically centers on the first line. */
+.whyNote svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+
 /* What kind of lead this is, above the tweet — the headline now that there is
    no drafted reply to lead with. */
 .intentTag {

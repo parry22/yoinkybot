@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { whitelistIncludes, entitlementsForPlan, withinCap, remainingFor } from "./entitlements.js";
+import {
+  whitelistIncludes,
+  entitlementsForPlan,
+  withinCap,
+  remainingFor,
+  resolveBillingState,
+  ON_HOLD_GRACE_DAYS,
+  type SubscriptionRow,
+} from "./entitlements.js";
 
 describe("entitlementsForPlan (Growth vs Scale differentiation)", () => {
   it("free gets nothing", () => {
@@ -60,6 +68,117 @@ describe("withinCap / remainingFor (null = unlimited)", () => {
     expect(withinCap(0, 0)).toBe(false);
     expect(remainingFor(3, 10)).toBe(7);
     expect(remainingFor(12, 10)).toBe(0);
+  });
+});
+
+describe("resolveBillingState (grace windows + honest labels)", () => {
+  const NOW = Date.UTC(2026, 5, 1, 12, 0, 0);
+  const DAY = 24 * 60 * 60 * 1000;
+  const iso = (t: number) => new Date(t).toISOString();
+
+  function row(over: Partial<SubscriptionRow> = {}): SubscriptionRow {
+    return {
+      plan: "paid",
+      status: "active",
+      trial_ends_at: null,
+      current_period_end: null,
+      updated_at: iso(NOW),
+      intended_plan: null,
+      dodo_subscription_id: "sub_1",
+      ...over,
+    };
+  }
+
+  it("no row at all is 'none' and gets nothing", () => {
+    expect(resolveBillingState(undefined, NOW)).toEqual({ state: "none", entitled: false, accessUntil: null });
+  });
+
+  it("an active paid subscription is entitled with no deadline", () => {
+    expect(resolveBillingState(row(), NOW)).toEqual({ state: "active", entitled: true, accessUntil: null });
+  });
+
+  it("an 'active' row still on the free plan is never entitled", () => {
+    expect(resolveBillingState(row({ plan: "free" }), NOW).entitled).toBe(false);
+  });
+
+  it("a running trial is entitled until trial_ends_at", () => {
+    const d = resolveBillingState(row({ status: "trialing", trial_ends_at: iso(NOW + 3 * DAY) }), NOW);
+    expect(d).toEqual({ state: "trialing", entitled: true, accessUntil: NOW + 3 * DAY });
+  });
+
+  it("a lapsed trial with no subscription is 'expired' (the real trialist)", () => {
+    const d = resolveBillingState(
+      row({ status: "trialing", trial_ends_at: iso(NOW - DAY), dodo_subscription_id: null }),
+      NOW,
+    );
+    expect(d).toEqual({ state: "expired", entitled: false, accessUntil: null });
+  });
+
+  // The headline bug: a paying customer whose card bounced was cut off instantly
+  // AND told their free trial had ended.
+  describe("on_hold", () => {
+    it("keeps access through the grace window measured from the paid-through date", () => {
+      const periodEnd = NOW - DAY; // the renewal that bounced
+      const d = resolveBillingState(row({ status: "on_hold", current_period_end: iso(periodEnd) }), NOW);
+      expect(d.state).toBe("past_due");
+      expect(d.entitled).toBe(true);
+      expect(d.accessUntil).toBe(periodEnd + ON_HOLD_GRACE_DAYS * DAY);
+    });
+
+    it("revokes once the grace window closes — but still reads as past_due, never a trial", () => {
+      const periodEnd = NOW - (ON_HOLD_GRACE_DAYS + 1) * DAY;
+      const d = resolveBillingState(row({ status: "on_hold", current_period_end: iso(periodEnd) }), NOW);
+      expect(d.state).toBe("past_due");
+      expect(d.entitled).toBe(false);
+      expect(d.accessUntil).toBeNull();
+    });
+
+    it("falls back to when the hold landed when there is no period end", () => {
+      const held = NOW - DAY;
+      const d = resolveBillingState(row({ status: "on_hold", current_period_end: null, updated_at: iso(held) }), NOW);
+      expect(d.entitled).toBe(true);
+      expect(d.accessUntil).toBe(held + ON_HOLD_GRACE_DAYS * DAY);
+    });
+
+    it("never grants grace to a free-plan row", () => {
+      const d = resolveBillingState(row({ status: "on_hold", plan: "free", current_period_end: iso(NOW) }), NOW);
+      expect(d.entitled).toBe(false);
+    });
+  });
+
+  describe("cancelled", () => {
+    it("keeps access until the period they already paid for runs out", () => {
+      const periodEnd = NOW + 10 * DAY;
+      const d = resolveBillingState(row({ status: "cancelled", current_period_end: iso(periodEnd) }), NOW);
+      expect(d).toEqual({ state: "cancelled", entitled: true, accessUntil: periodEnd });
+    });
+
+    it("revokes once that period has passed", () => {
+      const d = resolveBillingState(row({ status: "cancelled", current_period_end: iso(NOW - DAY) }), NOW);
+      expect(d).toEqual({ state: "cancelled", entitled: false, accessUntil: null });
+    });
+
+    it("revokes immediately when we never learned a period end", () => {
+      expect(resolveBillingState(row({ status: "cancelled", current_period_end: null }), NOW).entitled).toBe(false);
+    });
+  });
+
+  it("refunds and lost disputes revoke immediately — no grace, no paid-through", () => {
+    for (const status of ["refunded", "disputed"]) {
+      // Even with a period end well in the future: the money went back.
+      const d = resolveBillingState(row({ status, current_period_end: iso(NOW + 30 * DAY) }), NOW);
+      expect(d).toEqual({ state: "cancelled", entitled: false, accessUntil: null });
+    }
+  });
+
+  it("a former subscriber is never labelled a lapsed trialist", () => {
+    // 'expired' with a subscription on file → "your plan ended", not "your trial ended".
+    expect(resolveBillingState(row({ status: "expired" }), NOW).state).toBe("cancelled");
+    expect(resolveBillingState(row({ status: "expired", dodo_subscription_id: null }), NOW).state).toBe("expired");
+  });
+
+  it("an unknown future status fails closed", () => {
+    expect(resolveBillingState(row({ status: "some_new_dodo_status" }), NOW).entitled).toBe(false);
   });
 });
 

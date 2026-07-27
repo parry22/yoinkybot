@@ -238,7 +238,7 @@ export async function generateDraft(
   const provenanceNote =
     memories.length === 0 && research
       ? research.posts.length > 0
-        ? `Built from what's live on X about this right now (${research.posts.length} posts) plus your stated positions — you hadn't said anything about it yet.`
+        ? `Built from what's live on X about this right now plus your stated positions — you hadn't said anything about it yet.`
         : `Built from your stated positions and what's in the news — you hadn't said anything about this yet.`
       : "";
   const voiceNote = profile

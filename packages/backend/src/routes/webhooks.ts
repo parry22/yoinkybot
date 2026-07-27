@@ -24,15 +24,22 @@ export async function webhookRoutes(app: FastifyInstance): Promise<void> {
     dodo.post("/webhooks/dodo", async (req, reply) => {
       if (!config.DODO_WEBHOOK_SECRET) return reply.code(503).send({ error: "billing not configured" });
       const rawBody = typeof req.body === "string" ? req.body : JSON.stringify(req.body);
+      const webhookId = String(req.headers["webhook-id"] ?? "");
+      const webhookTimestamp = String(req.headers["webhook-timestamp"] ?? "");
       const ok = verifyWebhookSignature({
         secret: config.DODO_WEBHOOK_SECRET,
-        webhookId: String(req.headers["webhook-id"] ?? ""),
-        webhookTimestamp: String(req.headers["webhook-timestamp"] ?? ""),
+        webhookId,
+        webhookTimestamp,
         webhookSignature: String(req.headers["webhook-signature"] ?? ""),
         rawBody,
       });
       if (!ok) return reply.code(401).send({ error: "bad signature" });
-      await handleDodoEvent(JSON.parse(rawBody));
+      // The signed id and timestamp were verified and then thrown away. They are
+      // the handler's idempotency key and its ordering clock — a retried delivery
+      // used to be applied twice, and a late-arriving event could overwrite a
+      // newer one. Both only work because the signature check above proves these
+      // headers came from Dodo.
+      await handleDodoEvent(JSON.parse(rawBody), { webhookId, webhookTimestamp });
       return { ok: true };
     });
   });

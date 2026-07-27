@@ -169,6 +169,9 @@ export {
   type MediaReadiness,
 } from "./web/media.js";
 
+// In-app feedback (Feature Request / Bug Report from the Account menu)
+export { submitFeedback, type FeedbackType, type FeedbackInput } from "./web/feedback.js";
+
 // Content moderation (shared gate; ModerationError → 400 at the web boundary)
 export { moderateText, assertClean, ModerationError, MODERATION_MESSAGE } from "./moderation/filter.js";
 

@@ -30,8 +30,9 @@ import { handleWeeklyPlan } from "./weekly-plan.js";
 import { handlePerformancePulse } from "../strategist/performance.js";
 import { handleCampaignDetect } from "./campaign-detect.js";
 import { handleMonthlyRecalibration } from "../memory/corrections.js";
-import { handleScheduledPost } from "./scheduled-post.js";
+import { handleScheduledPost, reapStuckPublishing } from "./scheduled-post.js";
 import { handleAutomationTick } from "../automations/tick.js";
+import { handleXRefresh, nudgeStaleXRefresh } from "./x-refresh.js";
 import type {
   IngestProfileJob,
   DiagnoseJob,
@@ -130,10 +131,17 @@ export async function registerWorkers(boss: PgBoss): Promise<void> {
     QUEUES.scheduledPost,
     logged(QUEUES.scheduledPost, (d: ScheduledPostJob) => handleScheduledPost(d)),
   );
+  // The claim above is what makes a crash mid-publish unrecoverable on its own:
+  // the row leaves 'pending', so neither pg-boss's retry nor a later delivery can
+  // re-claim it. This sweep is the recovery path.
+  await boss.work(QUEUES.scheduledPostReap, logged(QUEUES.scheduledPostReap, () => reapStuckPublishing()));
 
   // Web "agent mode": once/day, for each user who's opted in, run the full
   // topic→draft→schedule loop. The handler enforces a per-user ~daily gap.
   await boss.work(QUEUES.automationTick, logged(QUEUES.automationTick, () => handleAutomationTick()));
+
+  // Keep every connected X account fresh without the user lifting a finger.
+  await boss.work(QUEUES.xRefresh, logged(QUEUES.xRefresh, () => handleXRefresh()));
 
   // Proactive engine tick: hourly; cadence/quiet-hour gates live in the handler.
   // This single tick now also offers to turn the resurfaced idea into angles
@@ -182,6 +190,16 @@ export async function registerWorkers(boss: PgBoss): Promise<void> {
   // Automations: fire a few times a day; the handler runs only enabled + due
   // automations (per-day gate + atomic run claims), so it's safe to over-fire.
   await boss.schedule(QUEUES.automationTick, "0 */3 * * *");
+  // Automatic X refresh, twice a day. Offsets chosen to miss the other provider
+  // jobs: performance.pulse is 04:45, mentions are :15 on every 6th hour, trend
+  // fetch is on the 8-hour boundary — 01:00 and 13:00 UTC are clear of all three,
+  // so the sequential twitterapi.io throttle isn't fighting another sweep.
+  await boss.schedule(QUEUES.xRefresh, "0 1,13 * * *"); // 06:30 / 18:30 IST
+  // Stranded-publish sweep. Every 5 minutes: the handler only touches rows that
+  // have been in 'publishing' for 30+ minutes, so over-firing is free, and a
+  // tight cadence keeps a post that died to a redeploy going out minutes late
+  // rather than never.
+  await boss.schedule(QUEUES.scheduledPostReap, "*/5 * * * *");
 
   // Retired schedules — pg-boss persists these in its own table independent of
   // the code, so removing a boss.schedule() call above does nothing on an
@@ -195,6 +213,10 @@ export async function registerWorkers(boss: PgBoss): Promise<void> {
   }
 
   await nudgeStaleTrendJobs(boss);
+  // Same reasoning as nudgeStaleTrendJobs, for the same reason: a redeploy that
+  // lands past the cron window would otherwise leave the fleet unrefreshed until
+  // the next one. Gated on staleness inside, so restarts are free.
+  await nudgeStaleXRefresh(boss).catch((err) => console.error("x.refresh boot nudge failed", err));
 }
 
 /**

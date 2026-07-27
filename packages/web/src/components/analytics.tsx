@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import panel from "./panel.module.css";
 import styles from "./analytics.module.css";
 
@@ -114,7 +114,6 @@ export function Analytics({ data }: { data: Data }) {
     );
   }
 
-  const maxEng = Math.max(1, ...data.heatmap.map((c) => c.engagements));
   const maxWeekPosts = Math.max(1, ...data.weekly.map((w) => w.posts));
 
   return (
@@ -227,47 +226,7 @@ export function Analytics({ data }: { data: Data }) {
               )}
             </div>
 
-            <div className={panel.section}>
-              <div className={panel.sectionLabel}>Best time to post - engagement-weighted</div>
-              <div className={styles.heatWrap}>
-                <table className={styles.heat}>
-                  <tbody>
-                    <tr>
-                      <td />
-                      {Array.from({ length: 24 }, (_, h) => (
-                        <td key={h} className={styles.heatHourLabel}>
-                          {h % 6 === 0 ? h : ""}
-                        </td>
-                      ))}
-                    </tr>
-                    {DOW.map((label, day) => (
-                      <tr key={day}>
-                        <td className={styles.heatDay}>{label}</td>
-                        {Array.from({ length: 24 }, (_, hour) => {
-                          const cell = data.heatmap.find((c) => c.day === day && c.hour === hour);
-                          const intensity = cell ? cell.engagements / maxEng : 0;
-                          const isBest = data.bestWindow?.day === day && data.bestWindow?.hour === hour;
-                          return (
-                            <td key={hour}>
-                              <div
-                                className={`${styles.cell} ${isBest ? styles.cellBest : ""}`}
-                                style={intensity > 0 ? { background: `rgba(236, 72, 153, ${0.15 + intensity * 0.85})` } : undefined}
-                                title={cell ? `${DOW[day]} ${hour}:00 - ${cell.posts} posts, ${fmt(cell.engagements)} engagements` : ""}
-                              />
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {data.bestWindow && (
-                <div className={styles.note}>
-                  Your strongest slot: <b style={{ color: "var(--accent)" }}>{DOW[data.bestWindow.day]} around {data.bestWindow.hour}:00</b>.
-                </div>
-              )}
-            </div>
+            <TimingSection heatmap={data.heatmap} bestWindow={data.bestWindow} timezone={data.timezone} />
 
             <div className={panel.section}>
               <div className={panel.sectionLabel}>Top posts by impressions</div>
@@ -379,6 +338,183 @@ export function Analytics({ data }: { data: Data }) {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+const DAYPARTS: { key: string; label: string; hours: [number, number] }[] = [
+  { key: "night", label: "Late night", hours: [0, 5] },
+  { key: "morning", label: "Morning", hours: [6, 11] },
+  { key: "afternoon", label: "Afternoon", hours: [12, 17] },
+  { key: "evening", label: "Evening", hours: [18, 23] },
+];
+
+function hourLabel(h: number): string {
+  const suffix = h < 12 ? "am" : "pm";
+  const twelve = h % 12 === 0 ? 12 : h % 12;
+  return `${twelve}${suffix}`;
+}
+
+/**
+ * "Best time to post", rebuilt.
+ *
+ * TWO THINGS WERE WRONG WITH THE OLD ONE.
+ *
+ * 1) It was a <table> of fixed 15px cells, so on a wide container the grid
+ *    occupied the left third and the rest of the card was empty. It's now a CSS
+ *    grid (`auto repeat(24, 1fr)`) — the cells stretch to fill whatever width
+ *    they're given, which is what a 24×7 matrix should do.
+ *
+ * 2) Far more importantly, it shaded each cell by TOTAL engagement. One post
+ *    that happened to go viral made its cell solid and pushed every other cell
+ *    to near-invisible, so the chart said "you went viral once at 7am on a
+ *    Saturday" while claiming to say "post at 7am on Saturdays". Shading is now
+ *    engagement PER POST, which is the quantity the recommendation is actually
+ *    about, and cells backed by a single post are drawn hollow so a one-off
+ *    can't read as a pattern.
+ *
+ * The numbers underneath are new: the old version rendered one sentence naming
+ * a slot, with the evidence for it hidden in a hover title that never appears
+ * on touch.
+ */
+function TimingSection({
+  heatmap,
+  bestWindow,
+  timezone,
+}: {
+  heatmap: HeatCell[];
+  bestWindow: { day: number; hour: number } | null;
+  timezone: string;
+}) {
+  const byKey = new Map(heatmap.map((c) => [`${c.day}:${c.hour}`, c]));
+  const perPost = (c: HeatCell) => (c.posts > 0 ? c.engagements / c.posts : 0);
+
+  // Scale against the best *repeated* slot where one exists, so a single lucky
+  // post doesn't compress the entire rest of the grid into one flat shade.
+  const repeated = heatmap.filter((c) => c.posts >= 2);
+  const maxPerPost = Math.max(1, ...(repeated.length ? repeated : heatmap).map(perPost));
+
+  // Top slots, evidence-first: ≥2 posts required, so this can't recommend a slot
+  // you have posted in exactly once.
+  const topSlots = [...repeated].sort((a, b) => perPost(b) - perPost(a)).slice(0, 3);
+
+  const dayparts = DAYPARTS.map((d) => {
+    const cells = heatmap.filter((c) => c.hour >= d.hours[0] && c.hour <= d.hours[1]);
+    const posts = cells.reduce((a, c) => a + c.posts, 0);
+    const engagements = cells.reduce((a, c) => a + c.engagements, 0);
+    return { ...d, posts, engagements, perPost: posts > 0 ? engagements / posts : 0 };
+  });
+  const maxDaypart = Math.max(1, ...dayparts.map((d) => d.perPost));
+  const totalPosts = heatmap.reduce((a, c) => a + c.posts, 0);
+
+  return (
+    <div className={panel.section}>
+      <div className={panel.sectionLabel}>When your posts land — engagement per post</div>
+
+      <div className={styles.heatGrid}>
+        <div />
+        {Array.from({ length: 24 }, (_, h) => (
+          <div key={`h-${h}`} className={styles.heatHourLabel}>
+            {h % 3 === 0 ? hourLabel(h) : ""}
+          </div>
+        ))}
+        {DOW.map((label, day) => (
+          <Fragment key={label}>
+            <div className={styles.heatDay}>{label}</div>
+            {Array.from({ length: 24 }, (_, hour) => {
+              const cell = byKey.get(`${day}:${hour}`);
+              // getAnalytics falls back to `ranked[0]` when no slot has 2+ posts,
+              // so bestWindow can point at a single post. Don't decorate it as
+              // "your best time" in that case — the copy below already says there
+              // isn't a pattern yet, and the outline would contradict it.
+              const isBest = bestWindow?.day === day && bestWindow?.hour === hour && (cell?.posts ?? 0) >= 2;
+              // Hollow = posted here, but only once. Present, not persuasive.
+              const thin = !!cell && cell.posts < 2;
+              const intensity = cell ? Math.min(1, perPost(cell) / maxPerPost) : 0;
+              return (
+                <div
+                  key={`${day}-${hour}`}
+                  className={`${styles.cell} ${isBest ? styles.cellBest : ""} ${thin ? styles.cellThin : ""}`}
+                  style={
+                    cell && !thin
+                      ? { background: `rgba(236, 72, 153, ${0.12 + intensity * 0.88})` }
+                      : undefined
+                  }
+                  title={
+                    cell
+                      ? `${label} ${hourLabel(hour)} — ${cell.posts} post${cell.posts === 1 ? "" : "s"}, ` +
+                        `${fmt(Math.round(perPost(cell)))} engagements per post, ${fmt(cell.impressions)} impressions`
+                      : `${label} ${hourLabel(hour)} — never posted`
+                  }
+                />
+              );
+            })}
+          </Fragment>
+        ))}
+      </div>
+
+      <div className={styles.heatLegend}>
+        <span>Times shown in {timezone}</span>
+        <span className={styles.legendScale}>
+          less
+          <i style={{ background: "rgba(236, 72, 153, 0.18)" }} />
+          <i style={{ background: "rgba(236, 72, 153, 0.45)" }} />
+          <i style={{ background: "rgba(236, 72, 153, 0.72)" }} />
+          <i style={{ background: "rgba(236, 72, 153, 1)" }} />
+          more
+        </span>
+        <span className={styles.legendThin}>
+          <i /> posted once — not enough to call a pattern
+        </span>
+      </div>
+
+      {topSlots.length > 0 ? (
+        <div className={styles.slotList}>
+          {topSlots.map((c, i) => (
+            <div key={`${c.day}-${c.hour}`} className={styles.slotRow}>
+              <span className={styles.slotRank}>{i + 1}</span>
+              <span className={styles.slotWhen}>
+                {DOW[c.day]} {hourLabel(c.hour)}
+              </span>
+              <span className={styles.slotMetric}>
+                <b>{fmt(Math.round(perPost(c)))}</b> engagements / post
+              </span>
+              <span className={styles.slotEvidence}>
+                {fmt(Math.round(c.impressions / c.posts))} impressions / post · {c.posts} posts
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className={styles.note}>
+          You haven&apos;t posted in the same slot twice yet, so there&apos;s no timing pattern to read. The grid below
+          still shows where your posts have landed.
+        </div>
+      )}
+
+      {/* Coarser cut — with a thin history the 24×7 grid is mostly empty, but
+          four dayparts usually have enough posts in them to say something. */}
+      {totalPosts > 0 && (
+        <div className={styles.daypartList}>
+          {dayparts.map((d) => (
+            <div key={d.key} className={styles.daypartRow}>
+              <span className={styles.daypartLabel}>{d.label}</span>
+              <span className={styles.daypartBarWrap}>
+                <span
+                  className={styles.daypartBar}
+                  style={{ width: `${Math.max(2, Math.round((d.perPost / maxDaypart) * 100))}%` }}
+                />
+              </span>
+              <span className={styles.daypartValue}>
+                {d.posts === 0 ? "no posts" : `${fmt(Math.round(d.perPost))} / post`}
+              </span>
+              <span className={styles.daypartCount}>
+                {d.posts === 0 ? "" : `${Math.round((d.posts / totalPosts) * 100)}% of your posts`}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

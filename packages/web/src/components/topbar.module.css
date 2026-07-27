@@ -13,6 +13,8 @@
   flex: 1;
 }
 
+/* A <button>, not an <a>: the Telegram link is minted per click so it carries the
+ * account's start token (see topbar.tsx) — hence font/cursor/disabled here. */
 .telegram {
   display: inline-flex;
   align-items: center;
@@ -23,9 +25,11 @@
   border-radius: 999px;
   background: var(--surface);
   color: var(--ink-700);
+  font: inherit;
   font-size: 13px;
   font-weight: 450;
   text-decoration: none;
+  cursor: pointer;
   transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
 }
 
@@ -33,6 +37,11 @@
   color: var(--accent);
   border-color: var(--accent-border);
   background: var(--accent-soft);
+}
+
+.telegram:disabled {
+  opacity: 0.65;
+  cursor: default;
 }
 
 /* ── trial pill: subtle nav-bar trial clock + card-capture CTA ── */

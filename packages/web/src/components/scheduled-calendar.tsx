@@ -9,6 +9,8 @@ import {
   Image01Icon,
   Cancel01Icon,
   Video01Icon,
+  Alert02Icon,
+  RefreshIcon,
 } from "@hugeicons/core-free-icons";
 import panel from "./panel.module.css";
 import styles from "./scheduled-calendar.module.css";
@@ -22,13 +24,22 @@ interface MediaView {
   altText: string | null;
 }
 
+type PostStatus = "pending" | "publishing" | "published" | "failed" | "canceled";
+
 interface Post {
   id: string;
   platform: string;
   content: string;
   scheduledFor: string; // ISO
+  /** Absent on posts this component just created optimistically — treated as pending. */
+  status?: PostStatus;
+  /** Why it didn't go out, verbatim from the publisher. */
+  error?: string | null;
+  externalUrl?: string | null;
   media?: MediaView[];
 }
+
+const statusOf = (p: Post): PostStatus => p.status ?? "pending";
 
 /**
  * The same rule the server enforces (backend scheduling/service.ts#containsLink).
@@ -41,6 +52,8 @@ const LINK_RE = /(https?:\/\/|www\.)\S+|\b[a-z0-9-]+\.(?:com|io|co|net|org|xyz|a
 
 const ACCEPT = "image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime";
 const MAX_ATTACHMENTS = 4;
+/** Same ceiling the server enforces on scheduled_for — see MAX_SCHEDULE_AHEAD_MS. */
+const MAX_AHEAD_MS = 365 * 24 * 60 * 60 * 1000;
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = [
@@ -50,6 +63,12 @@ const MONTHS = [
 
 const dayKey = (d: Date): string => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 
+/** What the composer opens with: a day, and (on a retry) text to start from. */
+interface ComposerState {
+  day: Date;
+  prefill?: string;
+}
+
 export function ScheduledCalendar({
   posts: initial,
   usage,
@@ -57,7 +76,7 @@ export function ScheduledCalendar({
 }: {
   posts: Post[];
   /** This month's scheduling usage — cap null = unlimited (Scale). */
-  usage: { used: number; cap: number | null };
+  usage: { used: number; cap: number | null; reauthRequired?: boolean };
   /** Whether media will actually publish, and the reason when it won't. */
   media: { canPostMedia: boolean; warning: string | null };
 }) {
@@ -65,7 +84,18 @@ export function ScheduledCalendar({
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
-  const [modalDay, setModalDay] = useState<Date | null>(null);
+  const [composer, setComposer] = useState<ComposerState | null>(null);
+
+  // Failures are the whole reason this screen shows resolved posts at all, so
+  // they get their own strip at the top rather than a chip buried in a past
+  // month the user has no reason to scroll back to.
+  const failed = useMemo(
+    () =>
+      posts
+        .filter((p) => statusOf(p) === "failed")
+        .sort((a, b) => b.scheduledFor.localeCompare(a.scheduledFor)),
+    [posts],
+  );
 
   // Bucket posts by local calendar day.
   const byDay = useMemo(() => {
@@ -118,6 +148,53 @@ export function ScheduledCalendar({
           </div>
         </div>
 
+        {/* A dead posting credential fails every future post silently, so it's
+         *  said once, loudly, above everything else. */}
+        {usage.reauthRequired && (
+          <div className={styles.authBanner}>
+            <HugeiconsIcon icon={Alert02Icon} size={16} strokeWidth={1.8} />
+            <span>
+              Your X connection expired, so scheduled posts can&apos;t publish. Reconnect and they&apos;ll start
+              going out again.
+            </span>
+            <a href="/api/auth/x/start" className={styles.authBtn}>
+              Reconnect X
+            </a>
+          </div>
+        )}
+
+        {failed.length > 0 && (
+          <div className={styles.failedStrip}>
+            <div className={styles.failedTitle}>
+              {failed.length === 1 ? "1 post didn't go out" : `${failed.length} posts didn't go out`}
+            </div>
+            {failed.map((p) => (
+              <div key={p.id} className={styles.failedRow}>
+                <div className={styles.failedBody}>
+                  <div className={styles.failedWhen}>
+                    {new Date(p.scheduledFor).toLocaleString([], {
+                      month: "short",
+                      day: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })}
+                  </div>
+                  <div className={styles.failedText}>{p.content}</div>
+                  <div className={styles.failedWhy}>{p.error ?? "no reason recorded"}</div>
+                </div>
+                <button
+                  className={styles.retryBtn}
+                  onClick={() => setComposer({ day: new Date(), prefill: p.content })}
+                  title="Open the composer with this text, ready to re-queue"
+                >
+                  <HugeiconsIcon icon={RefreshIcon} size={13} strokeWidth={1.8} />
+                  Retry
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className={styles.toolbar}>
           <button className={styles.navBtn} onClick={() => shift(-1)} aria-label="Previous month">
             <HugeiconsIcon icon={ArrowLeft01Icon} size={18} strokeWidth={1.8} />
@@ -154,34 +231,53 @@ export function ScheduledCalendar({
                 key={dayKey(d)}
                 className={`${styles.cell} ${isToday(d) ? styles.today : ""} ${past ? styles.pastCell : ""}`}
                 onClick={() => {
-                  if (!past) setModalDay(d);
+                  if (!past) setComposer({ day: d });
                 }}
               >
                 <div className={styles.dateRow}>
                   <span className={styles.dateNum}>{d.getDate()}</span>
                   {!past && <HugeiconsIcon icon={Add01Icon} size={13} strokeWidth={1.8} className={styles.addHint} />}
                 </div>
-                {dayPosts.map((p) => (
-                  <div
-                    key={p.id}
-                    className={styles.chip}
-                    title={p.content}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <span className={styles.chipTime}>
-                      {new Date(p.scheduledFor).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
-                    </span>{" "}
-                    {p.media && p.media.length > 0 && (
-                      <HugeiconsIcon
-                        icon={p.media[0]!.kind === "video" ? Video01Icon : Image01Icon}
-                        size={11}
-                        strokeWidth={2}
-                        aria-label={`${p.media.length} attachment${p.media.length === 1 ? "" : "s"}`}
-                      />
-                    )}{" "}
-                    {p.content}
-                  </div>
-                ))}
+                {dayPosts.map((p) => {
+                  const st = statusOf(p);
+                  return (
+                    <div
+                      key={p.id}
+                      className={`${styles.chip} ${st === "failed" ? styles.chipFailed : ""} ${
+                        st === "published" ? styles.chipPublished : ""
+                      }`}
+                      // The failure reason is the only place the user can read
+                      // WHY, so it rides the chip's tooltip too.
+                      title={st === "failed" ? `Didn't go out — ${p.error ?? "no reason recorded"}` : p.content}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <span className={styles.chipTime}>
+                        {new Date(p.scheduledFor).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                      </span>{" "}
+                      {p.media && p.media.length > 0 && (
+                        <HugeiconsIcon
+                          icon={p.media[0]!.kind === "video" ? Video01Icon : Image01Icon}
+                          size={11}
+                          strokeWidth={2}
+                          aria-label={`${p.media.length} attachment${p.media.length === 1 ? "" : "s"}`}
+                        />
+                      )}{" "}
+                      {p.content}
+                      {st === "failed" && <span className={styles.chipTag}>failed</span>}
+                      {st === "published" && p.externalUrl && (
+                        <a
+                          className={styles.chipTag}
+                          href={p.externalUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          view
+                        </a>
+                      )}
+                    </div>
+                  );
+                })}
                 {dayPosts.length === 0 && !past && <div className={styles.nudge}>Add a post</div>}
               </div>
             );
@@ -189,14 +285,15 @@ export function ScheduledCalendar({
         </div>
       </div>
 
-      {modalDay && (
+      {composer && (
         <AddPostModal
-          day={modalDay}
+          day={composer.day}
+          prefill={composer.prefill}
           mediaReady={media}
-          onClose={() => setModalDay(null)}
+          onClose={() => setComposer(null)}
           onScheduled={(p) => {
             setPosts((prev) => [...prev, p]);
-            setModalDay(null);
+            setComposer(null);
           }}
         />
       )}
@@ -204,19 +301,39 @@ export function ScheduledCalendar({
   );
 }
 
+/**
+ * 09:00 is the right default for a future day, but the composer also opens on
+ * TODAY (a retry re-queues right now), and 09:00 today is usually in the past —
+ * which would greet a retry with "pick a time in the future". Fifteen minutes
+ * out gives the user room to edit before it fires.
+ */
+function defaultTimeFor(day: Date): string {
+  const today = new Date();
+  const isToday =
+    day.getFullYear() === today.getFullYear() &&
+    day.getMonth() === today.getMonth() &&
+    day.getDate() === today.getDate();
+  if (!isToday) return "09:00";
+  const soon = new Date(Date.now() + 15 * 60_000);
+  return `${String(soon.getHours()).padStart(2, "0")}:${String(soon.getMinutes()).padStart(2, "0")}`;
+}
+
 function AddPostModal({
   day,
+  prefill,
   mediaReady,
   onClose,
   onScheduled,
 }: {
   day: Date;
+  /** Starting text — set when re-queueing a post that failed. */
+  prefill?: string;
   mediaReady: { canPostMedia: boolean; warning: string | null };
   onClose: () => void;
   onScheduled: (p: Post) => void;
 }) {
-  const [content, setContent] = useState("");
-  const [time, setTime] = useState("09:00");
+  const [content, setContent] = useState(prefill ?? "");
+  const [time, setTime] = useState(() => defaultTimeFor(day));
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [attachments, setAttachments] = useState<MediaView[]>([]);
@@ -287,6 +404,13 @@ function AddPostModal({
       setErr("pick a time in the future");
       return;
     }
+    // Mirrors the server's ceiling (backend scheduling/service.ts
+    // MAX_SCHEDULE_AHEAD_MS). The calendar lets you page to any year, so a
+    // mis-navigation is easy; catching it here explains it in place.
+    if (when.getTime() > Date.now() + MAX_AHEAD_MS) {
+      setErr("that's more than a year out — pick a time within the next 12 months");
+      return;
+    }
     setSaving(true);
     setErr(null);
     try {
@@ -317,6 +441,9 @@ function AddPostModal({
         platform: "x",
         content: text,
         scheduledFor: when.toISOString(),
+        status: "pending",
+        error: null,
+        externalUrl: null,
         media: attachments,
       });
     } catch {

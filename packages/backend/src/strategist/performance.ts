@@ -20,8 +20,16 @@ import type { PlanView } from "./plan.js";
 const ALIGNED_DISTANCE = 0.5;
 /** Below this many engagement-bearing baseline posts, rates are too noisy to report as full-confidence. */
 const MIN_BASELINE_POSTS = 8;
-/** A split needs at least this many engagement-bearing posts per bucket to mean anything. */
-const MIN_SPLIT_BUCKET = 2;
+/**
+ * A split needs at least this many engagement-bearing posts per bucket to mean
+ * anything. Was 2, which rendered a median-of-2-vs-median-of-3 under the header
+ * "THROUGHLINE SPLIT (the headline comparison)" — a coin flip presented as the
+ * report's central finding. 4 is still small, which is why renderPerformance now
+ * also states the bucket sizes as a sample size the model is told to hedge on.
+ */
+const MIN_SPLIT_BUCKET = 4;
+/** At or above this per bucket, the split is worth stating without a caveat. */
+const CONFIDENT_SPLIT_BUCKET = 8;
 const OUTLIER_RATIO = 1.5;
 const MAX_OUTLIERS = 3;
 
@@ -156,6 +164,17 @@ export interface PerformanceData {
   draftsInPeriod: number;
 }
 
+/**
+ * The hedge instruction that rides alongside a split whose smaller bucket is
+ * still thin. Deterministic (code decides whether the sample is thin); the model
+ * only phrases it.
+ */
+function smallSampleCaveat(a: number, b: number): string {
+  const n = Math.min(a, b);
+  if (n >= CONFIDENT_SPLIT_BUCKET) return "";
+  return ` SMALL SAMPLE: the thinner side is ${n} posts, so one post moves the median a lot — state it as a lean, not a proven effect.`;
+}
+
 /** Render the computed block the report LLM is handed. Pure; unit-tested. */
 export function renderPerformance(d: PerformanceData): string {
   const a = d.analysis;
@@ -164,8 +183,15 @@ export function renderPerformance(d: PerformanceData): string {
   if (d.xConfidence === "unavailable") {
     lines.push(`X engagement: unavailable this period (${d.xConfidenceReason}).`);
   } else {
+    // `baseline.median` is null whenever NO prior post carried metrics (freshly
+    // connected account, or a source that gave us none). It used to be
+    // interpolated raw, so under a header that reads "every number below is
+    // measured, use them verbatim" the model was literally handed
+    // "baseline median engagement null per post" — and repeated it. The sibling
+    // period median on the same line was already guarded; this matches it.
+    const baselineMedian = a.baseline.median === null ? "n/a (no prior post carries metrics)" : String(a.baseline.median);
     lines.push(
-      `X: baseline median engagement ${a.baseline.median} per post (measured over ${a.baseline.posts} prior posts) · ` +
+      `X: baseline median engagement ${baselineMedian} per post (measured over ${a.baseline.posts} prior posts) · ` +
         `this period ${a.period.posts} posts, ${a.period.withEngagement} with metrics, median ${a.period.median ?? "n/a"}` +
         (a.baseline.median && a.period.median !== null
           ? ` (${Math.round((a.period.median / a.baseline.median) * 100)}% of baseline)`
@@ -177,16 +203,22 @@ export function renderPerformance(d: PerformanceData): string {
     lines.push("LinkedIn: engagement metrics are not available from the data source. Post counts only.");
   }
 
+  // Both splits carry their bucket sizes AND, when a bucket is small, an explicit
+  // instruction to hedge. A median over four posts moves ~25 points per post; the
+  // model can only be honest about that if it is told the n, so the n travels with
+  // the number rather than being implied by the header.
   lines.push(
     a.split
-      ? `THROUGHLINE SPLIT (the headline comparison): on-throughline ${a.split.aligned.posts} posts, median ${a.split.aligned.median} vs off-throughline ${a.split.off.posts} posts, median ${a.split.off.median}.`
-      : `THROUGHLINE SPLIT: too few posts this period to split meaningfully (${a.period.withEngagement} with metrics). Say so rather than inventing a comparison.`,
+      ? `THROUGHLINE SPLIT (the headline comparison): on-throughline ${a.split.aligned.posts} posts, median ${a.split.aligned.median} vs off-throughline ${a.split.off.posts} posts, median ${a.split.off.median}.` +
+          smallSampleCaveat(a.split.aligned.posts, a.split.off.posts)
+      : `THROUGHLINE SPLIT: too few posts this period to split meaningfully (${a.period.withEngagement} with metrics; each side needs ${MIN_SPLIT_BUCKET}). Say so rather than inventing a comparison.`,
   );
 
   if (a.sincerityMix) {
     lines.push(
       `TONE SPLIT: sincere posts ${a.sincerityMix.sincere.posts}, median ${a.sincerityMix.sincere.median} vs ` +
-        `non-sincere (joke/bit/ironic) posts ${a.sincerityMix.other.posts}, median ${a.sincerityMix.other.median}.`,
+        `non-sincere (joke/bit/ironic) posts ${a.sincerityMix.other.posts}, median ${a.sincerityMix.other.median}.` +
+        smallSampleCaveat(a.sincerityMix.sincere.posts, a.sincerityMix.other.posts),
     );
   }
 
@@ -221,6 +253,24 @@ export interface RefreshResult {
   status: "ok" | "skipped" | "failed";
   updated: number;
   added: number;
+  /** New posts seen but deliberately not ingested (see `ingestNew`). */
+  skippedNew?: number;
+}
+
+export interface RefreshOpts {
+  /**
+   * Ingest genuinely new posts through the LLM extract pipeline, not just refresh
+   * metrics on posts we already hold. Defaults to true, which is the historic
+   * behaviour and what every user-initiated path wants.
+   *
+   * The unattended fleet sweep (jobs/x-refresh.ts) turns this OFF for users with
+   * no active entitlement. Metric refreshes are a cheap DB update and everyone
+   * gets them; extraction is an LLM call per post, and `extract` sits in
+   * CAP_EXEMPT_EVENTS (llm/gateway.ts) so it does not even count against the
+   * daily budget. Left on, a twice-daily sweep would give a lapsed free account
+   * unmetered LLM extraction indefinitely.
+   */
+  ingestNew?: boolean;
 }
 
 /**
@@ -231,7 +281,8 @@ export interface RefreshResult {
  * the normal extract pipeline (oldest first, so belief reconciliation stays
  * chronological). LinkedIn has no engagement source; nothing to refresh.
  */
-export async function refreshXEngagement(userId: string, maxPosts = 100): Promise<RefreshResult> {
+export async function refreshXEngagement(userId: string, maxPosts = 100, opts: RefreshOpts = {}): Promise<RefreshResult> {
+  const ingestNew = opts.ingestNew !== false;
   if (!config.TWITTERAPI_IO_KEY) return { status: "skipped", updated: 0, added: 0 };
   const account = await queryOne<{ handle: string }>(
     `SELECT handle FROM connected_accounts WHERE user_id = $1 AND platform = 'x' AND status = 'ingested'`,
@@ -247,6 +298,7 @@ export async function refreshXEngagement(userId: string, maxPosts = 100): Promis
     const boss = getBoss();
     let updated = 0;
     let added = 0;
+    let skippedNew = 0;
     for (const post of posts) {
       const clientId = `x:${post.url}`;
       const row = await queryOne<{ id: string }>(
@@ -256,6 +308,13 @@ export async function refreshXEngagement(userId: string, maxPosts = 100): Promis
       );
       if (row) {
         updated++;
+        continue;
+      }
+      // Metric refreshes on posts we already hold happen above for EVERYONE — a
+      // plain UPDATE, and the whole point of the job. Only the LLM-backed ingest
+      // of genuinely new posts is gated (see RefreshOpts.ingestNew).
+      if (!ingestNew) {
+        skippedNew++;
         continue;
       }
       const { capture, created } = await createCapture({
@@ -272,7 +331,20 @@ export async function refreshXEngagement(userId: string, maxPosts = 100): Promis
         added++;
       }
     }
-    return { status: "ok", updated, added };
+
+    // Refresh the profile facts too, not just the per-post metrics. `followers`
+    // is read straight off connected_accounts.meta by the analytics page, and
+    // before this it only ever changed on a full reconnect — so a user's
+    // follower count sat frozen at its connect-day value indefinitely. Merge
+    // rather than replace: meta also carries cadence stats written elsewhere.
+    await query(
+      `UPDATE connected_accounts
+       SET meta = meta || $2::jsonb, last_refreshed_at = now()
+       WHERE user_id = $1 AND platform = 'x'`,
+      [userId, JSON.stringify(pull.meta ?? {})],
+    );
+
+    return { status: "ok", updated, added, skippedNew };
   } catch (err) {
     console.error(`engagement refresh failed for ${userId}`, err);
     return { status: "failed", updated: 0, added: 0 };
@@ -437,8 +509,17 @@ export async function handlePerformancePulse(): Promise<void> {
 }
 
 export async function pulseForUser(userId: string, settings: UserSettings): Promise<boolean> {
-  // Refresh first (2 pages — recent posts only), then measure.
-  await refreshXEngagement(userId, 40);
+  // Refresh first (2 pages — recent posts only), then measure. Skip it when the
+  // twice-daily sweep (jobs/x-refresh.ts, 01:00 & 13:00 UTC) already pulled this
+  // account recently: the pulse runs at 04:45, so without this gate every
+  // Telegram user with an active plan gets a second full pull 3h45m after the
+  // first — paying twice for data that hasn't moved.
+  const fresh = await queryOne<{ fresh: boolean }>(
+    `SELECT (last_refreshed_at > now() - interval '6 hours') AS fresh
+       FROM connected_accounts WHERE user_id = $1 AND platform = 'x'`,
+    [userId],
+  );
+  if (!fresh?.fresh) await refreshXEngagement(userId, 40);
 
   const rows = await query<{ id: string; raw_text: string | null; captured_at: string; eng: unknown; url: string | null }>(
     `SELECT id, raw_text, captured_at::text, metadata->'engagement' AS eng, metadata->>'url' AS url

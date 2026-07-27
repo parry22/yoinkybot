@@ -3,6 +3,7 @@ import { query, queryOne } from "../db/pool.js";
 import type { Platform } from "../lib/types.js";
 import { entitlementsFor, withinCap, remainingFor } from "../billing/entitlements.js";
 import { attachMediaToPost } from "../social/media.js";
+import { writeAuthState } from "../social/publish.js";
 
 /**
  * A link ANYWHERE in a scheduled post's body is refused outright — not stripped,
@@ -18,6 +19,15 @@ const LINK_RE = /(https?:\/\/|www\.)\S+|\b[a-z0-9-]+\.(?:com|io|co|net|org|xyz|a
 export function containsLink(text: string): boolean {
   return LINK_RE.test(text);
 }
+
+/**
+ * How far ahead a post may be scheduled. Nothing bounded this before, so a
+ * fat-fingered year ("3000-01-02") produced a pg-boss job with a startAfter a
+ * thousand years out: a row that sits in the queue table forever, is never
+ * delivered, and can only be found by hand. A year is generously past any real
+ * content calendar, and the rejection tells the user what they actually did.
+ */
+export const MAX_SCHEDULE_AHEAD_MS = 365 * 24 * 60 * 60 * 1000;
 
 /**
  * The scheduling layer. Queuing a post inserts a row and hands pg-boss a job
@@ -70,6 +80,9 @@ export async function schedulePost(
   if (Number.isNaN(when.getTime())) return { ok: false, reason: "couldn't read that time" };
   // A small grace window absorbs clock skew / "post it now" phrasing.
   if (when.getTime() < Date.now() - 60_000) return { ok: false, reason: "that time is in the past" };
+  if (when.getTime() > Date.now() + MAX_SCHEDULE_AHEAD_MS) {
+    return { ok: false, reason: "that's more than a year out — check the date and pick a time within the next 12 months" };
+  }
 
   // Per-plan monthly cap (Growth = 30/mo, Scale = unlimited). Checked centrally
   // here so web, the Telegram schedule tool, and automation auto-scheduling all
@@ -112,24 +125,63 @@ export async function schedulePost(
   return { ok: true, id: row.id };
 }
 
-/** The user's still-pending scheduled posts, soonest first. */
-export async function listScheduled(userId: string): Promise<ScheduledPost[]> {
+export interface ListScheduledOptions {
+  /**
+   * Also return posts that have already resolved — everything in flight, plus
+   * anything published or failed in the last two weeks.
+   *
+   * WHY IT EXISTS: the default (pending-only) list is right for the Telegram
+   * "/scheduled" queue, which is a cancel-this list. It was wrong as the web
+   * Scheduled screen's only source, because a failed post simply vanished from
+   * it: the `error` column was written but rendered nowhere, and the failure DM
+   * no-ops for a user with no telegram_id — which is every web-only user. They
+   * had no way at all to learn a post hadn't gone out.
+   */
+  includeRecent?: boolean;
+}
+
+/** How far back a resolved post stays on the Scheduled screen. */
+const RECENT_WINDOW_DAYS = 14;
+
+/** The user's scheduled posts, soonest first. Pending-only unless asked. */
+export async function listScheduled(userId: string, opts: ListScheduledOptions = {}): Promise<ScheduledPost[]> {
+  if (!opts.includeRecent) {
+    return query<ScheduledPost>(
+      `SELECT id, platform, content, scheduled_for::text, status, external_url, error
+       FROM scheduled_posts
+       WHERE user_id = $1 AND status = 'pending'
+       ORDER BY scheduled_for ASC
+       LIMIT 25`,
+      [userId],
+    );
+  }
   return query<ScheduledPost>(
     `SELECT id, platform, content, scheduled_for::text, status, external_url, error
      FROM scheduled_posts
-     WHERE user_id = $1 AND status = 'pending'
+     WHERE user_id = $1
+       AND (status IN ('pending','publishing')
+            OR (status IN ('failed','published')
+                AND updated_at > now() - make_interval(days => $2::int)))
      ORDER BY scheduled_for ASC
-     LIMIT 25`,
-    [userId],
+     LIMIT 100`,
+    [userId, RECENT_WINDOW_DAYS],
   );
 }
 
-/** Posts scheduled this calendar month (canceled ones don't count — canceling
- *  frees the slot; failed/published still consume it). Drives the monthly cap. */
+/**
+ * Posts scheduled this calendar month, for the monthly cap.
+ *
+ * Canceled and failed posts don't count. Canceling has always freed the slot;
+ * failing now does too, and that is a fix, not a preference — the old comment
+ * claimed charging for a failure was intentional, but combined with the missing
+ * token refresh it meant a Growth user could spend all 30 of their monthly slots
+ * on posts that every one of them 401'd, and then be told to upgrade. A slot is
+ * sold as a published post; if nothing was published, nothing was used.
+ */
 export async function monthlyScheduledCount(userId: string): Promise<number> {
   const row = await queryOne<{ n: string }>(
     `SELECT count(*)::text AS n FROM scheduled_posts
-     WHERE user_id = $1 AND status <> 'canceled' AND created_at >= date_trunc('month', now())`,
+     WHERE user_id = $1 AND status NOT IN ('canceled','failed') AND created_at >= date_trunc('month', now())`,
     [userId],
   );
   return Number(row?.n ?? 0);
@@ -141,13 +193,24 @@ export interface ScheduledStatus {
   cap: number | null;
   /** null = unlimited. */
   remaining: number | null;
+  /** The stored X posting credential died and only a reconnect fixes it. Shown
+   *  as a banner, because otherwise the first sign is posts quietly failing. */
+  reauthRequired: boolean;
 }
 
 /** Monthly scheduling usage for the current plan — for the Scheduled screen. */
 export async function scheduledStatus(userId: string): Promise<ScheduledStatus> {
   const ent = await entitlementsFor(userId);
   const used = await monthlyScheduledCount(userId);
-  return { used, cap: ent.scheduledPostsPerMonth, remaining: remainingFor(used, ent.scheduledPostsPerMonth) };
+  // Web scheduling posts to X only (web/scheduled.ts), so that's the connection
+  // worth warning about here.
+  const auth = await writeAuthState(userId, "x").catch(() => ({ connected: false, needsReauth: false }));
+  return {
+    used,
+    cap: ent.scheduledPostsPerMonth,
+    remaining: remainingFor(used, ent.scheduledPostsPerMonth),
+    reauthRequired: auth.needsReauth,
+  };
 }
 
 /** Cancel a pending scheduled post. The due job re-checks status, so this alone

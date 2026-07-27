@@ -1,0 +1,93 @@
+.page {
+  height: 100%;
+  overflow-y: auto;
+  padding: clamp(22px, 3vh, 34px) clamp(24px, 4vw, 48px);
+}
+
+.inner {
+  width: min(820px, 100%);
+  margin-inline: auto;
+}
+
+/* Header: a wide title bar + a narrower subtitle bar. */
+.head {
+  margin-bottom: 24px;
+}
+
+.block {
+  border-radius: 8px;
+  background: var(--hover);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Shimmer sweep — a moving highlight, so the wait reads as loading not frozen. */
+.block::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.06) 50%,
+    transparent 100%
+  );
+  animation: shimmer 1.3s ease-in-out infinite;
+}
+
+:root[data-theme="light"] .block::after {
+  background: linear-gradient(90deg, transparent 0%, rgba(0, 0, 0, 0.04) 50%, transparent 100%);
+}
+
+.title {
+  width: 180px;
+  height: 26px;
+  margin-bottom: 12px;
+}
+
+.subtitle {
+  width: 300px;
+  max-width: 70%;
+  height: 14px;
+}
+
+.card {
+  background: var(--surface);
+  border: 0.5px solid var(--stroke);
+  border-radius: var(--radius-lg);
+  padding: 20px 22px;
+  margin-bottom: 14px;
+}
+
+.line {
+  height: 12px;
+  margin-bottom: 12px;
+}
+
+.line:last-child {
+  margin-bottom: 0;
+}
+
+.w40 {
+  width: 40%;
+}
+.w70 {
+  width: 70%;
+}
+.w90 {
+  width: 90%;
+}
+.w60 {
+  width: 60%;
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  60%,
+  100% {
+    transform: translateX(100%);
+  }
+}

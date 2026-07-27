@@ -15,15 +15,7 @@ import styles from "@/app/app/shell.module.css";
  * one place that actually owns `navOpen`. On desktop none of this state matters
  * (the sidebar is always visible via CSS; the mobile header renders nothing).
  */
-export function AppShell({
-  telegramUrl,
-  trial,
-  children,
-}: {
-  telegramUrl: string;
-  trial: TrialInfo | null;
-  children: React.ReactNode;
-}) {
+export function AppShell({ trial, children }: { trial: TrialInfo | null; children: React.ReactNode }) {
   const [navOpen, setNavOpen] = useState(false);
   const pathname = usePathname();
 
@@ -48,7 +40,10 @@ export function AppShell({
       {navOpen && <div className={styles.backdrop} onClick={() => setNavOpen(false)} aria-hidden="true" />}
       <Sidebar open={navOpen} trial={trial} onNavigate={() => setNavOpen(false)} />
       <main className={styles.workspace}>
-        <TopBar telegramUrl={telegramUrl} trial={trial} />
+        {/* No telegramUrl prop any more: all three Telegram entry points (sidebar,
+            mobile header, top bar) mint their own start-token link via
+            useTelegramLink, so the bare bot URL isn't threaded through here. */}
+        <TopBar trial={trial} />
         <div className={styles.content}>{children}</div>
       </main>
     </div>

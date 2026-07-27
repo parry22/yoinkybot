@@ -142,6 +142,26 @@ export interface MediaUploadResult {
   ok: boolean;
   mediaIds: string[];
   error?: string;
+  /** The upload was refused with 401 — the write credential is dead, not the
+   *  file. Carried up so the publisher marks the connection for re-consent
+   *  rather than reporting a media problem the user can't act on. */
+  authExpired?: boolean;
+}
+
+/**
+ * An upload rejected by X, carrying the HTTP status so the caller can tell a
+ * dead token (401) apart from a rejected file (400/413/media-too-large). Without
+ * the status the only signal would be substring-matching the message, which
+ * would misfire on a "401" that happens to appear in a filename or error body.
+ */
+class XMediaError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "XMediaError";
+  }
 }
 
 const FETCH_TIMEOUT_MS = 120_000;
@@ -199,7 +219,7 @@ async function uploadToX(auth: WriteAuth, item: ScheduledMedia): Promise<string>
     };
     const id = body.data?.id ?? body.data?.media_key;
     if (!res.ok || !id) {
-      throw new Error(`X media upload ${res.status}: ${body.detail ?? body.title ?? "rejected"}`);
+      throw new XMediaError(`X media upload ${res.status}: ${body.detail ?? body.title ?? "rejected"}`, res.status);
     }
     return id;
   }
@@ -222,7 +242,10 @@ async function uploadToX(auth: WriteAuth, item: ScheduledMedia): Promise<string>
   };
   const mediaId = initBody.data?.id;
   if (!initRes.ok || !mediaId) {
-    throw new Error(`X media init ${initRes.status}: ${initBody.detail ?? initBody.title ?? "rejected"}`);
+    throw new XMediaError(
+      `X media init ${initRes.status}: ${initBody.detail ?? initBody.title ?? "rejected"}`,
+      initRes.status,
+    );
   }
 
   let segment = 0;
@@ -239,7 +262,7 @@ async function uploadToX(auth: WriteAuth, item: ScheduledMedia): Promise<string>
     });
     if (!res.ok) {
       const detail = await res.text().catch(() => "");
-      throw new Error(`X media append ${res.status} (segment ${segment}): ${detail.slice(0, 200)}`);
+      throw new XMediaError(`X media append ${res.status} (segment ${segment}): ${detail.slice(0, 200)}`, res.status);
     }
     segment++;
   }
@@ -253,7 +276,9 @@ async function uploadToX(auth: WriteAuth, item: ScheduledMedia): Promise<string>
     data?: { id?: string; processing_info?: XProcessingInfo };
     detail?: string;
   };
-  if (!finRes.ok) throw new Error(`X media finalize ${finRes.status}: ${finBody.detail ?? "rejected"}`);
+  if (!finRes.ok) {
+    throw new XMediaError(`X media finalize ${finRes.status}: ${finBody.detail ?? "rejected"}`, finRes.status);
+  }
 
   // Video and GIF transcode asynchronously. Posting before it finishes fails, so
   // poll the state X tells us to wait for — bounded, then give up honestly.
@@ -314,7 +339,12 @@ export async function uploadMediaFor(
       const reason = err instanceof Error ? err.message : String(err);
       // All-or-nothing: a post that was meant to carry three images must not go
       // out with two. The caller marks the post failed and says why.
-      return { ok: false, mediaIds: [], error: reason };
+      return {
+        ok: false,
+        mediaIds: [],
+        error: reason,
+        authExpired: err instanceof XMediaError && err.status === 401,
+      };
     }
   }
   return { ok: true, mediaIds };

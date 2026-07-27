@@ -22,7 +22,16 @@ export const QUEUES = {
   campaignDetect: "memory.campaign-detect",
   classificationRecalibrate: "memory.classification-recalibrate",
   scheduledPost: "posts.scheduled",
-  agentTick: "agent.tick",
+  /** Sweep for posts stranded mid-publish and put them back in the queue
+   *  (jobs/scheduled-post.ts#reapStuckPublishing). */
+  scheduledPostReap: "posts.scheduled-reap",
+  // NOTE: `agentTick: "agent.tick"` used to sit here. The single global autopilot
+  // it drove was subsumed by the multi-automation system in migration 0024, and
+  // nothing has referenced the queue since — no worker, no sender, no schedule —
+  // yet startBoss() below kept creating and updating it on every boot. Removed.
+  // jobs/workers.ts still unschedules the literal string "agent.tick" so installs
+  // that registered the old cron shed it; that list deliberately does not depend
+  // on this constant.
   buyerRadar: "buyer.radar",
   buyerRecalibrate: "buyer.recalibrate",
   /** On-demand "Scan now". Separate from the scheduled buyer.radar sweep because
@@ -30,6 +39,9 @@ export const QUEUES = {
   buyerScanNow: "buyer.scan-now",
   inspirationSeed: "inspiration.seed",
   automationTick: "automation.tick",
+  /** Twice-daily incremental re-pull of every connected X account, so nobody has
+   *  to reconnect just to get fresh data (jobs/x-refresh.ts). */
+  xRefresh: "x.refresh",
 } as const;
 
 export interface TranscribeJob {
@@ -112,6 +124,7 @@ export async function startBoss(): Promise<PgBoss> {
     QUEUES.peerIngest,
     QUEUES.buyerRadar,
     QUEUES.inspirationSeed,
+    QUEUES.xRefresh,
     // User-triggered and paid: a retry would double-spend the provider budget on
     // a scan the user can simply run again.
     QUEUES.buyerScanNow,
@@ -120,7 +133,22 @@ export async function startBoss(): Promise<PgBoss> {
   // one is a subprocess that may queue behind AGENT_MAX_CONCURRENCY. The default
   // 10-minute expiry can plausibly be hit; expiring mid-scan would strand a job
   // the user is actively polling.
-  const LONG_EXPIRY: Partial<Record<string, number>> = { [QUEUES.buyerScanNow]: 30 };
+  // x.refresh is a SEQUENTIAL fleet sweep — the provider throttle is 5.5s/request
+  // and it walks every connected account, so it budgets up to 45 wall-clock
+  // minutes (jobs/x-refresh.ts MAX_RUN_MS). Under the default 10-minute expiry
+  // pg-boss would kill it mid-sweep every single tick.
+  // posts.scheduled publishes media before it publishes text, and that path can
+  // legitimately run for minutes: a 200 MB video is a 120s fetch from Blob, a
+  // chunked upload, then a transcode poll that alone budgets 5 minutes. Under the
+  // default 10-minute expiry pg-boss would kill such a job AFTER it had claimed
+  // the row, stranding the post in 'publishing' with no error and no retry —
+  // 20 minutes covers the worst realistic case, and reapStuckPublishing (which
+  // waits 30) is the backstop for anything that still dies mid-flight.
+  const LONG_EXPIRY: Partial<Record<string, number>> = {
+    [QUEUES.buyerScanNow]: 30,
+    [QUEUES.xRefresh]: 60,
+    [QUEUES.scheduledPost]: 20,
+  };
   // `singletonKey` ONLY dedupes on a non-standard policy: pg-boss v10 builds its
   // unique indexes with `WHERE policy = 'short' | 'singleton' | 'stately'`, so on
   // the default `standard` policy a singletonKey is silently ignored. Buyer

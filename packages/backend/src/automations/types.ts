@@ -12,7 +12,9 @@ export type RunStatus =
   | "rejected"
   | "edited"
   | "failed"
-  | "skipped";
+  | "skipped"
+  /** An approval nobody answered, aged out by the reaper — see store.expireStaleApprovals. */
+  | "expired";
 
 export interface Automation {
   id: string;

@@ -2,32 +2,56 @@ import styles from "./plan-picker.module.css";
 
 type PlanKey = "growth" | "scale" | "founding";
 
+/** Splits "$9/mo" into the number and its unit so the price can be typeset as a
+ *  headline with a small trailing "/mo", rather than one flat 13px string. */
+function splitPrice(label: string): { amount: string; unit: string } {
+  const i = label.indexOf("/");
+  return i === -1 ? { amount: label, unit: "" } : { amount: label.slice(0, i), unit: label.slice(i) };
+}
+
 /**
  * The plan chooser in Settings → Plan & billing. Surfaces Growth and Scale
  * side by side, marks the one the user is on, and offers an explicit path to
- * move onto Scale — the option that was missing before. Before a card is on
- * file (trial / expired / free) each card starts the right checkout; once a
- * Dodo subscription exists, plan changes go through the customer portal so we
- * never mint a duplicate subscription.
+ * move onto Scale. Before a card is on file (trial / expired / free) each card
+ * starts the right checkout; once a Dodo subscription exists, plan changes go
+ * through the customer portal so we never mint a duplicate subscription.
+ *
+ * Both prices now come from config (PAID_PRICE_LABEL / SCALE_PRICE_LABEL) —
+ * Scale used to render the literal string "Higher tier", which meant the one
+ * screen where someone decides to pay more never told them what it cost.
  */
 export function PlanPicker({
   currentKey,
   onTrial,
   hasSubscription,
   growthPrice,
+  growthWas,
+  scalePrice,
+  scaleWas,
 }: {
   currentKey: PlanKey;
   onTrial: boolean;
   hasSubscription: boolean;
   growthPrice: string;
+  growthWas: string;
+  scalePrice: string;
+  scaleWas: string;
 }) {
   const base = onTrial ? "/api/billing/start-trial" : "/api/billing/checkout";
 
-  const cards: { key: PlanKey; name: string; price: string; blurb: string; features: string[] }[] = [
+  const cards: {
+    key: PlanKey;
+    name: string;
+    price: string;
+    was: string;
+    blurb: string;
+    features: string[];
+  }[] = [
     {
       key: "growth",
       name: "Growth",
       price: growthPrice,
+      was: growthWas,
       blurb: "The full Yoinky brain for building your brand.",
       // Concrete, and the same numbers the landing page shows and
       // billing/entitlements.ts actually enforces — the old vague copy ("higher
@@ -43,7 +67,8 @@ export function PlanPicker({
     {
       key: "scale",
       name: "Scale",
-      price: "Higher tier",
+      price: scalePrice,
+      was: scaleWas,
       blurb: "For accounts shipping every day and running more agents.",
       features: [
         "Everything in Growth",
@@ -69,13 +94,19 @@ export function PlanPicker({
           : onTrial
             ? `Choose ${c.name}`
             : `Get ${c.name}`;
+        const { amount, unit } = splitPrice(c.price);
         return (
           <div key={c.key} className={`${styles.card} ${isCurrent ? styles.cardCurrent : ""}`}>
             <div className={styles.cardTop}>
               <span className={styles.name}>{c.name}</span>
               {isCurrent && <span className={styles.badge}>Current</span>}
             </div>
-            <div className={styles.price}>{c.price}</div>
+            <div className={styles.priceRow}>
+              <span className={styles.price}>{amount}</span>
+              {unit && <span className={styles.priceUnit}>{unit}</span>}
+              {c.was && <span className={styles.priceWas}>{c.was}</span>}
+            </div>
+            {c.was && <div className={styles.priceNote}>Early-bird price, first 50 users</div>}
             <div className={styles.blurb}>{c.blurb}</div>
             <ul className={styles.features}>
               {c.features.map((f) => (
@@ -87,7 +118,7 @@ export function PlanPicker({
                 {ctaLabel}
               </a>
             ) : (
-              <span className={styles.ctaDisabled}>You're on this plan</span>
+              <span className={styles.ctaDisabled}>You&apos;re on this plan</span>
             )}
           </div>
         );

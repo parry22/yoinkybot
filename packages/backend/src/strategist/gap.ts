@@ -34,6 +34,17 @@ export function cosineDistance(a: number[], b: number[]): number {
 /** A post's memories within this cosine distance of the stated niche count as "on-niche". */
 const ON_NICHE_DISTANCE = 0.5;
 
+/** Below this many idea/claim posts there is nothing to measure positioning against at all. */
+const MIN_POSITIONING_POSTS = 6;
+/**
+ * At or above this many, the off-niche percentage is worth stating flatly. Below
+ * it the figure is still computed and shown — dropping it would lose a real
+ * finding — but it travels with its n and an instruction to hedge. The old code
+ * printed "X% sit OFF the stated niche. USE THIS NUMBER." from as few as 6 posts,
+ * where a single post swings the figure 17 points.
+ */
+const CONFIDENT_POSITIONING_POSTS = 20;
+
 export interface GapResult {
   text: string;
   positioningOffPct: number | null;
@@ -68,7 +79,7 @@ async function positioningBlock(
   const stated = [profile.niche, profile.sub_niche_angle, ...(profile.content_pillars ?? [])]
     .filter(Boolean)
     .join(". ");
-  if (!stated || ideas.length < 6) {
+  if (!stated || ideas.length < MIN_POSITIONING_POSTS) {
     return { text: "POSITIONING GAP: too little stated positioning or too few posts to measure against it.", offPct: null };
   }
   const nicheVec = await embedOne(stated, userId);
@@ -79,10 +90,18 @@ async function positioningBlock(
     .sort((a, b) => b.dist - a.dist)
     .slice(0, 3)
     .map((m) => `  [${m.created_at.slice(0, 10)}] ${m.content.slice(0, 140)}`);
+  // The claim strength follows the sample size, deterministically. A thin corpus
+  // still gets its number (with the n and a hedge instruction); only a corpus big
+  // enough for one post not to move the figure gets the flat "USE THIS NUMBER".
+  const confident = scored.length >= CONFIDENT_POSITIONING_POSTS;
+  const claim = confident
+    ? `${offPct}% sit OFF the stated niche. USE THIS NUMBER.`
+    : `${offPct}% sit OFF the stated niche — but that is ${off.length} of only ${scored.length} posts, so one post moves it ` +
+      `${Math.round(100 / scored.length)} points. State it as an early read with the sample size attached, never as a settled percentage.`;
   return {
     text:
       `POSITIONING GAP (cosine of ${scored.length} idea/claim posts vs stated niche "${profile.sub_niche_angle ?? profile.niche}"): ` +
-      `${offPct}% sit OFF the stated niche. USE THIS NUMBER.` +
+      claim +
       (examples.length ? `\nFurthest-off examples (real, dated):\n${examples.join("\n")}` : ""),
     offPct,
   };
@@ -175,6 +194,76 @@ async function audienceBlock(userId: string, profile: BrandProfile, voice: Voice
   return parts.length ? `AUDIENCE FIT:\n${parts.map((p) => `- ${p}`).join("\n")}` : "AUDIENCE FIT: not enough stated audience detail or posts to measure.";
 }
 
+/** One X post as the top/quietest ranking sees it. `e` is null when the source carried no metrics. */
+export interface RankablePost {
+  text: string;
+  at: string;
+  e: number | null;
+}
+
+/** Below this many metric-bearing posts there is nothing worth calling a top or a bottom. */
+const MIN_RANKABLE_POSTS = 4;
+
+/**
+ * "Your best posts vs your quietest" — or the honest admission that there is no
+ * such distinction to draw. Pure so the degenerate cases are unit-testable.
+ *
+ * THE BUG THIS FIXES. The old code filtered on `e !== null` and sorted, then
+ * printed slice(0,2) as TOP and slice(-2) as QUIETEST whenever four posts
+ * survived. For an account whose source reports real zeros — a small or new
+ * account, which is exactly who this onboarding gap analysis runs for — every
+ * post scores 0, so the sort is a no-op and the reveal prompt received two
+ * identical "(0 eng)" lists labelled as opposites, which the model then
+ * narrated as a performance contrast. The `else if (x)` honest fallback below
+ * could never fire, because the count test passed.
+ *
+ * So the gate is now "is there a spread to rank on", not just "are there rows".
+ */
+export function topBottomLines(posts: RankablePost[], hasX: boolean): string[] {
+  const withEng = posts
+    .filter((p): p is RankablePost & { e: number } => p.e !== null)
+    .sort((a, b) => b.e - a.e);
+  const fmt = (p: { text: string; at: string; e: number }) => `  [${p.at.slice(0, 10)}] (${p.e} eng) ${p.text.slice(0, 120)}`;
+
+  if (withEng.length >= MIN_RANKABLE_POSTS) {
+    const top = withEng[0]!.e;
+    const bottom = withEng[withEng.length - 1]!.e;
+    if (top > bottom) {
+      return [
+        `TOP X POSTS:\n${withEng.slice(0, 2).map(fmt).join("\n")}`,
+        `QUIETEST X POSTS:\n${withEng.slice(-2).map(fmt).join("\n")}`,
+      ];
+    }
+    // Metrics exist and are all the same number — usually all zero. Naming the
+    // number is more useful than pretending there's a best and a worst.
+    return [
+      `X post-level engagement is flat: all ${withEng.length} posts with metrics score exactly ${top}, so there is no best ` +
+        `and no quietest post to compare. Say that plainly — do NOT invent a performance contrast.`,
+    ];
+  }
+  if (hasX) {
+    return [
+      "X post-level engagement isn't available (no engagement source configured), so top/bottom posts are thin. Say so honestly.",
+    ];
+  }
+  return [];
+}
+
+/**
+ * `meta->>'followers'` is text out of jsonb and the meta blob is whatever the
+ * importer last merged in, so it can be absent, null, or a non-numeric string.
+ * The old `x?.followers ? Number(x.followers) : null` let a junk value through as
+ * NaN, and the prompt then read "AUDIENCE SIZE: X followers: NaN" under a header
+ * telling the model these are measured facts. web/analytics.ts and web/growth.ts
+ * both type-check the same field before trusting it; this is the same check,
+ * adapted for the `->>` text projection this query uses.
+ */
+function followerCount(raw: string | null | undefined): number | null {
+  if (raw === null || raw === undefined || raw.trim() === "") return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
 /** The plain baseline the three-month plan moves from: audience size, cadence, top/bottom posts. */
 async function baselineBlock(
   userId: string,
@@ -187,8 +276,8 @@ async function baselineBlock(
   const x = accounts.find((a) => a.platform === "x");
   const li = accounts.find((a) => a.platform === "linkedin");
   const followers = {
-    x: x?.followers ? Number(x.followers) : null,
-    linkedin: li?.followers ? Number(li.followers) : null,
+    x: followerCount(x?.followers),
+    linkedin: followerCount(li?.followers),
   };
 
   // Cadence over the ingested window.
@@ -211,11 +300,6 @@ async function baselineBlock(
      FROM captures WHERE user_id = $1 AND source = 'x_import' AND raw_text IS NOT NULL`,
     [userId],
   );
-  const withEng = xPosts
-    .map((p) => ({ text: p.raw_text!, at: p.captured_at, e: engagementTotal(p.eng) }))
-    .filter((p): p is { text: string; at: string; e: number } => p.e !== null)
-    .sort((a, b) => b.e - a.e);
-  const fmt = (p: { text: string; at: string; e: number }) => `  [${p.at.slice(0, 10)}] (${p.e} eng) ${p.text.slice(0, 120)}`;
 
   const lines: string[] = [];
   const audience: string[] = [];
@@ -223,12 +307,12 @@ async function baselineBlock(
   if (followers.linkedin !== null) audience.push(`LinkedIn followers: ${followers.linkedin}`);
   if (audience.length) lines.push(`AUDIENCE SIZE: ${audience.join(", ")}.`);
   if (cadence) lines.push(cadence);
-  if (withEng.length >= 4) {
-    lines.push(`TOP X POSTS:\n${withEng.slice(0, 2).map(fmt).join("\n")}`);
-    lines.push(`QUIETEST X POSTS:\n${withEng.slice(-2).map(fmt).join("\n")}`);
-  } else if (x) {
-    lines.push("X post-level engagement isn't available (no engagement source configured), so top/bottom posts are thin. Say so honestly.");
-  }
+  lines.push(
+    ...topBottomLines(
+      xPosts.map((p) => ({ text: p.raw_text!, at: p.captured_at, e: engagementTotal(p.eng) })),
+      !!x,
+    ),
+  );
   if (li) {
     lines.push("LinkedIn doesn't give reliable post-level performance, so that side of the picture is thinner than X. Everything else holds. State this plainly.");
   }

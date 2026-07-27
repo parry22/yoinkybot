@@ -24,6 +24,44 @@ which is where it's most useful. Both share one Postgres and one `users` row.
 
 <!-- Keep newest-first. Update this whenever a change ships that a reader of the repo should know about. -->
 
+- **2026-07-27 — Reliability hardening + UI polish.** A correctness sweep plus a
+  round of surface fixes. Full detail in `docs/INTERNAL.md` §3p and §3q.
+
+  **Billing now handles the unhappy paths.** Refunds and chargebacks revoke access
+  (only `subscription.*` events were handled before). A single failed card charge
+  no longer drops a long-paying customer straight to `free` with "your free trial
+  has ended" — `on_hold` gets a grace window, and the copy tells `past_due`,
+  `cancelled`, and `expired` apart. Plus a duplicate-subscription guard, a Founding
+  CTA fallback, a Telegram "Scale" button, and webhook idempotency.
+
+  **Scheduled X posts will actually publish.** The X OAuth refresh-token flow was
+  written but never read, so ~2h-expiry user tokens meant essentially every
+  scheduled X post would 401 (LinkedIn's 60-day tokens hid it). Tokens now refresh
+  before a publish, a reaper unsticks posts wedged mid-publish, a failed publish no
+  longer burns the monthly cap, and failed posts are visible in the web UI instead
+  of vanishing (the Scheduled screen only listed `pending`). *The refresh flow
+  couldn't be live-tested without X credentials — treat it as unverified until a
+  real post ships.*
+
+  **Post-connect flow revived.** The X callback redirected to `/app?connected=x` but
+  `/app` dropped the param, so the "Reading your X" scanner and its error/loading
+  states were dead code — a user finished OAuth and landed in an empty Compose. The
+  redirect preserves it now, with real error/loading boundaries, three
+  previously-ungated paid routes gated, and mobile `dvh` fixes so the composer isn't
+  hidden under the iOS URL bar.
+
+  **Analytics stopped inventing findings.** A median-of-2 was being rendered as "the
+  headline comparison"; the split now needs 4 posts a side, null/NaN no longer reach
+  the report prompt, automations avoid the 22/23 hours, approvals expire, and
+  Telegram scheduling respects your timezone.
+
+  **A trial now shows the caps of the plan you chose.** It used to grant the full
+  Scale set to every trialing user while Settings highlighted Growth — so the screen
+  said Growth while every cap enforced Scale. Also: a **Feedback** entry under
+  Account (feature-request / bug-report), skeleton loading between pages, the Auto
+  Agent header de-duplicated, the Growth "next move" promo removed, and darker
+  dark-theme surfaces.
+
 - **2026-07-26 — Buyer Radar surfaces six leads instead of drafting replies;
   Compose can search the web; Agent Mode interviews you; scheduled posts take
   media.** Four fixes, one theme: the product knew how to do the work and was

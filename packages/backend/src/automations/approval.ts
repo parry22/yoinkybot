@@ -32,9 +32,18 @@ export function approvalKeyboard(runId: string): InlineKeyboard {
 // already chose to publish, so it doesn't wait the full auto-mode window.
 const APPROVED_DELAY_MS = 2 * 60_000;
 
+/**
+ * Why a run is no longer actionable, in words. An expired approval used to come
+ * back as the same flat "already handled" a double-tap gets, which is the one
+ * case where the user genuinely did nothing and deserves an explanation — the
+ * agent gave up on the draft, and the monthly slot went back.
+ */
+const EXPIRY_NOTE = "that draft expired — it sat unanswered too long, so I let it go and gave you the post slot back";
+
 export async function approveRun(userId: string, runId: string): Promise<{ ok: boolean; reason?: string }> {
   const run = await getRun(runId, userId);
   if (!run) return { ok: false, reason: "not found" };
+  if (run.status === "expired") return { ok: false, reason: EXPIRY_NOTE };
   if (!run.draft_body) return { ok: false, reason: "no draft" };
   const claimed = await claimRun(runId, "awaiting_approval", "approved");
   if (!claimed) return { ok: false, reason: "already handled" };
@@ -52,9 +61,13 @@ export async function approveRun(userId: string, runId: string): Promise<{ ok: b
   return { ok: true };
 }
 
-export async function rejectRun(userId: string, runId: string): Promise<{ ok: boolean }> {
+export async function rejectRun(userId: string, runId: string): Promise<{ ok: boolean; reason?: string }> {
   const claimed = await claimRun(runId, "awaiting_approval", "rejected");
-  if (!claimed) return { ok: false };
+  if (!claimed) {
+    // Distinguish "you already answered this" from "we aged it out on you".
+    const run = await getRun(runId, userId);
+    return { ok: false, reason: run?.status === "expired" ? EXPIRY_NOTE : undefined };
+  }
   await setRunStatus(runId, "rejected", "user_rejected");
   return { ok: true };
 }
@@ -70,6 +83,7 @@ export interface EditResult {
 export async function applyEdit(userId: string, runId: string, instruction: string): Promise<EditResult> {
   const run = await getRun(runId, userId);
   if (!run || !run.draft_body) return { ok: false, reason: "not found" };
+  if (run.status === "expired") return { ok: false, reason: EXPIRY_NOTE };
   if (run.status !== "awaiting_approval") return { ok: false, reason: "not open for edits" };
   if (run.edit_count >= config.AUTOMATION_MAX_EDITS) return { ok: false, capped: true };
   const revised = await reviseDraft(userId, run.draft_body, instruction, "x");

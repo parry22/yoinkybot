@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -13,10 +14,12 @@ import {
   Target01Icon,
   Settings05Icon,
   TelegramIcon,
+  ChatFeedbackIcon,
 } from "@hugeicons/core-free-icons";
 import type { TrialInfo } from "@yoink/backend/web";
 import { TrialPill } from "./trial-banner";
 import { useTelegramLink } from "./use-telegram-link";
+import { FeedbackModal } from "./feedback-modal";
 import styles from "./sidebar.module.css";
 
 type NavItem = { href: string; label: string; icon: typeof BotIcon };
@@ -52,8 +55,9 @@ export function Sidebar({
 }) {
   const pathname = usePathname();
   const { open: openTelegram, busy: tgBusy } = useTelegramLink();
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
-  function renderGroup(label: string, items: NavItem[]) {
+  function renderGroup(label: string, items: NavItem[], extra?: React.ReactNode) {
     return (
       <div key={label}>
         <p className={styles.navLabel}>{label}</p>
@@ -71,9 +75,47 @@ export function Sidebar({
             </Link>
           );
         })}
+        {extra}
       </div>
     );
   }
+
+  /* Telegram is one of the surfaces you talk to the agent through, so it sits
+   * with Compose and Auto Agent under "Agent" and looks exactly like them. It's
+   * a button rather than a Link because the destination is a one-time linking
+   * URL minted per click (see use-telegram-link.ts), not a static route. */
+  const telegramItem = (
+    <button
+      type="button"
+      className={styles.navItem}
+      onClick={() => {
+        openTelegram();
+        onNavigate();
+      }}
+      disabled={tgBusy}
+      title="Open the Yoinky bot in Telegram"
+    >
+      <HugeiconsIcon icon={TelegramIcon} size={18} strokeWidth={1.8} />
+      <span>{tgBusy ? "Opening…" : "Telegram"}</span>
+    </button>
+  );
+
+  /* Feedback sits under Account, right below Settings. It's a button (not a
+   * Link) because it opens a popup rather than navigating to a route. */
+  const feedbackItem = (
+    <button
+      type="button"
+      className={styles.navItem}
+      onClick={() => {
+        setFeedbackOpen(true);
+        onNavigate();
+      }}
+      title="Send a feature request or bug report"
+    >
+      <HugeiconsIcon icon={ChatFeedbackIcon} size={18} strokeWidth={1.8} />
+      <span>Feedback</span>
+    </button>
+  );
 
   return (
     <aside className={`${styles.sidebar} ${open ? styles.sidebarOpen : ""}`} aria-label="Yoinky navigation">
@@ -91,24 +133,12 @@ export function Sidebar({
       )}
 
       <nav className={styles.nav}>
-        {renderGroup("Agent", AGENT_NAV)}
+        {renderGroup("Agent", AGENT_NAV, telegramItem)}
         {renderGroup("Grow", GROW_NAV)}
-        {renderGroup("Account", ACCOUNT_NAV)}
+        {renderGroup("Account", ACCOUNT_NAV, feedbackItem)}
       </nav>
 
-      <button
-        type="button"
-        className={`${styles.navItem} ${styles.telegramItem}`}
-        onClick={() => {
-          openTelegram();
-          onNavigate();
-        }}
-        disabled={tgBusy}
-        title="Open the Yoinky bot in Telegram"
-      >
-        <HugeiconsIcon icon={TelegramIcon} size={18} strokeWidth={1.8} />
-        <span>{tgBusy ? "Opening…" : "Telegram Bot"}</span>
-      </button>
+      <FeedbackModal open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
     </aside>
   );
 }

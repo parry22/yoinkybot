@@ -293,20 +293,33 @@ const schema = z.object({
   DODO_WEBHOOK_SECRET: z.string().optional(),
   DODO_ENV: z.enum(["test_mode", "live_mode"]).default("test_mode"),
   DODO_PRODUCT_PAID: z.string().optional(),
-  // "Scale" tier — the higher landing plan (?plan=scale). Full paid entitlements
-  // today; distinct product so billing/telemetry can tell Growth from Scale.
+  // "Scale" tier — the higher landing plan (?plan=scale). Real, higher caps than
+  // Growth (see billing/entitlements.ts); distinct product so billing/telemetry
+  // can tell Growth from Scale.
   DODO_PRODUCT_SCALE: z.string().optional(),
   DODO_PRODUCT_FOUNDING: z.string().optional(),
-  // Human-readable price shown in /upgrade copy + the checkout button. Keep it in
-  // sync with the actual Dodo product price ($24.99/mo for "Growth Plan" today).
-  PAID_PRICE_LABEL: z.string().default("$24.99/mo"),
+  // Human-readable prices shown in /upgrade copy, the checkout button and the
+  // Settings plan picker. Keep in sync with the actual Dodo product prices AND
+  // with the landing page (separate repo) — nothing derives these from Dodo, so
+  // a price change is a three-place edit.
+  //
+  // Today: early-bird pricing, Growth $9/mo and Scale $49/mo, anchored against
+  // the standard $29 / $79. The *_WAS_LABEL values are display-only strikethroughs.
+  PAID_PRICE_LABEL: z.string().default("$9/mo"),
+  PAID_PRICE_WAS_LABEL: z.string().default("$29"),
+  SCALE_PRICE_LABEL: z.string().default("$49/mo"),
+  SCALE_PRICE_WAS_LABEL: z.string().default("$79"),
   // Off during testing → everyone gets full features. Set true to enforce plans.
   // NOTE: a boot warning fires (index.ts) if this is false in production, so a
   // deploy that forgets the flag can't silently give everyone the paid tier.
+  // Case- and whitespace-insensitive on purpose. This used to be a bare
+  // `v === "true" || v === "1"`, so `True`, `TRUE` or a value with a stray space
+  // silently disabled the paywall and handed every user the full Scale tier —
+  // a typo in a dashboard field, with no error and no way to notice.
   PAYWALL_ENABLED: z
     .string()
     .default("false")
-    .transform((v) => v === "true" || v === "1"),
+    .transform((v) => ["true", "1", "yes", "on"].includes(v.trim().toLowerCase())),
   // Comma-separated Telegram user ids that bypass the paywall entirely (founder +
   // testers). ADMIN_TELEGRAM_ID is auto-exempted on top of this, so the operator
   // never has to upgrade themselves. Empty = only ADMIN_TELEGRAM_ID is exempt.
@@ -328,3 +341,54 @@ export type Config = z.infer<typeof schema>;
 export const config: Config = schema.parse(process.env);
 
 export const isDev = config.NODE_ENV !== "production";
+
+/**
+ * Misconfigurations that are silent, expensive, and only observable in
+ * production. Checked at module load — NOT at server boot — because the Next.js
+ * app (packages/web) imports this config directly and never executes
+ * `src/index.ts`, so a boot-time-only guard cannot see the surface where most of
+ * these actually bite. Vercel would have run the entire web app with the paywall
+ * off and nothing would have said a word.
+ *
+ * Warn, never throw: a config warning must not be able to take the product down.
+ */
+function warnOnDangerousConfig(): void {
+  if (config.NODE_ENV !== "production") return;
+  const warn = (msg: string) => console.warn(`⚠️  config: ${msg}`);
+
+  if (!config.PAYWALL_ENABLED) {
+    warn(
+      "PAYWALL_ENABLED is not true in production — every user currently gets the full paid tier for free. " +
+        'Accepted truthy values: "true", "1", "yes", "on".',
+    );
+  }
+
+  // A duplicated product id makes planForProduct() mis-map silently: it tests
+  // FOUNDING → SCALE → PAID in order, so reusing (say) the Growth id for
+  // Founding records every Growth buyer as founding — full Scale entitlements
+  // for $9, and a burnt founding seat.
+  const products = {
+    DODO_PRODUCT_PAID: config.DODO_PRODUCT_PAID,
+    DODO_PRODUCT_SCALE: config.DODO_PRODUCT_SCALE,
+    DODO_PRODUCT_FOUNDING: config.DODO_PRODUCT_FOUNDING,
+  };
+  const set = Object.entries(products).filter(([, v]) => v);
+  const seen = new Map<string, string>();
+  for (const [name, id] of set) {
+    const prior = seen.get(id!);
+    if (prior) warn(`${name} and ${prior} share the same Dodo product id — plan mapping will be wrong.`);
+    else seen.set(id!, name);
+  }
+  if (!config.DODO_PRODUCT_PAID) warn("DODO_PRODUCT_PAID is unset — Growth checkout will fail.");
+  if (!config.DODO_PRODUCT_SCALE) warn("DODO_PRODUCT_SCALE is unset — Scale purchases will be recorded as Growth.");
+
+  // WEB_APP_URL is the allowlist the OAuth connect flow checks a `redirect`
+  // against (routes/oauth.ts). Left at its localhost default in production, no
+  // web redirect is ever honoured and every user who connects from the web is
+  // returned to the Telegram-flavoured static page instead of Settings.
+  if (config.WEB_APP_URL.startsWith("http://localhost")) {
+    warn("WEB_APP_URL is still the localhost default in production — web OAuth redirects will not be honoured.");
+  }
+}
+
+warnOnDangerousConfig();

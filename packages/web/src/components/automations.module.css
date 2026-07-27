@@ -10,9 +10,9 @@
 
 .toast {
   font-size: 13px;
-  color: var(--accent);
-  background: var(--accent-soft);
-  border: 0.5px solid var(--accent-border);
+  color: var(--ink-900);
+  background: var(--hover);
+  border: 0.5px solid var(--stroke);
   border-radius: 999px;
   padding: 8px 14px;
   display: inline-block;
@@ -49,9 +49,9 @@
   display: inline-block;
   margin-top: 8px;
   font-size: 12px;
-  color: var(--accent);
-  background: var(--accent-soft);
-  border: 0.5px solid var(--accent-border);
+  color: var(--ink-900);
+  background: var(--hover);
+  border: 0.5px solid var(--stroke);
   border-radius: 999px;
   padding: 2px 10px;
 }
@@ -92,7 +92,7 @@
   flex: 0 0 auto;
 }
 .toggle.on {
-  background: var(--accent);
+  background: var(--ink-900);
 }
 .knob {
   position: absolute;
@@ -119,16 +119,19 @@
 }
 
 /* ── approvals ── */
+/* An approval is the one card here that's asking you for something, so it keeps
+   a stronger edge than the agent list — but in ink, not pink. */
 .approval {
   background: var(--surface);
-  border: 0.5px solid var(--accent-border);
+  border: 0.5px solid var(--stroke);
+  box-shadow: inset 2px 0 0 var(--ink-900);
   border-radius: var(--radius-lg);
   padding: 16px 18px;
   margin-bottom: 12px;
 }
 .approvalFrom {
   font-size: 12px;
-  color: var(--accent);
+  color: var(--ink-600);
   font-weight: 500;
   margin-bottom: 8px;
 }
@@ -155,6 +158,9 @@
 }
 .editInput {
   flex: 1;
+  /* A flex item's default min-width is its content width, so on a narrow card the
+   * input refused to shrink and pushed Apply/Cancel outside the approval card. */
+  min-width: 0;
   font: inherit;
   font-size: 14px;
   padding: 9px 12px;
@@ -165,7 +171,7 @@
 }
 .editInput:focus {
   outline: none;
-  border-color: var(--accent-border);
+  border-color: var(--ink-500);
 }
 .ghost {
   font: inherit;
@@ -181,222 +187,16 @@
   background: var(--hover);
 }
 
-/* ── config modal ── */
-.overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  background: rgba(20, 20, 20, 0.42);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-}
-.modal {
-  width: min(480px, 100%);
-  max-height: 88vh;
-  overflow-y: auto;
-  background: var(--chat-bg);
-  border: 0.5px solid var(--stroke);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-drawer);
-  padding: 22px;
-}
-.modalWide {
-  width: min(580px, 100%);
-}
-
-/* ── conversational composer ── */
-.assistantRow {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-  margin-bottom: 16px;
-}
-.assistantAvatar {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  border: 0.5px solid var(--accent-border);
-  color: var(--accent);
-}
-.assistantBubble {
-  flex: 1;
-  font-size: 13.5px;
-  line-height: 1.5;
-  color: var(--ink-700);
-  background: var(--surface);
-  border: 0.5px solid var(--stroke);
-  border-radius: 4px 12px 12px 12px;
-  padding: 10px 13px;
-}
-
-.modeGrid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  margin-bottom: 16px;
-}
-.modeCard {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 5px;
-  text-align: left;
-  font: inherit;
-  cursor: pointer;
-  padding: 11px 12px;
-  border-radius: var(--radius-md);
-  border: 0.5px solid var(--stroke);
-  background: var(--surface);
-  color: var(--ink-700);
-  transition: border-color 120ms ease, background 120ms ease;
-}
-.modeCard:hover {
-  border-color: var(--accent-border);
-}
-.modeCardActive {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-.modeIcon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 8px;
-  background: var(--chat-bg);
-  border: 0.5px solid var(--stroke);
-  color: var(--accent);
-}
-.modeCardActive .modeIcon {
-  border-color: var(--accent-border);
-}
-.modeTitle {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--ink-900);
-}
-.modeBlurb {
-  font-size: 11.5px;
-  line-height: 1.4;
-  color: var(--ink-500);
-}
-
-.briefArea {
-  width: 100%;
-  box-sizing: border-box;
-  resize: vertical;
-  min-height: 64px;
-  padding: 11px 13px;
-  border: 0.5px solid var(--stroke);
-  border-radius: var(--radius-md);
-  background: var(--surface);
-  color: var(--ink-900);
-  font: inherit;
-  font-size: 14px;
-  line-height: 1.5;
-}
-.briefArea:focus {
-  outline: none;
-  border-color: var(--accent-border);
-  box-shadow: 0 0 0 3px var(--accent-soft);
-}
-.exampleChips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 8px;
-}
-.exampleChip {
-  font: inherit;
-  font-size: 12px;
-  color: var(--ink-600);
-  background: var(--surface);
-  border: 0.5px solid var(--stroke);
-  border-radius: 999px;
-  padding: 5px 11px;
-  cursor: pointer;
-  transition: border-color 120ms ease, color 120ms ease;
-}
-.exampleChip:hover {
-  border-color: var(--accent-border);
-  color: var(--accent);
-}
-
-.optionsRow {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-  margin-bottom: 16px;
-}
-.optionCol {
-  display: flex;
-  flex-direction: column;
-}
-
-@media (max-width: 560px) {
-  .modeGrid,
-  .optionsRow {
-    grid-template-columns: 1fr;
-  }
-}
-.modalTitle {
-  font-size: 17px;
-  font-weight: 470;
-  color: var(--ink-900);
-  margin-bottom: 16px;
-}
-.field {
-  display: block;
-  margin-bottom: 16px;
-}
-.label {
-  display: block;
-  font-size: 13px;
-  color: var(--ink-700, var(--ink-900));
-  margin-bottom: 6px;
-}
-.input {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 11px 13px;
-  border: 0.5px solid var(--stroke);
-  border-radius: var(--radius-md);
-  background: var(--surface);
-  color: var(--ink-900);
-  font: inherit;
-  font-size: 14px;
-}
-.input:focus {
-  outline: none;
-  border-color: var(--accent-border);
-  box-shadow: 0 0 0 3px var(--accent-soft);
-}
-.hint {
-  display: block;
-  font-size: 12px;
-  color: var(--ink-500);
-  line-height: 1.5;
-  margin-top: 8px;
-}
-.err {
-  font-size: 13px;
-  color: #d3455b;
-  margin-bottom: 12px;
-}
-.modalActions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  margin-top: 8px;
-}
+/* The config modal, the mode picker and the standalone brief box used to live
+ * here. All of it went when Auto Agent became an interview (see the chat-surface
+ * block below) and none of the classes had a reference left in automations.tsx —
+ * `.overlay`/`.modal`/`.modalWide`/`.modalTitle`/`.field`/`.label`/`.input`/
+ * `.hint`/`.err`/`.modalActions`, `.assistantRow`/`.assistantAvatar`/
+ * `.assistantBubble`, `.modeGrid`/`.modeCard*`/`.modeIcon`/`.modeTitle`/
+ * `.modeBlurb`, `.briefArea`, `.exampleChip(s)`, `.optionsRow`/`.optionCol`.
+ * Deleted rather than kept "just in case": the overlay also carried a z-index of
+ * 50, below the mobile header's 65, which is exactly the stacking bug that lets
+ * the nav drawer open on top of an open modal. */
 
 /* ── Auto Agent as a chat surface (2026-07-25) ───────────────────────────────
  * The brief used to live in a modal, which framed "make me an agent" as filling
@@ -458,42 +258,45 @@
   max-width: 62ch;
 }
 
+/* The interview transcript uses the exact same language as Compose
+   (chat.module.css): the agent has no container, the user gets one quiet
+   neutral bubble. Two chat surfaces in one product should not look like two
+   products. */
 .thread {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 14px;
   margin-top: 16px;
 }
 .turn {
-  max-width: min(78%, 620px);
-  padding: 11px 14px;
-  border-radius: 16px;
-  font-size: 14px;
-  line-height: 1.55;
+  font-size: 15px;
+  line-height: 1.6;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 .turnUser {
   align-self: flex-end;
-  background: var(--accent-soft);
-  border: 0.5px solid var(--accent-border);
-  color: var(--ink-900);
-  border-bottom-right-radius: 6px;
-}
-.turnBot {
-  align-self: flex-start;
+  max-width: min(78%, 620px);
+  padding: 10px 15px;
+  border-radius: 18px;
   background: var(--surface);
   border: 0.5px solid var(--stroke);
   color: var(--ink-900);
-  border-bottom-left-radius: 6px;
+}
+.turnBot {
+  align-self: stretch;
+  max-width: 100%;
+  padding: 2px 0;
+  color: var(--ink-900);
 }
 
 /* The "still working" bubble — the one indicator whose lifetime is the whole
    turn rather than a single step of it. */
 .turnTyping {
+  align-self: flex-start;
   display: inline-flex;
   gap: 4px;
-  padding: 14px 16px;
+  padding: 10px 0;
 }
 .turnTyping i {
   width: 6px;
@@ -522,7 +325,8 @@
 .briefBox {
   border: 0.5px solid var(--stroke);
   background: var(--surface);
-  border-radius: 18px;
+  border-radius: 24px;
+  transition: border-color 120ms ease;
   padding: 12px 14px;
   display: flex;
   flex-direction: column;
@@ -562,23 +366,24 @@
 
 .briefSend {
   flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  place-items: center;
+  width: 32px;
   height: 32px;
-  padding: 0 16px;
   border: none;
   border-radius: 999px;
-  background: var(--accent);
-  color: #fff;
-  font-size: 13.5px;
-  font-weight: 500;
+  background: var(--ink-900);
+  color: var(--main-bg);
   cursor: pointer;
-  white-space: nowrap;
+  transition: opacity 120ms ease;
+}
+
+.briefSend:hover {
+  opacity: 0.85;
 }
 
 .briefSend:disabled {
-  opacity: 0.5;
+  opacity: 0.25;
   cursor: default;
 }
 
@@ -606,7 +411,7 @@
 }
 
 .chip:hover {
-  border-color: var(--accent-border);
+  border-color: var(--ink-500);
   color: var(--ink-900);
 }
 
@@ -615,11 +420,8 @@
   display: flex;
   flex-direction: column;
   gap: 7px;
-  padding: 12px 14px;
+  padding: 8px 0;
   margin-top: 12px;
-  border-radius: 16px;
-  border: 0.5px solid var(--stroke);
-  background: var(--surface);
   min-width: 0;
 }
 
@@ -628,7 +430,7 @@
   align-items: center;
   gap: 9px;
   font-size: 13px;
-  color: var(--ink-600);
+  color: var(--ink-500);
   min-width: 0;
 }
 
@@ -646,9 +448,8 @@
   width: 14px;
   height: 14px;
   border-radius: 999px;
-  background: var(--accent-soft);
-  border: 0.5px solid var(--accent-border);
-  color: var(--accent);
+  border: 0.5px solid var(--stroke);
+  color: var(--ink-600);
   font-size: 9px;
   display: flex;
   align-items: center;
@@ -660,8 +461,8 @@
   width: 14px;
   height: 14px;
   border-radius: 999px;
-  border: 1.5px solid var(--accent-border);
-  border-top-color: var(--accent);
+  border: 1.5px solid var(--stroke);
+  border-top-color: var(--ink-900);
   animation: agentSpin 700ms linear infinite;
 }
 
@@ -676,8 +477,8 @@
   margin-top: 10px;
   padding: 12px 14px;
   border-radius: 16px;
-  border: 0.5px solid var(--accent-border);
-  background: var(--accent-soft);
+  border: 0.5px solid var(--stroke);
+  background: var(--surface);
   font-size: 13.5px;
   line-height: 1.5;
   color: var(--ink-900);
@@ -688,16 +489,13 @@
   .agentScroll {
     padding: 16px 14px 8px;
   }
+  /* The shell is pinned to the visible viewport (shell.module.css), so this dock
+   * now ends exactly at the bottom edge — which on a notched iPhone is where the
+   * home indicator lives. Keep the send button clear of it. */
   .agentDock {
-    padding: 10px 14px 14px;
-  }
-  /* 2-up rather than three stacked rows: the dock is fixed furniture, and three
-   * full-width selects plus the chips leave almost no transcript visible on a
-   * short phone. */
-  .settingsRow {
-    grid-template-columns: repeat(2, 1fr);
+    padding: 10px 14px calc(14px + env(safe-area-inset-bottom, 0px));
   }
   .briefSend {
-    width: 100%;
+    width: 32px;
   }
 }

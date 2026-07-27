@@ -31,48 +31,208 @@
   margin-top: 4px;
 }
 
-.heatWrap {
-  overflow-x: auto;
-  padding-bottom: 6px;
-}
-
-.heat {
-  border-collapse: collapse;
-  font-size: 10px;
-  color: var(--ink-500);
-}
-
-.heat td,
-.heat th {
-  padding: 0;
+/* ── when your posts land ────────────────────────────────────────────────────
+ * A grid, not a <table> of fixed 15px cells. `1fr` per hour means the matrix
+ * always fills the card it's given instead of huddling in the left third, and
+ * aspect-ratio keeps the cells square as they stretch. */
+.heatGrid {
+  display: grid;
+  grid-template-columns: 34px repeat(24, minmax(0, 1fr));
+  gap: 3px;
+  align-items: center;
+  width: 100%;
+  margin-top: 4px;
 }
 
 .heatDay {
-  padding-right: 8px;
   text-align: right;
+  padding-right: 8px;
   color: var(--ink-600);
   font-size: 11px;
   white-space: nowrap;
 }
 
 .heatHourLabel {
-  font-size: 9px;
+  font-size: 9.5px;
   color: var(--ink-500);
   text-align: center;
   height: 14px;
+  overflow: visible;
+  white-space: nowrap;
 }
 
 .cell {
-  width: 15px;
-  height: 15px;
-  border: 1px solid var(--main-bg);
+  width: 100%;
+  aspect-ratio: 1;
+  max-height: 26px;
+  min-height: 11px;
   border-radius: 3px;
   background: var(--hover);
 }
 
+/* Posted here exactly once: outlined, never filled — a single post is evidence
+ * that you posted, not evidence that the slot works. */
+.cellThin {
+  background: transparent;
+  border: 1px solid var(--accent-border);
+}
+
 .cellBest {
-  outline: 1.5px solid var(--accent);
-  outline-offset: -1px;
+  outline: 1.5px solid var(--ink-900);
+  outline-offset: 1px;
+}
+
+.heatLegend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 18px;
+  margin-top: 12px;
+  font-size: 11.5px;
+  color: var(--ink-500);
+}
+
+.legendScale {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.legendScale i {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+}
+
+.legendThin {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legendThin i {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  border: 1px solid var(--accent-border);
+}
+
+/* Top slots — the recommendation, with the evidence next to it rather than
+ * hidden in a hover title (which never fires on touch). */
+.slotList {
+  display: flex;
+  flex-direction: column;
+  margin-top: 16px;
+  border-top: 0.5px solid var(--stroke);
+}
+
+.slotRow {
+  display: grid;
+  grid-template-columns: 20px minmax(96px, auto) minmax(140px, auto) 1fr;
+  align-items: baseline;
+  gap: 12px;
+  padding: 11px 0;
+  border-bottom: 0.5px solid var(--stroke);
+  font-size: 13px;
+}
+
+.slotRank {
+  color: var(--ink-500);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.slotWhen {
+  color: var(--ink-900);
+  font-weight: 470;
+}
+
+.slotMetric {
+  color: var(--ink-700);
+}
+
+.slotMetric b {
+  color: var(--ink-900);
+  font-variant-numeric: tabular-nums;
+}
+
+.slotEvidence {
+  color: var(--ink-500);
+  font-size: 12px;
+  text-align: right;
+}
+
+/* Daypart roll-up — coarse enough to be meaningful on a thin history. */
+.daypartList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.daypartRow {
+  display: grid;
+  grid-template-columns: 82px 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  font-size: 12.5px;
+}
+
+.daypartLabel {
+  color: var(--ink-700);
+}
+
+.daypartBarWrap {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--hover);
+  overflow: hidden;
+}
+
+.daypartBar {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.daypartValue {
+  color: var(--ink-900);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.daypartCount {
+  color: var(--ink-500);
+  font-size: 11.5px;
+  white-space: nowrap;
+  min-width: 110px;
+  text-align: right;
+}
+
+@media (max-width: 640px) {
+  .heatGrid {
+    grid-template-columns: 28px repeat(24, minmax(0, 1fr));
+    gap: 2px;
+  }
+  .heatHourLabel {
+    font-size: 8px;
+  }
+  .slotRow {
+    grid-template-columns: 18px 1fr;
+    row-gap: 2px;
+  }
+  .slotMetric,
+  .slotEvidence {
+    grid-column: 2;
+    text-align: left;
+  }
+  .daypartRow {
+    grid-template-columns: 70px 1fr auto;
+  }
+  .daypartCount {
+    display: none;
+  }
 }
 
 .postRow {

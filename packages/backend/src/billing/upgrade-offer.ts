@@ -22,16 +22,43 @@ export const WALL_PROMPT =
 
 /**
  * Build the upgrade offer (benefits copy + checkout buttons). Async because the
- * Founding seat count is read live. Founding is only offered when a founding
- * product is configured (an unconfigured button just errors at checkout).
+ * Founding seat count is read live. A plan is only offered when its Dodo product
+ * is configured — an unconfigured button just errors at checkout.
+ *
+ * Scale used to be missing entirely: the offer showed one "Go paid" button, so
+ * Telegram could sell Growth and nothing else. Every Scale sale had to happen on
+ * the web, even though the bot is where the paywall is actually hit.
  */
 export async function buildUpgradeOffer(): Promise<{ text: string; keyboard: InlineKeyboard }> {
   const kb = new InlineKeyboard();
+  let buttons = 0;
+
   if (config.DODO_PRODUCT_FOUNDING) {
     const seats = await foundingSeatsLeft().catch(() => 0);
     kb.text(seats > 0 ? `Founding (${seats} left, price locked)` : "Founding (full)", "bill:founding").row();
+    buttons++;
   }
-  kb.text(`Go paid — ${config.PAID_PRICE_LABEL}`, "bill:paid");
-  const text = `${UPGRADE_BENEFITS}\n\n${config.PAID_PRICE_LABEL}, cancel anytime.`;
+  if (config.DODO_PRODUCT_PAID) {
+    kb.text(`Growth — ${config.PAID_PRICE_LABEL}`, "bill:paid").row();
+    buttons++;
+  }
+  if (config.DODO_PRODUCT_SCALE) {
+    kb.text(`Scale — ${config.SCALE_PRICE_LABEL}`, "bill:scale").row();
+    buttons++;
+  }
+
+  // Both tiers get named in the copy so the choice reads as a choice, not as an
+  // upsell hiding behind a button.
+  const priceLine = [
+    config.DODO_PRODUCT_PAID ? `growth ${config.PAID_PRICE_LABEL}` : null,
+    config.DODO_PRODUCT_SCALE ? `scale ${config.SCALE_PRICE_LABEL} (adds the hands-off agent)` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  const text = buttons
+    ? `${UPGRADE_BENEFITS}\n\n${priceLine}. cancel anytime.`
+    : // No product configured at all — don't dangle a button that can only fail.
+      `${UPGRADE_BENEFITS}\n\ncheckout's not wired up right now. give it a bit and try again.`;
   return { text, keyboard: kb };
 }

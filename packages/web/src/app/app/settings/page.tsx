@@ -43,14 +43,35 @@ export default async function SettingsPage({
 
   const t = billing?.trial;
   const planLabel = t?.plan && t.plan !== "trialing" && t.plan !== "free" ? ` (${t.plan})` : "";
-  const billingStatus =
-    !t || t.status === "none"
-      ? "No active plan yet."
-      : t.status === "active"
-        ? `Paid plan${planLabel} — active. Auto-renews; manage or cancel anytime.`
-        : t.status === "trialing"
-          ? `Free trial — ${t.daysLeft} day${t.daysLeft === 1 ? "" : "s"} left. Add a card to auto-continue after it ends.`
-          : "Your free trial has ended. Upgrade to keep full access.";
+  const accessDay = t?.accessUntil
+    ? new Date(t.accessUntil).toLocaleDateString(undefined, { day: "numeric", month: "long" })
+    : null;
+
+  /**
+   * Every non-active state used to collapse into "Your free trial has ended",
+   * so a customer who had been paying for months and whose card bounced was told
+   * their trial was over. A payment problem now reads as a payment problem, and a
+   * cancelled plan says how long the access they already paid for lasts.
+   */
+  const billingStatus = ((): string => {
+    if (!t || t.status === "none") return "No active plan yet.";
+    switch (t.status) {
+      case "active":
+        return `Paid plan${planLabel} — active. Auto-renews; manage or cancel anytime.`;
+      case "trialing":
+        return `Free trial — ${t.daysLeft} day${t.daysLeft === 1 ? "" : "s"} left. Add a card to auto-continue after it ends.`;
+      case "past_due":
+        return t.hasAccess && accessDay
+          ? `Payment failed — update your card to keep your plan${planLabel}. We'll keep retrying, and your access continues until ${accessDay}.`
+          : `Payment failed — update your card to restore your plan${planLabel}.`;
+      case "cancelled":
+        return t.hasAccess && accessDay
+          ? `Plan cancelled — it won't renew, and you keep full access until ${accessDay}.`
+          : "Your plan has ended. Resubscribe to get full access back.";
+      default:
+        return "Your free trial has ended. Upgrade to keep full access.";
+    }
+  })();
 
   return (
     <div className={styles.page}>
@@ -85,6 +106,9 @@ export default async function SettingsPage({
               onTrial={Boolean(t?.onTrial)}
               hasSubscription={Boolean(billing?.hasDodoSubscription)}
               growthPrice={config.PAID_PRICE_LABEL}
+              growthWas={config.PAID_PRICE_WAS_LABEL}
+              scalePrice={config.SCALE_PRICE_LABEL}
+              scaleWas={config.SCALE_PRICE_WAS_LABEL}
             />
           )}
 
@@ -100,15 +124,10 @@ export default async function SettingsPage({
         <div className={styles.section}>
           <div className={styles.sectionLabel}>Connected X</div>
           <div className={styles.sectionBody} style={{ marginBottom: 12 }}>
-            Yoinky reads your X to learn your voice and personalize everything. Reconnect any time to refresh the read.
+            Yoinky reads your X to learn your voice and personalize everything, and refreshes it twice a day on its own.
+            Reconnecting is only for switching accounts or restoring posting access.
           </div>
-          <XConnectRow
-            account={
-              x
-                ? { handle: x.handle, status: x.status, post_count: x.post_count }
-                : null
-            }
-          />
+          <XConnectRow account={x ? { handle: x.handle, status: x.status } : null} />
         </div>
 
         <div className={styles.section}>

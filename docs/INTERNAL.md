@@ -1749,6 +1749,97 @@ Vercel and Railway. `packages/backend/.env` (local, gitignored) overrides it to
 purpose — a cheap model from another family changes the JSON behaviour every prompt
 here relies on, which would let bugs through that only appear on the real one.
 
+## 3p. UI polish pass + trial caps follow the chosen plan (2026-07-27)
+
+A batch of web-surface fixes plus one behavioural correction in billing.
+
+* **Trial entitlements now mirror the plan the user chose.** `entitlementsFor`
+  (`billing/entitlements.ts`) used to grant the full **Scale** set to every
+  trialing user, while Settings highlighted whatever plan they picked at signup
+  (usually **Growth**) — so the screen said "Growth" while every cap across the app
+  (buyer leads, Auto Agent posts, scheduling) enforced Scale. A trial now runs at
+  `trialCaps(intended_plan)`: Scale/Founding → Scale, everything else → Growth
+  (the default when no plan was recorded). Labels stay `trialing`; only the caps
+  move. `entitlementsForPlan` (the pure fn the tests pin) is unchanged.
+* **In-app feedback.** New `feedback` table (migration `0031`), `submitFeedback`
+  (`web/feedback.ts`, exported from `web.ts`), and web route `/api/feedback`. The
+  sidebar's Account group gains a **Feedback** button under Settings that opens a
+  modal (`feedback-modal.tsx`): a Feature Request / Bug Report picker, a second
+  dropdown whose options depend on that choice, and a message box. Each submission
+  is stored and best-effort pinged to `ADMIN_TELEGRAM_ID`.
+* **Skeleton loading between pages.** `app/app/loading.tsx` renders `PageSkeleton`
+  inside the persistent shell, so route changes show a shimmering placeholder
+  instead of a blank pause.
+* **Smaller touches.** Auto Agent's two stacked heading/subheading blocks merged
+  into one; the Growth board's "Your next move" promo card removed (its quests now
+  live in "Up next"); Buyer Radar's pink why-note icon aligned to the first text
+  line and its copy sentence-cased; the "Enter to send · Shift+Enter…" hint removed
+  from every composer; dark-theme surfaces darkened
+  (`#0e0e11/#151518/#1c1c22` → `#070707/#101010/#171718`).
+
+## 3q. Reliability hardening — billing, publishing, web flow, data quality (2026-07-27, round 2)
+
+A sweep of correctness fixes across four areas. Migrations `0033`–`0035` are new
+(the runner applies by sorted filename and skips what's already in
+`schema_migrations`, so the missing `0032` number is cosmetic — not a gap that
+breaks anything). **The OAuth refresh flow could not be live-tested without X
+credentials; treat it as unverified in production until a real scheduled X post
+publishes.**
+
+**Billing (`billing/dodo.ts`, `routes/webhooks.ts`, `billing/upgrade-offer.ts`,
+`billing/entitlements.ts`, migration `0035_billing_hardening`).**
+* **Refunds and disputes now revoke access.** Previously only `subscription.*`
+  events were handled, so a refund or chargeback left the customer fully entitled.
+* **`on_hold` gets a grace window, not an instant downgrade.** A single failed card
+  charge used to drop a long-paying customer straight to `free` with "your free
+  trial has ended". Dodo keeps dunning during `on_hold`, so we now keep access for
+  `ON_HOLD_GRACE_DAYS` and the copy distinguishes `past_due` (a paying card
+  bounced), `cancelled` (a real sub winding down), and `expired` (a trial that
+  never paid) — these used to collapse into one `expired` bucket.
+* **Duplicate-subscription guard** so a second checkout can't mint a parallel sub.
+* **Founding fallback**: `DODO_PRODUCT_FOUNDING` is empty, so the Founding CTA was a
+  dead end and the trial pill appended `?plan=founding` forever; it now falls back
+  rather than 404-ing.
+* **Telegram can now sell Scale** (`bot.ts` matched only `bill:(founding|paid)`).
+* **Webhook idempotency** so a redelivered event is a no-op.
+
+**Publishing (`social/publish.ts`, `jobs/scheduled-post.ts`, `routes/oauth.ts`,
+`scheduling/service.ts`, migrations `0033`/`0034`).** See also §6z.
+* **X OAuth refresh-token flow.** `post_refresh_token`/`post_token_expires_at` were
+  written in two places and read in zero; X user-context tokens expire in ~2h, so
+  essentially every scheduled X post would 401 (LinkedIn's 60-day tokens masked it).
+  Tokens now refresh before a publish.
+* **Stuck-publishing reaper** (`0034_publish_recovery`) resets posts wedged in
+  `publishing` so they retry instead of vanishing.
+* **A failed publish no longer burns the monthly cap**, and **failed posts are now
+  visible in the web UI** — `listScheduled` filtered to `pending`, so a web-only
+  user (every failure notice went through `sendTelegram`) saw the post silently
+  disappear from the Scheduled screen.
+
+**Web flow (`app/app/page.tsx`, `app/app/layout.tsx`, `web/x-signin.ts`, several
+`api/*` routes).**
+* **`connected=x` post-connect experience revived.** The X callback redirected to
+  `/app?connected=x`, but `/app` redirected to `/app/compose` forwarding only
+  `plan` — so the param never survived and the "Reading your X" scanner / ingest
+  poll / error message were dead code. The redirect now preserves it.
+* **Error + loading boundaries** added so a failed connect isn't silent and a
+  failed account no longer reads as connected everywhere.
+* **Three paid routes that were ungated** now enforce entitlement, and paywall CTAs
+  replace dead-end 402s.
+* **Mobile `100vh` → `dvh`** so the composer no longer sits under the iOS URL bar.
+
+**Data quality (`strategist/performance.ts`, `automations/tick.ts`,
+`automations/approval.ts`, `scheduling/best-time.ts`, migration `0033`).**
+* **`MIN_SPLIT_BUCKET` 2 → 4** — a median-of-2-vs-median-of-3 was being rendered as
+  "THROUGHLINE SPLIT (the headline comparison)". `performance.test.ts` updated to
+  build 4-post buckets and assert the raised threshold (3 per bucket now yields
+  `null`).
+* **Null/NaN scrubbed from prompts** (e.g. baseline median `null` was handed to the
+  model under a "use verbatim" header).
+* **Automations no longer schedule to hours 22/23**, approvals **expire**
+  (`0033_attempt_guards_and_approval_expiry`), and Telegram scheduling respects the
+  user's **timezone**.
+
 ## 3n. Agent SDK runtime (2026-07-24, IN PROGRESS — Phase 0/1)
 
 Migrating the bounded agent loops (§3c) + eventually the chat brain (§3a) off the
@@ -2135,6 +2226,78 @@ deletion — set them in the deploy dashboard only.
   `/health` every 10 minutes solely to fight Render free-tier spin-down;
   Railway Hobby is always-on, and Render itself is now decommissioned (see
   DEPLOY.md), so the workflow was deleted rather than left dead.
+
+### 6z. Automatic X refresh — `x.refresh` (2026-07-27)
+
+**The gap.** Pulling a user's X was only ever something the user *asked* for.
+`/connect` and Settings → "Reconnect X" both run the **destructive** full ingest
+(`strategist/connect.ts` — wipes the corpus, re-pulls, re-runs the diagnosis).
+The only incremental path was `performance.pulse`, gated on
+`telegram_id IS NOT NULL` **and** an active `brand_plans` row. So a web-only user
+had analytics, follower count and voice signal frozen at their connect-day
+snapshot indefinitely, and the product's own advice was to reconnect — i.e.
+rebuild the entire profile to refresh a number.
+
+**What runs now.** `jobs/x-refresh.ts`, queue `x.refresh`, cron `0 1,13 * * *`
+(06:30 / 18:30 IST) plus a boot-time staleness nudge mirroring
+`nudgeStaleTrendJobs`. It walks every `connected_accounts` row with
+`platform='x' AND status='ingested'` — **deliberately not** filtered by plan or
+telegram id — and calls `refreshXEngagement(userId, 60)`, which is additive
+(updates metrics on posts we hold, inserts new ones) and can never destroy
+anything. `refreshXEngagement` now also merges `pull.meta` into
+`connected_accounts.meta`, so **follower count finally updates without a
+reconnect** — before this it only ever changed on a full re-ingest.
+
+Reads never use the user's OAuth token: all X pulls go through the fleet-wide
+`TWITTERAPI_IO_KEY` with the public handle as the only per-user input. So this
+cannot be broken by an expired user token, and needs no consent beyond the
+account already being connected.
+
+**Three guards, and why each exists:**
+
+1. **Sequential + a 6s inter-user pause.** `MIN_REQUEST_INTERVAL_MS` (5.5s) in
+   `capture/imports/twitterapi-io.ts` is held by `lastRequestAt`, a variable
+   local to each `fetchTweets` *call*. It spaces pages within one user's pull and
+   nothing else — so sequential iteration alone still fires the next user's first
+   page instantly and eats a 429. Hence `PAUSE_BETWEEN_USERS_MS`.
+2. **Attempt-based staleness gate.** The query keys on
+   `last_refresh_attempt_at` (stamped in a `finally`, whatever the outcome), NOT
+   on `last_refreshed_at` (success only). Keying on success would let a
+   permanently-broken handle — renamed, suspended, went private — hold a NULL
+   forever, sort first on every sweep via `NULLS FIRST`, and burn a paid request
+   twice a day for eternity; once enough accumulated they would consume the whole
+   time budget and healthy accounts would stop being refreshed at all.
+   `ORDER BY` carries an `id` tiebreaker so a truncated sweep can't keep picking
+   the same subset.
+3. **45-minute wall-clock budget**, checked before each user, with
+   `expireInMinutes: 60` on the queue (the default 10 would kill the sweep every
+   tick). On truncation it `console.warn`s exactly how many accounts it did not
+   reach — a silent cap here would read as "everyone is fresh" when half the
+   fleet is not.
+
+`retryLimit: 0` per the `NO_RETRY` convention for paid-provider fleet jobs.
+`pulseForUser` now skips its own refresh when `last_refreshed_at` is under 6h
+old, so the 04:45 pulse no longer double-pulls behind the 01:00 sweep.
+
+Migration `0030_x_auto_refresh.sql` adds both columns + the sort index.
+
+**Known, unfixed:** the sweep's `extract` fan-out for genuinely new posts is
+`CAP_EXEMPT` in `llm/gateway.ts`, so lapsed free users now incur uncapped LLM
+extraction. Flagged, not gated — gating it is a product decision.
+
+### 6aa. Early-bird pricing (2026-07-27)
+
+Growth **$9/mo**, Scale **$49/mo**, anchored against $29 / $79. Four config keys
+now carry it: `PAID_PRICE_LABEL`, `PAID_PRICE_WAS_LABEL`, `SCALE_PRICE_LABEL`,
+`SCALE_PRICE_WAS_LABEL`. Scale previously had **no price string at all** — the
+plan picker rendered the literal `"Higher tier"`, so the one screen where someone
+decides to pay more never told them what it cost.
+
+Nothing derives these from Dodo. **A price change is a three-place edit:** the
+Dodo dashboard, these vars, and the landing repo
+(`yoinky-landing/app/(frontend)/components/HomePricing.tsx`).
+
+`FOUNDING_CAP` 500 → **50**, to match the landing's seat claim.
 
 ---
 

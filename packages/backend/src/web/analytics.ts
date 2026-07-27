@@ -107,6 +107,9 @@ const FORMAT_BUCKETS: { key: string; label: string; test: (p: AnalyticsPost) => 
   { key: "multiline", label: "Threads & lists", test: (p) => /\n/.test(p.text) },
 ];
 
+/** A day/hour cell needs at least this many posts before it can be called a "best window". */
+const MIN_BEST_WINDOW_POSTS = 2;
+
 function tweetId(url: string | null): string | null {
   if (!url) return null;
   const m = url.match(/status\/(\d+)/);
@@ -123,7 +126,19 @@ function formatStats(posts: AnalyticsPost[]): FormatStat[] {
     const liftPct = medRate !== null && overall !== null && overall > 0 ? ((medRate - overall) / overall) * 100 : null;
     out.push({ key: b.key, label: b.label, posts: inb.length, medianEngagementRate: medRate, medianImpressions: median(inb.map((p) => p.impressions)), liftPct });
   }
-  return out.sort((a, b) => (b.liftPct ?? -Infinity) - (a.liftPct ?? -Infinity));
+  // Sort by lift, nulls last. The old comparator was
+  // `(b.liftPct ?? -Infinity) - (a.liftPct ?? -Infinity)`, which returns NaN for
+  // any pair where BOTH lifts are null (-Infinity - -Infinity) — and every lift
+  // is null whenever the overall median engagement rate is 0 or unmeasurable,
+  // i.e. exactly the accounts with no impression data. A NaN comparator leaves
+  // the array in an implementation-defined order, so the "best format" the page
+  // leads with was arbitrary. Compare the null-ness first, then the numbers.
+  return out.sort((a, b) => {
+    if (a.liftPct === null && b.liftPct === null) return 0;
+    if (a.liftPct === null) return 1;
+    if (b.liftPct === null) return -1;
+    return b.liftPct - a.liftPct;
+  });
 }
 
 function weeklyMomentum(posts: AnalyticsPost[]): WeeklyPoint[] {
@@ -276,9 +291,16 @@ export async function getAnalytics(userId: string): Promise<AnalyticsData> {
     heat.set(key, cell);
   }
   const heatmap = [...heat.values()];
-  // Best window = highest engagement-per-post cell with at least 2 posts (else top by engagement).
+  // Best window = highest engagement-per-post cell with at least MIN_BEST_WINDOW_POSTS
+  // posts. There is deliberately NO fallback any more: it used to fall back to
+  // `ranked[0]`, which is a single-post cell on a sparse account — "your best time
+  // to post is Tuesday 3pm" derived from one tweet — and, when every cell has zero
+  // engagement, the comparator is 0 for every pair so `ranked[0]` is just whichever
+  // cell the Map happened to yield first. The UI already refuses to decorate a
+  // best window built on fewer than two posts, so claiming one here was a promise
+  // nothing downstream honoured. Null is the honest answer.
   const ranked = [...heatmap].sort((a, b) => b.engagements / b.posts - a.engagements / a.posts);
-  const best = ranked.find((c) => c.posts >= 2) ?? ranked[0] ?? null;
+  const best = ranked.find((c) => c.posts >= MIN_BEST_WINDOW_POSTS) ?? null;
 
   // ── Yoinky's own-data cuts ─────────────────────────────────────────────
   // 1) Posts shipped THROUGH Yoinky (published scheduler) → match back to their

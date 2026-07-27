@@ -1,86 +1,135 @@
+/*
+ * Plan picker — deliberately monochrome.
+ *
+ * The previous version painted the current card in accent-soft pink with a pink
+ * bullet on every feature line and a solid pink CTA on both cards, so the two
+ * plans competed on colour instead of on what they cost and what they include.
+ * Here the whole table is ink-on-surface; the only non-neutral mark in the
+ * component is the thin left rule on the card you're currently on. Hierarchy
+ * comes from type size and weight, which is what a price table should read on.
+ */
+
 .grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
-  margin-top: 14px;
+  gap: 0;
+  margin-top: 16px;
+  border: 0.5px solid var(--stroke);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--surface);
 }
 
+/* One hairline between the two cards rather than two card borders + a gap. */
 .card {
   display: flex;
   flex-direction: column;
-  border: 0.5px solid var(--stroke);
-  border-radius: var(--radius-md);
-  background: var(--chat-bg);
-  padding: 16px 18px;
+  padding: 22px 22px 20px;
+  background: var(--surface);
 }
 
+.card + .card {
+  border-left: 0.5px solid var(--stroke);
+}
+
+/* The only emphasis in the table: a 2px ink rule down the active plan. */
 .cardCurrent {
-  border-color: var(--accent-border);
-  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--ink-900);
 }
 
 .cardTop {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
   gap: 8px;
 }
 
 .name {
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 500;
-  color: var(--ink-900);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-600);
 }
 
 .badge {
   font-size: 11px;
-  font-weight: 500;
-  color: var(--accent);
-  background: var(--chat-bg);
-  border: 0.5px solid var(--accent-border);
+  font-weight: 450;
+  color: var(--ink-600);
+  border: 0.5px solid var(--stroke);
   border-radius: 999px;
   padding: 2px 9px;
 }
 
+/* Price is the headline. Tabular numerals so $9 and $49 align across cards. */
+.priceRow {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  margin-top: 14px;
+}
+
 .price {
+  font-size: 34px;
+  font-weight: 450;
+  line-height: 1;
+  color: var(--ink-900);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.priceUnit {
   font-size: 13px;
-  color: var(--ink-600);
-  margin-top: 4px;
+  color: var(--ink-500);
+}
+
+.priceWas {
+  font-size: 14px;
+  color: var(--ink-500);
+  text-decoration: line-through;
+  font-variant-numeric: tabular-nums;
+}
+
+.priceNote {
+  font-size: 11.5px;
+  color: var(--ink-500);
+  margin-top: 7px;
+  letter-spacing: 0.01em;
 }
 
 .blurb {
   font-size: 13px;
   color: var(--ink-700);
-  line-height: 1.45;
-  margin-top: 8px;
+  line-height: 1.5;
+  margin-top: 14px;
 }
 
 .features {
   list-style: none;
-  margin: 12px 0 16px;
+  margin: 16px 0 20px;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
+/* Hairline dash instead of a coloured dot — reads as a spec sheet, not a badge. */
 .features li {
   position: relative;
-  padding-left: 16px;
+  padding-left: 15px;
   font-size: 12.5px;
-  color: var(--ink-600);
-  line-height: 1.4;
+  color: var(--ink-700);
+  line-height: 1.45;
 }
 
 .features li::before {
   content: "";
   position: absolute;
-  left: 3px;
-  top: 7px;
-  width: 4px;
-  height: 4px;
-  border-radius: 999px;
-  background: var(--accent);
+  left: 0;
+  top: 9px;
+  width: 7px;
+  height: 0.5px;
+  background: var(--ink-500);
 }
 
 .cta,
@@ -89,18 +138,24 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 34px;
+  height: 38px;
   border-radius: 999px;
   font-size: 13px;
   font-weight: 500;
   text-decoration: none;
   margin-top: auto;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 
+/* Solid ink, not pink — one action, maximum contrast, zero hue. */
 .cta {
-  background: var(--accent);
-  color: #fff;
-  border: 0.5px solid var(--accent);
+  background: var(--ink-900);
+  color: var(--main-bg);
+  border: 0.5px solid var(--ink-900);
+}
+
+.cta:hover {
+  filter: brightness(1.15);
 }
 
 .ctaGhost {
@@ -109,13 +164,22 @@
   border: 0.5px solid var(--stroke);
 }
 
+.ctaGhost:hover {
+  color: var(--ink-900);
+  border-color: var(--ink-500);
+}
+
 .ctaDisabled {
   color: var(--ink-500);
-  border: 0.5px dashed var(--stroke);
+  border: 0.5px solid transparent;
 }
 
 @media (max-width: 560px) {
   .grid {
     grid-template-columns: 1fr;
+  }
+  .card + .card {
+    border-left: none;
+    border-top: 0.5px solid var(--stroke);
   }
 }

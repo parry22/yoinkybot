@@ -51,19 +51,32 @@ describe("analyzePosts", () => {
     expect(a.period.median).toBe(12);
   });
 
-  it("throughline split requires 2+ engagement-bearing posts per bucket", () => {
-    const thin = [...baseline(), post({ alignedDistance: 0.2 }), post({ alignedDistance: 0.8 })];
+  it("throughline split requires 4+ engagement-bearing posts per bucket", () => {
+    // Three per bucket is still too thin — MIN_SPLIT_BUCKET is 4.
+    const thin = [
+      ...baseline(),
+      post({ alignedDistance: 0.2, engagement: 20 }),
+      post({ alignedDistance: 0.3, engagement: 24 }),
+      post({ alignedDistance: 0.4, engagement: 22 }),
+      post({ alignedDistance: 0.8, engagement: 6 }),
+      post({ alignedDistance: 0.9, engagement: 8 }),
+      post({ alignedDistance: 0.7, engagement: 7 }),
+    ];
     expect(analyzePosts(thin, PERIOD_START, NOW).split).toBeNull();
 
     const enough = [
       ...baseline(),
       post({ alignedDistance: 0.2, engagement: 20 }),
       post({ alignedDistance: 0.3, engagement: 24 }),
+      post({ alignedDistance: 0.25, engagement: 20 }),
+      post({ alignedDistance: 0.35, engagement: 24 }),
       post({ alignedDistance: 0.8, engagement: 6 }),
       post({ alignedDistance: 0.9, engagement: 8 }),
+      post({ alignedDistance: 0.85, engagement: 6 }),
+      post({ alignedDistance: 0.95, engagement: 8 }),
     ];
     const a = analyzePosts(enough, PERIOD_START, NOW);
-    expect(a.split).toEqual({ aligned: { posts: 2, median: 22 }, off: { posts: 2, median: 7 } });
+    expect(a.split).toEqual({ aligned: { posts: 4, median: 22 }, off: { posts: 4, median: 7 } });
   });
 
   it("flags outliers at 1.5x the baseline median, with mechanism evidence attached", () => {
@@ -95,19 +108,32 @@ describe("analyzePosts", () => {
     expect(analyzePosts(posts, PERIOD_START, NOW).actualPerWeek).toBe(2);
   });
 
-  it("tone split requires 2+ per bucket, same gating as the throughline split", () => {
-    const thin = [...baseline(), post({ sincerityRegister: "sincere" }), post({ sincerityRegister: "ironic" })];
+  it("tone split requires 4+ per bucket, same gating as the throughline split", () => {
+    // Three sincere vs three non-sincere is still too thin — MIN_SPLIT_BUCKET is 4.
+    const thin = [
+      ...baseline(),
+      post({ sincerityRegister: "sincere", engagement: 20 }),
+      post({ sincerityRegister: "sincere", engagement: 24 }),
+      post({ sincerityRegister: "sincere", engagement: 22 }),
+      post({ sincerityRegister: "ironic", engagement: 60 }),
+      post({ sincerityRegister: "absurdist", engagement: 80 }),
+      post({ sincerityRegister: "ironic", engagement: 70 }),
+    ];
     expect(analyzePosts(thin, PERIOD_START, NOW).sincerityMix).toBeNull();
 
     const enough = [
       ...baseline(),
       post({ sincerityRegister: "sincere", engagement: 20 }),
       post({ sincerityRegister: "sincere", engagement: 24 }),
+      post({ sincerityRegister: "sincere", engagement: 20 }),
+      post({ sincerityRegister: "sincere", engagement: 24 }),
+      post({ sincerityRegister: "ironic", engagement: 60 }),
+      post({ sincerityRegister: "absurdist", engagement: 80 }),
       post({ sincerityRegister: "ironic", engagement: 60 }),
       post({ sincerityRegister: "absurdist", engagement: 80 }),
     ];
     const a = analyzePosts(enough, PERIOD_START, NOW);
-    expect(a.sincerityMix).toEqual({ sincere: { posts: 2, median: 22 }, other: { posts: 2, median: 70 } });
+    expect(a.sincerityMix).toEqual({ sincere: { posts: 4, median: 22 }, other: { posts: 4, median: 70 } });
   });
 
   it("outliers carry rhetorical mode and sincerity register through", () => {
@@ -161,11 +187,15 @@ describe("renderPerformance", () => {
       ...baseline(),
       post({ sincerityRegister: "sincere", engagement: 20 }),
       post({ sincerityRegister: "sincere", engagement: 24 }),
+      post({ sincerityRegister: "sincere", engagement: 20 }),
+      post({ sincerityRegister: "sincere", engagement: 24 }),
       post({ sincerityRegister: "absurdist", engagement: 60, content: "big shitpost" }),
       post({ sincerityRegister: "ironic", engagement: 50 }),
+      post({ sincerityRegister: "ironic", engagement: 16 }),
+      post({ sincerityRegister: "absurdist", engagement: 18 }),
     ];
     const text = renderPerformance(data({ analysis: analyzePosts(posts, PERIOD_START, NOW) }));
-    expect(text).toContain("TONE SPLIT: sincere posts 2, median 22");
+    expect(text).toContain("TONE SPLIT: sincere posts 4, median 22");
     expect(text).toContain("absurdist, not your usual mode");
   });
 });

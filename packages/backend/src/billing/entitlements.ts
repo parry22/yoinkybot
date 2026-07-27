@@ -20,8 +20,10 @@ export interface Entitlements {
   viralPerDay: number | null;
   /** Auto Agent posts across ALL of a user's automations per calendar month. */
   automationPostsPerMonth: number | null;
-  /** Trend takes/day — carried for display/telemetry; identical across paid tiers today. */
-  trendsPerDay: number | null;
+  // NOTE: `trendsPerDay` used to live here. It was identical on every paid tier
+  // (config.MAX_DAILY_TREND_SENDS) and read by nothing — the trend sender caps
+  // itself off config directly — so it was a documented promise no code kept.
+  // Removed rather than enforced: it isn't a plan differentiator.
   /** Hard cap on proactive resurfacings per week. */
   maxResurfacePerWeek: number;
   // ── Feature flags ──
@@ -49,7 +51,6 @@ const FREE: Entitlements = {
   buyerIntentsPerMonth: 0,
   viralPerDay: 0,
   automationPostsPerMonth: 0,
-  trendsPerDay: 0,
   maxResurfacePerWeek: 1,
   autoAgent: false,
   consistencyChecks: false,
@@ -67,7 +68,6 @@ const GROWTH: Omit<Entitlements, "plan"> = {
   // posting, which stays Scale-only) — so this is 5 agent-written posts a month
   // that still come to you first.
   automationPostsPerMonth: 5,
-  trendsPerDay: config.MAX_DAILY_TREND_SENDS, // 2-3/day band, unchanged
   maxResurfacePerWeek: 3,
   autoAgent: false,
   consistencyChecks: true,
@@ -91,7 +91,6 @@ const SCALE: Omit<Entitlements, "plan"> = {
   // 90/month ≈ 3 a day: a real hands-off cadence, but still a hard ceiling so a
   // runaway automation can't post unbounded. Not `null` on purpose.
   automationPostsPerMonth: 90,
-  trendsPerDay: config.MAX_DAILY_TREND_SENDS, // same band as Growth (deliberate — not a differentiator)
   maxResurfacePerWeek: 5,
   autoAgent: true,
   consistencyChecks: true,
@@ -155,27 +154,166 @@ export function entitlementsForPlan(plan: Plan): Entitlements {
   }
 }
 
+/**
+ * Days of continued access after a payment fails and Dodo moves the
+ * subscription to `on_hold`. Dodo keeps dunning the card during this window, so
+ * the overwhelmingly common outcome is "the retry succeeds and the customer
+ * never noticed". Cutting a paying customer off the instant the first charge
+ * bounces (the old behaviour) turned a bank hiccup into an outage.
+ */
+export const ON_HOLD_GRACE_DAYS = 3;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** The subscription columns the state resolver needs. Shaped like the DB row. */
+export interface SubscriptionRow {
+  plan: Plan;
+  status: string;
+  trial_ends_at: string | Date | null;
+  /** Paid-through date from Dodo (`next_billing_date`). Drives both grace windows. */
+  current_period_end: string | Date | null;
+  /** When we last wrote this row — the best available proxy for "hold started". */
+  updated_at: string | Date | null;
+  intended_plan: string | null;
+  /** Present once Dodo has ever told us about a real subscription for this user. */
+  dodo_subscription_id: string | null;
+}
+
+/**
+ * What the billing row means right now, in the vocabulary the UI actually needs.
+ *
+ * The distinction that matters: `expired` is "a free trial lapsed and they never
+ * paid", `past_due` is "a paying customer's card bounced", `cancelled` is "a real
+ * subscription is winding down or over". These used to collapse into one
+ * `expired` bucket, which is how a customer who had been paying for months got
+ * told "Your free trial has ended".
+ */
+export type BillingState = "none" | "trialing" | "active" | "past_due" | "cancelled" | "expired";
+
+export interface AccessDecision {
+  state: BillingState;
+  /** True when the user should get paid-tier entitlements right now. */
+  entitled: boolean;
+  /**
+   * Epoch ms at which time-limited access runs out — the on_hold grace deadline
+   * or the paid-through date of a cancelled plan. Null when access is either
+   * open-ended (active/trialing) or already gone.
+   */
+  accessUntil: number | null;
+}
+
+function ms(v: string | Date | null | undefined): number | null {
+  if (!v) return null;
+  const t = v instanceof Date ? v.getTime() : new Date(v).getTime();
+  return Number.isFinite(t) ? t : null;
+}
+
+/**
+ * Resolve a subscription row into "what state is this and do they get in".
+ * Pure and exported so entitlementsFor (access) and trialInfo (copy) can never
+ * disagree about the same row — the bug where Settings said "trial ended" to a
+ * customer who still had entitlements was exactly that disagreement.
+ */
+export function resolveBillingState(sub: SubscriptionRow | undefined | null, now: number): AccessDecision {
+  if (!sub) return { state: "none", entitled: false, accessUntil: null };
+
+  const trialEnds = ms(sub.trial_ends_at);
+  const periodEnd = ms(sub.current_period_end);
+  const everSubscribed = Boolean(sub.dodo_subscription_id) || periodEnd !== null;
+  // A 'free' plan can never be entitled no matter what the status says.
+  const paidPlan = sub.plan !== "free";
+
+  switch (sub.status) {
+    case "trialing":
+      if (trialEnds && trialEnds > now) return { state: "trialing", entitled: true, accessUntil: trialEnds };
+      // Trial clock ran out. If they later became a real subscriber the status
+      // would have moved on, so this is the plain lapsed-trialist.
+      return { state: everSubscribed ? "cancelled" : "expired", entitled: false, accessUntil: null };
+
+    case "active":
+      return paidPlan
+        ? { state: "active", entitled: true, accessUntil: null }
+        : { state: "expired", entitled: false, accessUntil: null };
+
+    case "on_hold":
+    case "failed": {
+      // Payment problem on a live subscription. Grace runs from the paid-through
+      // date when we have one (the renewal that bounced), otherwise from when the
+      // hold landed. current_period_end had been written by the webhook and read
+      // by nothing until this line.
+      const graceFrom = periodEnd ?? ms(sub.updated_at) ?? now;
+      const graceUntil = graceFrom + ON_HOLD_GRACE_DAYS * DAY_MS;
+      const inGrace = paidPlan && now < graceUntil;
+      // Still `past_due` after the grace window closes: the reason they lost
+      // access is a failed payment, and telling them that is what gets the card
+      // updated. It is never a "trial ended" message.
+      return { state: "past_due", entitled: inGrace, accessUntil: inGrace ? graceUntil : null };
+    }
+
+    case "cancelled": {
+      // Cancelling is "don't renew me", not "cut me off mid-month" — they have
+      // paid through current_period_end. Killing access instantly was both wrong
+      // and the kind of thing that gets charged back.
+      const stillPaidFor = paidPlan && periodEnd !== null && periodEnd > now;
+      return { state: "cancelled", entitled: stillPaidFor, accessUntil: stillPaidFor ? periodEnd : null };
+    }
+
+    case "refunded":
+    case "disputed":
+      // Money went back to the customer. No grace, no paid-through — revoke now.
+      return { state: "cancelled", entitled: false, accessUntil: null };
+
+    case "expired":
+      return { state: everSubscribed ? "cancelled" : "expired", entitled: false, accessUntil: null };
+
+    default:
+      // 'none' and anything a future Dodo status introduces: fail closed, but
+      // don't mislabel a former subscriber as a lapsed trialist.
+      if (everSubscribed) return { state: "cancelled", entitled: false, accessUntil: null };
+      return { state: trialEnds ? "expired" : "none", entitled: false, accessUntil: null };
+  }
+}
+
+/**
+ * The caps a trial runs at. A trial mirrors the plan the user actually chose at
+ * signup (subscriptions.intended_plan) so the limits shown across the app match
+ * the plan Settings highlights as "current" — a Growth trial gets Growth caps,
+ * a Scale/Founding trial gets Scale caps. Defaults to Growth (the entry tier)
+ * when nothing was recorded, so a trial never silently grants Scale caps the
+ * user didn't pick. This is what stops the "Settings says Growth, but the app
+ * shows Scale limits" mismatch.
+ */
+function trialCaps(intendedPlan: string | null | undefined): Omit<Entitlements, "plan"> {
+  const i = (intendedPlan ?? "").trim().toLowerCase();
+  return i === "scale" || i === "founding" ? SCALE : GROWTH;
+}
+
+/** The columns every billing read needs. One list so the shapes can't drift. */
+const SUB_COLUMNS = `plan, status, trial_ends_at, current_period_end, updated_at, intended_plan, dodo_subscription_id`;
+
 export async function entitlementsFor(userId: string): Promise<Entitlements> {
-  const sub = await queryOne<{ plan: Plan; status: string; trial_ends_at: string | null }>(
-    `SELECT plan, status, trial_ends_at FROM subscriptions WHERE user_id = $1`,
+  const sub = await queryOne<SubscriptionRow>(
+    `SELECT ${SUB_COLUMNS} FROM subscriptions WHERE user_id = $1`,
     [userId],
   );
-  const trialing =
-    !!sub && sub.status === "trialing" && !!sub.trial_ends_at && new Date(sub.trial_ends_at).getTime() > Date.now();
-  const paid = !!sub && sub.status === "active" && sub.plan !== "free";
+  const access = resolveBillingState(sub, Date.now());
+  const trialing = access.state === "trialing";
 
-  // Paywall off during testing (PAYWALL_ENABLED=false): grant the full uncapped
-  // (Scale) set to everyone so no cap trips locally, but report the true plan
-  // label so UI/telemetry still reflect trial vs paid vs free.
+  // Paywall off during testing (PAYWALL_ENABLED=false): grant the caps of the
+  // plan the user is on/chose so local caps mirror production, but report the
+  // true plan label so UI/telemetry still reflect trial vs paid vs free.
   if (!config.PAYWALL_ENABLED) {
-    const plan: Plan = trialing ? "trialing" : (sub?.plan ?? "free");
-    return { plan, ...SCALE };
+    if (trialing) return { plan: "trialing", ...trialCaps(sub!.intended_plan) };
+    if (access.entitled) return entitlementsForPlan(sub!.plan);
+    return { plan: sub?.plan ?? "free", ...SCALE };
   }
 
-  // The trial is the full Scale experience (best-foot-forward for conversion),
-  // regardless of the stored plan label (startTrial writes 'paid').
-  if (trialing) return { plan: "trialing", ...SCALE };
-  if (paid) return entitlementsForPlan(sub!.plan);
+  // The trial runs at the caps of the plan the user picked — not a blanket Scale
+  // grant — so the limits shown everywhere match the plan Settings marks current.
+  if (trialing) return { plan: "trialing", ...trialCaps(sub!.intended_plan) };
+  // `entitled` now also covers the on_hold grace window and a cancelled plan
+  // that is still inside its paid period, at the caps of the plan they hold.
+  if (access.entitled) return entitlementsForPlan(sub!.plan);
   return FREE;
 }
 
@@ -210,8 +348,13 @@ export async function setIntendedPlan(userId: string, plan: string): Promise<voi
 }
 
 export interface TrialInfo {
-  /** trialing = inside the trial window; active = paying; expired = trial lapsed, unpaid; none = no row yet. */
-  status: "trialing" | "active" | "expired" | "none";
+  /**
+   * trialing = inside the trial window; active = paying; past_due = a PAYING
+   * customer whose card failed (never a trial message); cancelled = a real
+   * subscription winding down or over; expired = trial lapsed and they never
+   * paid; none = no row yet.
+   */
+  status: BillingState;
   /** True only while an unexpired trial is running. */
   onTrial: boolean;
   /** Whole days left in the trial, 0 once it has ended (the "cleared" state). */
@@ -220,6 +363,22 @@ export interface TrialInfo {
   plan: Plan;
   /** The plan the user picked on the landing page at sign-up, if any. */
   intendedPlan: string | null;
+  /**
+   * True while the user still has paid-tier access. Distinct from `status`:
+   * a `past_due` user inside the grace window, or a `cancelled` one still
+   * inside their paid period, is not "active" but is very much still let in.
+   */
+  hasAccess: boolean;
+  /** ISO date when time-limited (grace / paid-through) access ends, else null. */
+  accessUntil: string | null;
+  /**
+   * The `?plan=` value an upgrade CTA may safely link to: the plan picked at
+   * signup, but ONLY when that plan's Dodo product is configured. Founding was
+   * a permanent dead end for anyone who arrived from a founding link —
+   * DODO_PRODUCT_FOUNDING is unset, so every checkout throw threw and the CTA
+   * could never be completed. Null means "just use the default Growth product".
+   */
+  purchasablePlan: string | null;
 }
 
 export interface BillingOverview {
@@ -248,23 +407,63 @@ export async function billingOverview(userId: string): Promise<BillingOverview> 
   };
 }
 
+/**
+ * Which landing plan an upgrade CTA can actually link to. A plan whose Dodo
+ * product id is unset can't be bought, so pointing a user at it is a dead end;
+ * null tells the caller to fall back to the default Growth product.
+ *
+ * Deliberately config-only — no founding SEAT check here, because trialInfo runs
+ * on every app page render and a live seat count is a DB round trip per render.
+ * A full cohort is handled at checkout (createCheckout downgrades to Growth).
+ */
+function purchasablePlanParam(intendedPlan: string | null): string | null {
+  const i = (intendedPlan ?? "").trim().toLowerCase();
+  if (i === "founding") return config.DODO_PRODUCT_FOUNDING ? "founding" : null;
+  if (i === "scale") return config.DODO_PRODUCT_SCALE ? "scale" : null;
+  // "growth" (and anything else) resolves to the default paid product anyway,
+  // so there is nothing to preserve in the query string.
+  return null;
+}
+
 /** The trial/subscription state for a user, for the web banner + Telegram copy. */
 export async function trialInfo(userId: string): Promise<TrialInfo> {
-  const sub = await queryOne<{ plan: Plan; status: string; trial_ends_at: string | null; intended_plan: string | null }>(
-    `SELECT plan, status, trial_ends_at, intended_plan FROM subscriptions WHERE user_id = $1`,
+  const sub = await queryOne<SubscriptionRow>(
+    `SELECT ${SUB_COLUMNS} FROM subscriptions WHERE user_id = $1`,
     [userId],
   );
-  if (!sub) return { status: "none", onTrial: false, daysLeft: 0, endsAt: null, plan: "free", intendedPlan: null };
-  if (sub.status === "active" && sub.plan !== "free") {
-    return { status: "active", onTrial: false, daysLeft: 0, endsAt: null, plan: sub.plan, intendedPlan: sub.intended_plan };
-  }
-  const ends = sub.trial_ends_at ? new Date(sub.trial_ends_at).getTime() : 0;
   const now = Date.now();
-  if (sub.status === "trialing" && ends > now) {
-    const daysLeft = Math.max(0, Math.ceil((ends - now) / (24 * 60 * 60 * 1000)));
-    return { status: "trialing", onTrial: true, daysLeft, endsAt: sub.trial_ends_at, plan: "trialing", intendedPlan: sub.intended_plan };
+  const access = resolveBillingState(sub, now);
+
+  if (!sub) {
+    return {
+      status: "none", onTrial: false, daysLeft: 0, endsAt: null, plan: "free",
+      intendedPlan: null, hasAccess: false, accessUntil: null, purchasablePlan: null,
+    };
   }
-  // Trial started but has lapsed (or the sub is otherwise inactive): the trial is
-  // over and the day count is cleared to 0 — the upgrade wall now applies.
-  return { status: "expired", onTrial: false, daysLeft: 0, endsAt: sub.trial_ends_at, plan: "free", intendedPlan: sub.intended_plan };
+
+  const trialEndsIso = sub.trial_ends_at ? new Date(sub.trial_ends_at).toISOString() : null;
+  const onTrial = access.state === "trialing";
+  const ends = onTrial ? (access.accessUntil ?? 0) : 0;
+  const daysLeft = onTrial ? Math.max(0, Math.ceil((ends - now) / (24 * 60 * 60 * 1000))) : 0;
+
+  // The plan label follows the money, not the status: a past_due or winding-down
+  // customer is still a Growth/Scale customer and the UI should say so. Only a
+  // genuinely unpaid state reports "free".
+  const plan: Plan = onTrial
+    ? "trialing"
+    : access.state === "expired" || access.state === "none"
+      ? "free"
+      : sub.plan;
+
+  return {
+    status: access.state,
+    onTrial,
+    daysLeft,
+    endsAt: trialEndsIso,
+    plan,
+    intendedPlan: sub.intended_plan,
+    hasAccess: access.entitled,
+    accessUntil: access.accessUntil ? new Date(access.accessUntil).toISOString() : null,
+    purchasablePlan: purchasablePlanParam(sub.intended_plan),
+  };
 }

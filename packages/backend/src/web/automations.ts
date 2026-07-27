@@ -17,6 +17,7 @@ import {
   type AutomationInput,
 } from "../automations/store.js";
 import { runAutomationOnce } from "../automations/run.js";
+import { MAX_CADENCE_HOUR } from "../automations/tick.js";
 import { automationStageLabel, type Emit } from "./stream.js";
 import { approveRun, rejectRun, applyEdit } from "../automations/approval.js";
 import {
@@ -100,6 +101,37 @@ export type AutomationFormInput = Record<string, unknown>;
 const SOURCE_TYPES: SourceType[] = ["trend_ride", "unlock_backlog", "custom"];
 const DELIVERY_MODES: DeliveryMode[] = ["approval", "auto"];
 const CADENCE_KINDS: CadenceKind[] = ["daily", "weekly", "manual"];
+const CADENCE_DAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+
+/**
+ * `cadence_meta` used to be written straight from the form body — whatever JSON
+ * object arrived, unvalidated. automations/tick.ts reads exactly two keys from
+ * it, and an out-of-range `hour` there is not a cosmetic problem: an automation
+ * whose hour the tick can never reach never runs at all, silently and forever.
+ * So validate to the two keys the scheduler actually honours, and drop the rest
+ * rather than persisting fields nothing reads.
+ *
+ * NOTE: `hour` is UTC, not the user's local time (a documented v1 simplification
+ * in tick.ts — quiet hours are what keep delivery polite).
+ */
+function sanitizeCadenceMeta(raw: unknown): Record<string, unknown> {
+  const meta: Record<string, unknown> = {};
+  if (!raw || typeof raw !== "object") return meta;
+  const input = raw as Record<string, unknown>;
+
+  const hour = typeof input.hour === "number" ? input.hour : Number(input.hour);
+  if (Number.isFinite(hour)) {
+    meta.hour = Math.min(Math.max(0, Math.trunc(hour)), MAX_CADENCE_HOUR);
+  }
+
+  if (Array.isArray(input.days)) {
+    const days = input.days
+      .map((d) => String(d).trim().toLowerCase().slice(0, 3))
+      .filter((d) => CADENCE_DAYS.includes(d));
+    if (days.length) meta.days = [...new Set(days)];
+  }
+  return meta;
+}
 
 function sanitize(input: AutomationFormInput): AutomationInput {
   const name = typeof input.name === "string" ? input.name.trim() : "";
@@ -121,7 +153,7 @@ function sanitize(input: AutomationFormInput): AutomationInput {
     source_type: sourceType,
     delivery_mode: deliveryMode,
     cadence_kind: cadenceKind,
-    cadence_meta: (input.cadenceMeta && typeof input.cadenceMeta === "object" ? input.cadenceMeta : {}) as Record<string, unknown>,
+    cadence_meta: sanitizeCadenceMeta(input.cadenceMeta),
     monthly_cap: typeof input.monthlyCap === "number" ? input.monthlyCap : config.AUTOMATION_DEFAULT_MONTHLY_CAP,
     respect_quiet_hours: input.respectQuietHours !== false,
     pillar_scope: pillarScope,

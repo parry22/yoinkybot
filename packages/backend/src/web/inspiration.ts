@@ -71,21 +71,38 @@ export async function listTrendInspiration(userId: string, limit = 20): Promise<
  * On-demand fill for the web Inspiration page. When the user's feed is empty or
  * stale, run the same seed pipeline the post-diagnosis job uses (trends match +
  * viral pool, persisted with channel 'web'). Stale-guarded so page loads can't
- * spam paid search: a no-op unless the newest trend_take/viral_benchmark
- * surfacing is older than `minAgeHours` (or absent).
+ * spam paid search.
+ *
+ * THE GUARD KEYS ON ATTEMPT, NOT SUCCESS. It used to read
+ * `max(delivered_at) FROM surfacings` — a timestamp that only exists once the
+ * pipeline actually delivered something. A user whose niche matches no trend and
+ * whose viral pool comes back empty writes no surfacing at all, so the guard read
+ * NULL forever and the billed twitterapi.io search re-ran on EVERY page load. The
+ * accounts that got nothing out of it were the ones paying for it most often.
+ *
+ * `users.inspiration_refresh_attempt_at` is stamped before the pipeline runs and
+ * regardless of what it finds — the same reasoning as
+ * `connected_accounts.last_refresh_attempt_at` in jobs/x-refresh.ts (migration
+ * 0030), where keying on success left a permanently-barren account at the head of
+ * every sweep for eternity. Stamped BEFORE rather than after so a pipeline that
+ * throws still consumes the window; a crash loop must not become a spend loop.
  */
 export async function refreshInspirationForWeb(
   userId: string,
   minAgeHours = 6,
 ): Promise<{ ran: boolean }> {
-  const latest = await queryOne<{ latest: string | null }>(
-    `SELECT max(delivered_at)::text AS latest FROM surfacings
-     WHERE user_id = $1 AND type IN ('trend_take','viral_benchmark')`,
-    [userId],
+  // Claim the window atomically: the UPDATE only matches when the last attempt is
+  // old enough, so two concurrent page loads can't both pass the check and run
+  // the paid search twice.
+  const claimed = await queryOne<{ id: string }>(
+    `UPDATE users SET inspiration_refresh_attempt_at = now()
+      WHERE id = $1
+        AND (inspiration_refresh_attempt_at IS NULL
+             OR inspiration_refresh_attempt_at < now() - make_interval(hours => $2::int))
+      RETURNING id`,
+    [userId, minAgeHours],
   );
-  if (latest?.latest && Date.now() - new Date(latest.latest).getTime() < minAgeHours * 3_600_000) {
-    return { ran: false };
-  }
+  if (!claimed) return { ran: false };
   await seedInspirationForUser(userId);
   return { ran: true };
 }

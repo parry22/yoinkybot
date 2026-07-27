@@ -801,14 +801,20 @@ export function createBot(): Bot | undefined {
       return;
     }
 
-    // Billing: generate a Dodo checkout link for the chosen tier.
-    const bill = /^bill:(founding|paid)$/.exec(data);
+    // Billing: generate a Dodo checkout link for the chosen tier. `scale` was
+    // missing from this regex, so the Scale button (added to buildUpgradeOffer)
+    // would have fallen through to the no-match path and done nothing.
+    const bill = /^bill:(founding|paid|scale)$/.exec(data);
     if (bill) {
-      const plan = bill[1] as "founding" | "paid";
+      const plan = bill[1] as "founding" | "paid" | "scale";
       await ctx.answerCallbackQuery({ text: "building your checkout…" });
       try {
         const { url } = await createCheckout(user.id, user.email, plan);
-        await ctx.reply(`here's your secure checkout (${plan}):\n${url}`);
+        // Deliberately doesn't name the tier back: createCheckout can substitute
+        // Growth when the requested product is unconfigured or the founding
+        // cohort is full, and the Dodo page is the honest source of what's being
+        // charged. Saying "(founding)" over a Growth checkout would be a lie.
+        await ctx.reply(`here's your secure checkout — the price is on the page:\n${url}`);
       } catch (err) {
         await ctx.reply(err instanceof Error ? `couldn't start checkout: ${err.message}` : "checkout's unavailable right now.");
       }

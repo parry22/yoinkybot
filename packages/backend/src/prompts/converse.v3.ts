@@ -25,6 +25,15 @@ export interface ConverseVars {
   toolCallsRemaining: number;
   /** Current instant (UTC ISO), so relative times ("tomorrow 9am") can be resolved for scheduling. */
   now?: string;
+  /**
+   * The user's IANA timezone (users.settings.timezone), when we have one. Without
+   * it the model has no way to know that "tomorrow 9am" is not 09:00 UTC.
+   */
+  timezone?: string;
+  /** `now` already formatted as wall-clock time in `timezone`. Precomputed by the
+   *  caller so this renderer stays pure and the rendered prefix stays byte-stable
+   *  across a turn's iterations. */
+  nowLocal?: string;
 }
 
 /**

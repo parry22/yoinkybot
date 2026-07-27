@@ -80,7 +80,7 @@ export function Growth({ data }: { data: Data }) {
   const [showParts, setShowParts] = useState(false);
   const active = data.quests.filter((q) => !q.done);
   const done = data.quests.filter((q) => q.done);
-  const [next, ...queue] = active;
+  const queue = active;
 
   const xpPct = data.xpForNextLevel ? Math.round((data.xpIntoLevel / data.xpForNextLevel) * 100) : 100;
   const ring = `conic-gradient(var(--accent) ${xpPct * 3.6}deg, var(--stroke) 0deg)`;
@@ -104,33 +104,6 @@ export function Growth({ data }: { data: Data }) {
               Your {data.streak.current}-week streak is at risk — ship one post to keep it.
             </span>
             <a href="/app/compose" className={styles.urgentCta}>Compose</a>
-          </div>
-        )}
-
-        {/* 2 ── the next move: the one thing to do now */}
-        {next ? (
-          <div className={styles.nextCard}>
-            <div className={styles.nextLabel}>Your next move</div>
-            <div className={styles.nextTitle}>{next.title}</div>
-            {next.detail && <p className={styles.nextDetail}>{next.detail}</p>}
-            <div className={styles.nextFoot}>
-              {next.cta && (
-                <a href={next.cta.href} className={styles.nextCta}>
-                  {next.cta.label}
-                </a>
-              )}
-              <span className={styles.xpChip}>+{next.xp} XP</span>
-              {queue.length > 0 && (
-                <span className={styles.nextMore}>
-                  {queue.length} more queued below
-                </span>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className={styles.allClear}>
-            <div className={styles.allClearTitle}>🎉 Everything's cleared</div>
-            <p>You&apos;re ahead. Fresh quests land as your plan grows — keep posting to hold the streak.</p>
           </div>
         )}
 

@@ -58,6 +58,47 @@
   margin-top: 14px;
 }
 
+/* The one place in this modal where a hue carries meaning: the handshake failed. */
+.error {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #d3455b;
+  max-width: 42ch;
+  margin: 0 auto 18px;
+}
+
+/* Escape hatch (see EscapeRow in connect-x-gate.tsx). Deliberately quiet — it's
+ * the way out for the minority who can't get through, not a competing action. */
+.escape {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 18px;
+  font-size: 12px;
+  color: var(--ink-500);
+}
+
+.escapeLink {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--ink-600);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.escapeLink:hover {
+  color: var(--ink-900);
+}
+
+.escapeLink:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 /* Reading animation */
 .scanner {
   position: relative;

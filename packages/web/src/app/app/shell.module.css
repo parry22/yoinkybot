@@ -1,5 +1,6 @@
 .shell {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -11,6 +12,9 @@
   display: flex;
   width: min(100%, 1456px);
   height: calc(100vh - 32px);
+  /* dvh tracks the browser's collapsing UI; the vh line above stays as the
+   * fallback for engines that don't know the unit. */
+  height: calc(100dvh - 32px);
   min-height: 620px;
   position: relative;
 }
@@ -51,10 +55,18 @@
     padding: 0;
     align-items: stretch;
   }
+  /* The app shell is a fixed-height frame on mobile too, not a page that grows.
+   * It used to be `height: auto; min-height: 100vh`, and that is what put the
+   * Compose composer and the Auto Agent dock — both bottom-anchored inside a
+   * non-scrolling column — underneath the iOS URL bar: 100vh is the LARGE
+   * viewport, so the last ~60px of the layout sat behind browser chrome on the
+   * product's two main screens. `dvh` is the visible height, and pinning the
+   * frame to it hands scrolling back to each panel's own scroll container. */
   .platform {
     flex-direction: column;
-    height: auto;
-    min-height: 100vh;
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
   }
   .workspace {
     /* The sidebar is now an off-canvas drawer (position: fixed), not an in-flow

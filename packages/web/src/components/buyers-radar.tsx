@@ -267,7 +267,7 @@ export function BuyersRadar({
                 {r.why && (
                   <div className={styles.whyNote}>
                     <HugeiconsIcon icon={RadarIcon} size={13} strokeWidth={1.8} />
-                    {r.why}
+                    <span>{r.why.charAt(0).toUpperCase() + r.why.slice(1)}</span>
                   </div>
                 )}
                 <div className={styles.cardActions}>
