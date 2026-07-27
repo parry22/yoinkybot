@@ -133,8 +133,14 @@ function sanitizeCadenceMeta(raw: unknown): Record<string, unknown> {
   return meta;
 }
 
+/** An automation name is a label, not a body — a headline's worth is plenty. */
+const NAME_MAX = 120;
+
 function sanitize(input: AutomationFormInput): AutomationInput {
-  const name = typeof input.name === "string" ? input.name.trim() : "";
+  // Bounded like `brief` below — an automation name is rendered in the UI, sent
+  // in approval DMs, and pasted into prompts, so an unbounded one is both a
+  // layout problem and a token bill.
+  const name = typeof input.name === "string" ? input.name.trim().slice(0, NAME_MAX) : "";
   assertClean(name); // throws ModerationError -> 400
   const sourceType = SOURCE_TYPES.includes(input.sourceType as SourceType) ? (input.sourceType as SourceType) : "trend_ride";
   const deliveryMode = DELIVERY_MODES.includes(input.deliveryMode as DeliveryMode) ? (input.deliveryMode as DeliveryMode) : "approval";

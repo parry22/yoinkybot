@@ -151,6 +151,14 @@
   gap: 8px;
   margin-top: 14px;
 }
+/* Why a verdict didn't land — expired draft, edit cap, burst limit. These used
+ * to be swallowed, so the card read as a dead button. */
+.approvalNote {
+  margin-top: 10px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink-500);
+}
 .editRow {
   display: flex;
   gap: 8px;

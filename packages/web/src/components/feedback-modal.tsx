@@ -78,7 +78,11 @@ export function FeedbackModal({ open, onClose }: { open: boolean; onClose: () =>
         body: JSON.stringify({ type, category, message: message.trim() }),
       });
       if (!res.ok) {
-        setErr("Couldn't send that — please try again.");
+        // Prefer the server's own sentence. A 429 (burst limit) and a 400 (daily
+        // cap) both explain WHY and when to come back; the generic "please try
+        // again" told a capped user to do the one thing that cannot work.
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        setErr(data.error ?? "Couldn't send that — please try again.");
         return;
       }
       setDone(true);

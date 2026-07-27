@@ -40,7 +40,7 @@ function fmtViews(n: number): string {
 const REACTION_ICON: Record<string, string> = { fire: "🔥", useful: "👍", off: "👎", later: "🕐", forget: "🗑" };
 
 /** What the on-demand fill did, which is what an empty feed actually means. */
-type FillState = "idle" | "filling" | "paywalled" | "failed";
+type FillState = "idle" | "filling" | "paywalled" | "throttled" | "failed";
 
 export function Inspiration({ trends, virals }: { trends: Trend[]; virals: Viral[] }) {
   const [tab, setTab] = useState<"trends" | "virals">("trends");
@@ -62,6 +62,11 @@ export function Inspiration({ trends, virals }: { trends: Trend[]; virals: Viral
         // soon." forever, with nothing on screen suggesting an upgrade was the
         // missing piece rather than time.
         if (res.status === 402) return setFill("paywalled");
+        // 429 is the burst limiter, not a breakage. This fill fires
+        // AUTOMATICALLY whenever the feed is empty, so a user bouncing in and
+        // out of the page trips it without doing anything wrong — "something
+        // went wrong reaching X" would be a lie.
+        if (res.status === 429) return setFill("throttled");
         if (!res.ok) return setFill("failed");
         setFill("idle");
         router.refresh();
@@ -197,6 +202,14 @@ function EmptyFeed({
         <div className={panel.emptyTitle}>Inspiration is a paid feature.</div>
         <p style={{ marginBottom: 18 }}>{locked}</p>
         <UpgradeCTA message="Upgrade and Yoinky starts scanning your niche for you." plan="growth" />
+      </div>
+    );
+  }
+  if (state === "throttled") {
+    return (
+      <div className={panel.empty}>
+        <div className={panel.emptyTitle}>Catching my breath.</div>
+        <p>You&apos;ve asked for a few scans in a row. Give it a minute and reload — nothing is broken.</p>
       </div>
     );
   }

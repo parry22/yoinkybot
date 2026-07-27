@@ -1,6 +1,7 @@
 import { getSessionUser } from "@/lib/session";
 import { requirePaid } from "@/lib/entitlements";
 import { rateLimited } from "@/lib/rate-limit";
+import { boundedText } from "@/lib/input";
 import { runWebChatTurnStreaming, type AgentEvent } from "@yoink/backend/web";
 import { sseResponse } from "@/lib/sse";
 
@@ -26,7 +27,7 @@ export async function POST(req: Request) {
   if (limited) return limited;
 
   const body = (await req.json().catch(() => ({}))) as { text?: unknown };
-  const text = typeof body.text === "string" ? body.text.trim() : "";
+  const text = boundedText(body.text);
   if (!text) return Response.json({ error: "empty message" }, { status: 400 });
 
   return sseResponse(async (emit) => {

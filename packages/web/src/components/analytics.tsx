@@ -89,7 +89,23 @@ export function Analytics({ data }: { data: Data }) {
     setLoadingReplies(true);
     try {
       const res = await fetch("/api/analytics/replies");
-      setReplies(await res.json());
+      const data = await res.json();
+      // A 402/429 body is `{ error }`, not a ReplyAnalytics — storing it raw left
+      // `available` undefined, which falls into the generic "couldn't pull
+      // replies" branch and loses the server's actual explanation. Normalize to
+      // the full shape and carry the reason through.
+      setReplies(
+        typeof data?.available === "boolean"
+          ? data
+          : {
+              available: false,
+              reason: data?.error ?? "unavailable",
+              count: 0,
+              medianImpressions: null,
+              medianEngagementRate: null,
+              sample: [],
+            },
+      );
     } catch {
       setReplies({ available: false, reason: "network error", count: 0, medianImpressions: null, medianEngagementRate: null, sample: [] });
     } finally {
@@ -309,7 +325,13 @@ export function Analytics({ data }: { data: Data }) {
               </button>
             </>
           ) : !replies.available ? (
-            <div className={panel.sectionBody}>Couldn&apos;t pull replies right now — try again in a bit.</div>
+            <div className={panel.sectionBody}>
+              {/* Prefer the server's sentence when it gave one (paywall, burst
+                *  limit); fall back to the generic line for a bare failure. */}
+              {replies.reason && replies.reason !== "unavailable"
+                ? replies.reason
+                : "Couldn't pull replies right now — try again in a bit."}
+            </div>
           ) : replies.count === 0 ? (
             <div className={panel.sectionBody}>No recent replies found.</div>
           ) : (

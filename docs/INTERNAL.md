@@ -820,7 +820,8 @@ lives in `telegram/connect-auth.ts`; `routes/oauth.ts` hands off to
 `afterOAuthConnected` after storing a token.
 
 - **The sequence (product rule).** X is offered first (inline URL button →
-  `/oauth/x/start?u=<id>` + a `cauth:skip:<platform>` skip button). Once X
+  `/oauth/x/start?t=<connect ticket>` — see §3r; it was `?u=<id>` until the
+  ticket replaced it — plus a `cauth:skip:<platform>` skip button). Once X
   resolves — connected or skipped — LinkedIn gets its offer. Either may be
   skipped, but skipping **both** with nothing connected is refused: the skip
   ledger resets and the buttons come back, because everything downstream runs
@@ -1132,6 +1133,14 @@ path: after the callback verifies identity (`GET /2/users/me`),
 `afterOAuthConnected` (`telegram/connect-auth.ts`) automatically calls the same
 `startConnect` history-read kickoff the typed-handle path used — one authorize
 click does what used to take a click + typing a handle.
+
+> **Superseded on two points — see §3r.** (1) `?u=<userId>` is gone: `/start`
+> takes an opaque **connect ticket** (`?t=`), because identity in an
+> unauthenticated URL was an account-linking primitive. (2) `safeReturnTo()` no
+> longer does a `startsWith` prefix match — that was an open redirect — it
+> compares parsed `URL.origin`. The web app also no longer links here at all; it
+> runs its own PKCE flow at `/api/auth/x/start` (cookie-backed, so it works on
+> serverless). The description below is the 2026-07-20 design as shipped then.
 
 New env: **`WEB_APP_URL`** (backend config, defaults `http://localhost:3002`) —
 an allowlisted return origin for the OAuth callback. `/oauth/:platform/start`
@@ -1906,6 +1915,44 @@ was unbounded for any signed-in user. Two limits: 5/hour at the route (burst) an
 a hard 12/24h inside `submitFeedback` itself, so any future caller — a Telegram
 command, a script — inherits the ceiling. The daily count is taken *before* the
 insert and before any delivery, so a capped user costs nothing.
+
+**Free Scale trial via a URL param (`billing/entitlements.ts`) — the biggest
+find of the sweep.** `trialCaps` followed `subscriptions.intended_plan`, and
+`intended_plan` is set from the landing CTA's `?plan=` query param with **no
+payment signal of any kind** (`/app` and `/api/billing/start-trial` both write
+it). So any signed-in user could visit `/app?plan=scale` and hand themselves,
+free for 7 days: 300 paid twitterapi.io buyer searches instead of 25, unlimited
+virals instead of 1/day, 90 agent posts instead of 5, and `autoAgent: true` —
+hands-off posting with no card on file. The trial was effectively Scale for
+anyone who edited a URL.
+
+The rule now: **`intended_plan` decides what we SHOW, never what we GRANT.**
+* `trialCaps()` returns `GROWTH` unconditionally.
+* `entitlementsForPlan("trialing")` also returns `GROWTH` — it answered `SCALE`,
+  which was unreachable today but would have reopened the hole from the side for
+  any future caller. One rule, one answer.
+* `intended_plan` is still recorded and still drives which product Settings
+  preselects and where the upgrade CTA points (`purchasablePlanParam`,
+  `trial-banner.tsx`), so a Scale-CTA signup still sees Scale as the thing
+  they're about to buy — they just trial the entry tier until a real payment
+  lands, at which point `entitlementsForPlan(sub.plan)` takes over.
+* `setIntendedPlan` now whitelists `growth|scale|founding` instead of storing any
+  40-character string in a column the UI renders back.
+
+**Unbounded free-text into the model (`web/src/lib/input.ts`,
+`web/automations.ts`, `web/buyers-radar.ts`).** The Telegram side is bounded for
+free — Telegram caps a message at 4096 characters — so nothing in the shared
+brain ever had to think about length. The web routes had no such ceiling:
+`/api/chat`, `/api/chat/stream` and `/api/draft` took a string of any size and
+put it straight into the prompt. Input is billed per token, and the burst limiter
+does not help here because the cost is per REQUEST, not per rate. Now bounded via
+`boundedText()` at 4000 (the Telegram ceiling, so a turn behaves identically on
+either surface). It **truncates rather than rejecting** — a long paste is a
+normal thing a person does, and failing the turn would be worse product.
+The same pass bounded two others: automation `name` (rendered in the UI, sent in
+approval DMs, pasted into prompts) and the whole Buyer Radar ICP intake, whose
+list fields were unbounded in item length *and* item count and are read back into
+every scan as paid twitterapi.io queries.
 
 **Embedding cost under-reporting (`llm/embeddings.ts`).** The DashScope/Qwen
 provider carried `costPer1M: 0` as a placeholder, which silently zeroed every

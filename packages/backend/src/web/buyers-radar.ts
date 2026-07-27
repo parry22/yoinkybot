@@ -131,6 +131,27 @@ export async function buyerIcpPrefill(userId: string): Promise<IcpPrefill> {
   return prefillIcp(userId);
 }
 
+/** Ceilings for the ICP intake. Generous for a real answer, closed for a paste. */
+const ICP_TEXT_MAX = 600;
+const ICP_TERM_MAX = 80;
+const ICP_LIST_MAX = 25;
+
+const boundList = (list: string[] | undefined): string[] | undefined =>
+  list
+    ?.map((s) => String(s).trim().slice(0, ICP_TERM_MAX))
+    .filter(Boolean)
+    .slice(0, ICP_LIST_MAX);
+
+function boundIcp(input: IcpInput): IcpInput {
+  return {
+    product_oneliner: input.product_oneliner?.trim().slice(0, ICP_TEXT_MAX),
+    buyer_description: input.buyer_description?.trim().slice(0, ICP_TEXT_MAX),
+    pain_signals: boundList(input.pain_signals),
+    competitor_terms: boundList(input.competitor_terms),
+    exclusions: boundList(input.exclusions),
+  };
+}
+
 export async function saveBuyerIcp(userId: string, input: IcpInput): Promise<BuyerIcpView> {
   // Content gate on every free-text ICP field (throws ModerationError → 400).
   for (const field of [input.product_oneliner, input.buyer_description]) {
@@ -139,7 +160,11 @@ export async function saveBuyerIcp(userId: string, input: IcpInput): Promise<Buy
   for (const list of [input.pain_signals, input.competitor_terms, input.exclusions]) {
     for (const item of list ?? []) assertClean(item);
   }
-  const icp = await saveIcp(userId, input);
+  // …then BOUND it. Every one of these fields is read back into the scan prompt
+  // and turned into paid twitterapi.io queries, and the list fields were
+  // unbounded in both item length AND item count — a thousand "pain signals"
+  // would have been carried into every scan from then on.
+  const icp = await saveIcp(userId, boundIcp(input));
   return {
     productOneliner: icp.product_oneliner ?? "",
     buyerDescription: icp.buyer_description ?? "",

@@ -359,9 +359,11 @@ function ApprovalCard({
   const [editing, setEditing] = useState(false);
   const [instruction, setInstruction] = useState("");
   const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
 
   async function act(action: "approve" | "reject" | "edit") {
     setBusy(true);
+    setNote(null);
     try {
       const res = await fetch("/api/automations/verdict", {
         method: "POST",
@@ -372,16 +374,40 @@ function ApprovalCard({
         onPaywall("Upgrade to approve, edit or reject what your agent wrote.");
         return;
       }
-      const data = await res.json();
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        draft?: string;
+        reason?: string;
+        capped?: boolean;
+        error?: string;
+      };
+
+      // EVERY failure used to land here and do nothing at all: the button
+      // un-greyed and the card sat there unchanged. So an approval that had
+      // EXPIRED (the backend returns a real explanation — "that draft expired, I
+      // gave you the post slot back"), an edit that hit the edit cap, a 429 from
+      // the burst limiter, and a 500 were all indistinguishable from a dead
+      // button. Telegram surfaced these reasons; the web never did.
+      if (!res.ok || !data.ok) {
+        if (data.capped) {
+          setNote("that's as many edits as I'll do on one draft — approve it or reject it.");
+        } else {
+          setNote(data.reason ?? data.error ?? "couldn't do that just now — try again.");
+        }
+        return;
+      }
+
       if (action === "edit") {
-        if (data.ok && data.draft) {
+        if (data.draft) {
           onEdited(approval.runId, data.draft);
           setEditing(false);
           setInstruction("");
         }
-      } else if (data.ok) {
+      } else {
         onResolved(approval.runId);
       }
+    } catch {
+      setNote("network dropped — try again.");
     } finally {
       setBusy(false);
     }
@@ -421,6 +447,7 @@ function ApprovalCard({
           </button>
         </div>
       )}
+      {note && <div className={styles.approvalNote}>{note}</div>}
     </div>
   );
 }

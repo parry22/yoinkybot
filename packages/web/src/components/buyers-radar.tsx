@@ -97,9 +97,19 @@ export function BuyersRadar({
     try {
       const res = await fetch("/api/buyers-radar/scan", { method: "POST" });
       const data = await res.json();
-      if (res.status === 402 || res.status === 429) {
+      // 402 and 429 are NOT the same answer and must not share a branch. 402 is
+      // "you need to pay" → show the upgrade CTA. 429 is the burst limiter
+      // (backend lib/rate-limit.ts), which a fully paid-up customer hits by
+      // tapping Scan twice — telling them to upgrade would be both wrong and
+      // insulting. It carries its own "try again in N" copy; just show it.
+      if (res.status === 402) {
         setLocked(true);
         setScanMsg(null);
+        return;
+      }
+      if (res.status === 429) {
+        setLocked(false);
+        setScanMsg(data.error ?? "you're scanning faster than I can search — give it a minute.");
         return;
       }
       if (!res.ok || !data.jobId) {

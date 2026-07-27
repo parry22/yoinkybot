@@ -47,13 +47,28 @@ describe("entitlementsForPlan (Growth vs Scale differentiation)", () => {
     expect(e.maxResurfacePerWeek).toBe(5);
   });
 
-  it("founding and trialing map to the full Scale set", () => {
-    for (const plan of ["founding", "trialing"] as const) {
-      const e = entitlementsForPlan(plan);
-      expect(e.autoAgent).toBe(true);
-      expect(e.scheduledPostsPerMonth).toBeNull();
-      expect(e.buyerIntentsPerMonth).toBe(300);
-    }
+  it("founding maps to the full Scale set", () => {
+    const e = entitlementsForPlan("founding");
+    expect(e.autoAgent).toBe(true);
+    expect(e.scheduledPostsPerMonth).toBeNull();
+    expect(e.buyerIntentsPerMonth).toBe(300);
+  });
+
+  /**
+   * A trial runs at the ENTRY tier, never Scale. `intended_plan` — the only
+   * thing that used to lift a trial to Scale caps — comes from a `?plan=` URL
+   * param with no payment signal, so `/app?plan=scale` was a free 7-day grant of
+   * 300 paid buyer searches, unlimited virals and hands-off auto-posting.
+   * `trialCaps` returns GROWTH unconditionally now; this asserts the defensive
+   * `entitlementsForPlan` path agrees, so the hole can't reopen from the side.
+   */
+  it("a trial is Growth-capped, and specifically never gets hands-off posting", () => {
+    const e = entitlementsForPlan("trialing");
+    expect(e.autoAgent).toBe(false);
+    expect(e.scheduledPostsPerMonth).toBe(30);
+    expect(e.buyerIntentsPerMonth).toBe(25);
+    expect(e.automationPostsPerMonth).toBe(5);
+    expect(e.viralPerDay).toBe(1);
   });
 });
 

@@ -24,6 +24,47 @@ which is where it's most useful. Both share one Postgres and one `users` row.
 
 <!-- Keep newest-first. Update this whenever a change ships that a reader of the repo should know about. -->
 
+- **2026-07-27 — Pre-launch security + abuse hardening.** A security-audit sweep.
+  Full detail in `docs/INTERNAL.md` §3r. Nothing changes for a well-behaved user;
+  all of it changes what a hostile or runaway one can do.
+
+  **Two cross-tenant/redirect holes closed.** `rejectRun` claimed a run by id with
+  no `user_id` in the WHERE (its sibling `approveRun` checked ownership properly),
+  so an authenticated user holding another user's `runId` could reject that user's
+  pending Auto Agent draft. And the OAuth return's `safeReturnTo` was a
+  `startsWith` prefix match, which has no authority boundary — a lookalike host
+  like `app.meetyoinky.com.evil.com` passed, and the user was bounced there right
+  after completing consent. It compares parsed origins now.
+
+  **Identity is out of the OAuth start URL.** `/oauth/:platform/start` took
+  `?u=<raw users.id>` on an unauthenticated route — an account-linking primitive
+  in both directions (hand someone a link carrying your id and their X write token
+  lands on your row). The bot now mints an opaque, platform-bound **connect
+  ticket** (32 bytes, 15-minute TTL) and the URL carries only that.
+
+  **Burst rate limiting** (migration `0036`). Monthly caps and the daily LLM
+  budget bound the month, not the minute: concurrent chat/draft/scan requests
+  could spend a day's model + twitterapi.io budget in minutes. There's now a
+  per-`(user, bucket)` fixed-window counter in Postgres — one atomic UPSERT,
+  fails open — under `requirePaid` on every money-spending route. **Feedback** is
+  capped too (it emails and DMs the operator on every submission).
+
+  **A free Scale trial was one URL param away** — the biggest find. Trial caps
+  followed `intended_plan`, which is set from the landing CTA's `?plan=` query
+  param with no payment signal, so `/app?plan=scale` granted 7 days of 300 paid
+  buyer searches (vs 25), unlimited virals (vs 1/day) and hands-off auto-posting.
+  `intended_plan` now decides what we *show*, never what we *grant*: every trial
+  runs at Growth, while Settings and the upgrade CTA still point at the plan the
+  user picked.
+
+  **Three silently-broken client paths fixed while wiring the 429s.** Buyer Radar
+  showed the *upgrade* CTA on a rate-limit (telling a paid-up customer to pay
+  more); the Inspiration auto-fill reported "something went wrong reaching X" for
+  what is just a throttle; and the Auto Agent approval card **swallowed every
+  failure** — an expired draft, a hit edit cap, a 429, a 500 all left the button
+  un-greying with no message, indistinguishable from a dead button. The backend
+  had real explanations for each; the web never showed them.
+
 - **2026-07-27 — Reliability hardening + UI polish.** A correctness sweep plus a
   round of surface fixes. Full detail in `docs/INTERNAL.md` §3p and §3q.
 
@@ -487,8 +528,11 @@ which is where it's most useful. Both share one Postgres and one `users` row.
   X OAuth *consent screen* app name ("...wants to connect") comes from the X
   Developer Portal app registered under `X_CLIENT_ID` — rename that app to
   "Yoinky" there; it isn't set in code.
-- **2026-07-20 — Settings: Connect X is now OAuth, not a typed handle.** The
-  Settings "Connect X" button links to the backend's existing
+- **2026-07-20 — Settings: Connect X is now OAuth, not a typed handle.**
+  *(Superseded — see the 2026-07-27 security entry above: `?u=` is now `?t=<connect
+  ticket>`, and the web app runs its own cookie-backed PKCE flow at
+  `/api/auth/x/start` rather than linking to the backend. Kept for the reasoning.)*
+  The Settings "Connect X" button links to the backend's existing
   `/oauth/x/start?u=<userId>&redirect=<returnPath>` route — the same PKCE flow
   the Telegram bot's own connect button uses — instead of asking for a typed
   `@handle`. For X, OAuth is strictly better: after verifying identity via

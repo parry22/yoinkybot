@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/session";
 import { requirePaid } from "@/lib/entitlements";
 import { rateLimited } from "@/lib/rate-limit";
+import { boundedText } from "@/lib/input";
 import { runWebDraft } from "@yoink/backend/web";
 
 export const runtime = "nodejs";
@@ -26,7 +27,7 @@ export async function POST(req: Request) {
   if (limited) return limited;
 
   const body = (await req.json().catch(() => ({}))) as { topic?: unknown };
-  const topic = typeof body.topic === "string" ? body.topic.trim() : "";
+  const topic = boundedText(body.topic);
   if (!topic) return NextResponse.json({ error: "give me something to write about" }, { status: 400 });
 
   try {

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/session";
 import { requirePaid } from "@/lib/entitlements";
 import { rateLimited } from "@/lib/rate-limit";
+import { boundedText } from "@/lib/input";
 import { runWebChatTurn } from "@yoink/backend/web";
 
 export const runtime = "nodejs";
@@ -20,7 +21,7 @@ export async function POST(req: Request) {
   if (limited) return limited;
 
   const body = (await req.json().catch(() => ({}))) as { text?: unknown };
-  const text = typeof body.text === "string" ? body.text.trim() : "";
+  const text = boundedText(body.text);
   if (!text) return NextResponse.json({ error: "empty message" }, { status: 400 });
 
   try {

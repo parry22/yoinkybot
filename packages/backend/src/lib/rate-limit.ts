@@ -56,8 +56,14 @@ export const RATE_LIMITS = {
   automation_run: { limit: 6, windowSec: 300 },
   /** The Auto Agent setup interview + agent build (model call per turn). */
   automation_interview: { limit: 30, windowSec: 300 },
-  /** Trends/virals refresh — Apify + twitterapi.io spend. */
-  inspiration_refresh: { limit: 3, windowSec: 600 },
+  /**
+   * Trends/virals refresh — Apify + twitterapi.io spend. Looser than the other
+   * spend buckets on purpose: this one fires AUTOMATICALLY whenever the
+   * Inspiration feed renders empty, so ordinary navigation in and out of the
+   * page consumes it. The server-side stale guard already makes repeats cheap
+   * no-ops; this bucket only needs to stop a genuine hammer.
+   */
+  inspiration_refresh: { limit: 8, windowSec: 600 },
   /** Approval verdict; "edit" re-drafts through the model. */
   automation_verdict: { limit: 20, windowSec: 300 },
   /** Media upload → staging (Blob write + probe). */

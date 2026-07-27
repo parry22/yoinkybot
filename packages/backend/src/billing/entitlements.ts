@@ -145,9 +145,14 @@ export function entitlementsForPlan(plan: Plan): Entitlements {
   switch (plan) {
     case "scale":
     case "founding":
-    case "trialing":
       return { plan, ...SCALE };
     case "paid":
+      return { plan, ...GROWTH };
+    // A trial runs at the ENTRY tier. This case is defensive — `entitlementsFor`
+    // routes trials through `trialCaps` and only ever passes a real DB `plan`
+    // here — but it used to answer SCALE, which would have quietly reopened the
+    // free-Scale-trial hole for any future caller. One rule, one answer.
+    case "trialing":
       return { plan, ...GROWTH };
     default:
       return FREE;
@@ -275,17 +280,29 @@ export function resolveBillingState(sub: SubscriptionRow | undefined | null, now
 }
 
 /**
- * The caps a trial runs at. A trial mirrors the plan the user actually chose at
- * signup (subscriptions.intended_plan) so the limits shown across the app match
- * the plan Settings highlights as "current" — a Growth trial gets Growth caps,
- * a Scale/Founding trial gets Scale caps. Defaults to Growth (the entry tier)
- * when nothing was recorded, so a trial never silently grants Scale caps the
- * user didn't pick. This is what stops the "Settings says Growth, but the app
- * shows Scale limits" mismatch.
+ * The caps a trial runs at: **always Growth, the entry tier.**
+ *
+ * This used to follow `subscriptions.intended_plan`, so a Scale/Founding signup
+ * trialled at Scale caps. The problem is where `intended_plan` comes from: a
+ * `?plan=` query param on the landing CTA, recorded with no payment signal of
+ * any kind. So ANY signed-in user could visit `/app?plan=scale` and hand
+ * themselves, free for 7 days, 300 paid twitterapi.io buyer searches instead of
+ * 25, unlimited virals instead of 1/day, 90 agent posts instead of 5, and
+ * `autoAgent: true` — hands-off posting with no card on file. The trial was
+ * effectively Scale for anyone who edited a URL.
+ *
+ * The rule now: **`intended_plan` decides what we SHOW, never what we GRANT.**
+ * It is still recorded and still drives which product Settings preselects and
+ * which plan the upgrade CTA points at (`purchasablePlanParam`), so someone who
+ * came in on the Scale CTA still sees Scale as the thing they're about to buy —
+ * they just trial the entry tier until a real payment lands, at which point
+ * `entitlementsForPlan(sub.plan)` takes over with the plan they actually hold.
+ *
+ * The parameter is kept for call-site clarity (and so the reasoning above sits
+ * next to the value it deliberately ignores).
  */
-function trialCaps(intendedPlan: string | null | undefined): Omit<Entitlements, "plan"> {
-  const i = (intendedPlan ?? "").trim().toLowerCase();
-  return i === "scale" || i === "founding" ? SCALE : GROWTH;
+function trialCaps(_intendedPlan: string | null | undefined): Omit<Entitlements, "plan"> {
+  return GROWTH;
 }
 
 /** The columns every billing read needs. One list so the shapes can't drift. */
@@ -332,14 +349,22 @@ export async function startTrial(userId: string, intendedPlan?: string | null): 
   );
 }
 
+/** The only values the landing CTAs ever send, and the only ones we'll store. */
+const INTENDED_PLANS = new Set(["growth", "scale", "founding"]);
+
 /**
  * Record the plan the user picked on the landing page (growth/scale/founding),
  * captured from the `?plan=` param at sign-up. Only fills an empty slot, so the
  * first choice sticks and a later visit with a different param can't clobber it.
  */
 export async function setIntendedPlan(userId: string, plan: string): Promise<void> {
-  const clean = plan.trim().slice(0, 40);
-  if (!clean) return;
+  // Whitelist, don't sanitize. This lands in a column that Settings and the
+  // upgrade CTA read back, and it arrives from a query param, so anything
+  // outside the three real landing plans is junk we'd be storing and later
+  // rendering. (It no longer grants entitlements — see `trialCaps` — but a
+  // value that can't be junk is one less thing to reason about.)
+  const clean = plan.trim().toLowerCase();
+  if (!INTENDED_PLANS.has(clean)) return;
   await query(
     `UPDATE subscriptions SET intended_plan = $2, updated_at = now()
      WHERE user_id = $1 AND intended_plan IS NULL`,
