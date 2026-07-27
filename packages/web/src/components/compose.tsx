@@ -5,6 +5,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { Copy01Icon, Tick02Icon, ArrowUp01Icon } from "@hugeicons/core-free-icons";
 import { useAgentStream } from "./use-agent-stream";
 import { UpgradeCTA } from "./upgrade-cta";
+import { AgentShimmer } from "./agent-shimmer";
 import styles from "./chat.module.css";
 
 type Draft = { id: string; content: string; platform: string; created_at?: string };
@@ -158,37 +159,15 @@ export function Compose({ initialDrafts }: { initialDrafts: Draft[] }) {
             })
           )}
 
-          {activity.length > 0 && (
-            <div className={styles.activity}>
-              {activity.map((a, i) => (
-                <div
-                  key={`${a.label}-${i}`}
-                  className={`${styles.activityRow} ${a.active ? styles.activityRowActive : ""}`}
-                >
-                  {a.active ? <span className={styles.activitySpin} /> : <span className={styles.activityDone}>✓</span>}
-                  <span className={styles.activityLabel}>{a.label}</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* THE ANTI-STRAND GUARANTEE. `activity` only has rows once a stage
-           *  event has arrived, and every row goes inactive the moment the next
-           *  one starts — so between the last completed step and the reply landing
-           *  there was nothing moving on screen at all, which is what read as the
-           *  page hanging. While `busy` is true and no row is currently spinning,
-           *  this bubble is. It is the one indicator whose lifetime is the whole
-           *  turn rather than one step of it. */}
-          {busy && !activity.some((a) => a.active) && (
-            <div
-              className={`${styles.msg} ${styles.msgBot} ${styles.typing}`}
-              role="status"
-              aria-label="Working on it"
-            >
-              <i />
-              <i />
-              <i />
-            </div>
+          {/* One shimmering line of the CURRENT action, for the whole turn. It
+           *  shows the last stage the stream emitted (falling back to a starter
+           *  before the first stage arrives), so there is always something moving
+           *  on screen between a completed step and the reply landing — the old
+           *  strand where a static tick list sat still is gone. */}
+          {busy && (
+            <AgentShimmer
+              label={activity.find((a) => a.active)?.label ?? activity.at(-1)?.label ?? "Thinking it through"}
+            />
           )}
         </div>
       </div>

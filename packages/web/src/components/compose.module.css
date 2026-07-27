@@ -86,7 +86,6 @@
 
 .sectionLabel {
   font-size: 11px;
-  text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--ink-500);
   margin: 26px 0 12px;

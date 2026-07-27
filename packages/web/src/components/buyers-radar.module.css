@@ -171,6 +171,13 @@
   color: var(--ink-900);
   line-height: 1.5;
   margin: 10px 0 12px;
+  /* Long tweets ate the whole card — clamp to 4 lines and ellipsize. The full
+     text is one click away on X, so nothing is lost. */
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .cardActions {

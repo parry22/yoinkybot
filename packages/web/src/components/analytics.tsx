@@ -76,7 +76,9 @@ function signPct(r: number | null): string {
 }
 function liftColor(r: number | null): string | undefined {
   if (r === null || r === undefined) return undefined;
-  return r >= 0 ? "var(--accent)" : "#d3455b";
+  // Up is green, down is red — the universal reading. The pink accent is the
+  // brand's action color, not a "good number" signal, so it never means "up".
+  return r >= 0 ? "#2fb170" : "#d3455b";
 }
 
 export function Analytics({ data }: { data: Data }) {

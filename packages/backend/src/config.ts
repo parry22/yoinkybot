@@ -14,6 +14,15 @@ const schema = z.object({
   // Only a `redirect` starting with this exact origin is ever honored.
   WEB_APP_URL: z.string().default("http://localhost:3002"),
 
+  // In-app feedback delivery (sidebar Feature Request / Bug Report). Sent by
+  // email via Resend's HTTP API — no SDK, just a fetch behind an API key. When
+  // RESEND_API_KEY is unset it degrades to the Telegram admin ping only, so the
+  // feature never hard-fails. FROM must be on a domain verified in Resend
+  // (meetyoinky.com); TO is where the feedback lands.
+  RESEND_API_KEY: z.string().optional(),
+  FEEDBACK_EMAIL_TO: z.string().default("parry@meetyoinky.com"),
+  FEEDBACK_EMAIL_FROM: z.string().default("Yoinky Feedback <feedback@meetyoinky.com>"),
+
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   TELEGRAM_WEBHOOK_SECRET: z.string().optional(),
   // Public t.me link to the bot — the web app's top-bar "Telegram" button points

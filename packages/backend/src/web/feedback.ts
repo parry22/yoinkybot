@@ -1,4 +1,4 @@
-import { query } from "../db/pool.js";
+import { query, queryOne } from "../db/pool.js";
 import { config } from "../config.js";
 import { getBot } from "../telegram/bot.js";
 
@@ -11,11 +11,11 @@ export interface FeedbackInput {
 }
 
 /**
- * Store one piece of in-app feedback and best-effort ping the operator on
- * Telegram so it isn't only visible by reading the table. The type is coerced to
- * one of the two known values; category is free-form (it's the dependent
- * second-dropdown choice) and message is required. Never throws for a delivery
- * failure — the row is the source of truth, the ping is a convenience.
+ * Store one piece of in-app feedback, then deliver it. Primary channel is email
+ * to FEEDBACK_EMAIL_TO (parry@meetyoinky.com by default) via Resend's HTTP API;
+ * the Telegram admin ping is a secondary that also covers the case where the web
+ * process has no bot instance. Both are best-effort — the DB row is the source
+ * of truth and a delivery failure never throws.
  */
 export async function submitFeedback(userId: string, input: FeedbackInput): Promise<{ ok: boolean }> {
   const type: FeedbackType = input.type === "bug_report" ? "bug_report" : "feature_request";
@@ -30,13 +30,51 @@ export async function submitFeedback(userId: string, input: FeedbackInput): Prom
     message,
   ]);
 
+  // Who sent it, for context + reply-to.
+  const user = await queryOne<{ email: string | null; telegram_id: string | null }>(
+    `SELECT email, telegram_id FROM users WHERE id = $1`,
+    [userId],
+  );
+  const label = type === "bug_report" ? "🐛 Bug report" : "💡 Feature request";
+  const who = user?.email ?? `user ${userId}`;
+
+  // Primary: email to the operator inbox.
+  if (config.RESEND_API_KEY) {
+    try {
+      const res = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${config.RESEND_API_KEY}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          from: config.FEEDBACK_EMAIL_FROM,
+          to: [config.FEEDBACK_EMAIL_TO],
+          // Reply-to the user so the operator can answer them directly.
+          ...(user?.email ? { reply_to: user.email } : {}),
+          subject: `${label}${category ? ` · ${category}` : ""} — from ${who}`,
+          text:
+            `${label}\n` +
+            `From: ${who}${user?.telegram_id ? ` (telegram ${user.telegram_id})` : ""}\n` +
+            `Category: ${category || "—"}\n\n` +
+            `${message}\n`,
+        }),
+      });
+      if (!res.ok) {
+        console.error("feedback email failed", res.status, await res.text().catch(() => ""));
+      }
+    } catch (err) {
+      console.error("feedback email error", err);
+    }
+  }
+
+  // Secondary: Telegram admin ping (only fires where a bot instance exists).
   const bot = getBot();
   if (bot && config.ADMIN_TELEGRAM_ID) {
-    const label = type === "bug_report" ? "🐛 Bug report" : "💡 Feature request";
     try {
       await bot.api.sendMessage(
         Number(config.ADMIN_TELEGRAM_ID),
-        `${label}${category ? ` · ${category}` : ""}\n\n${message}`,
+        `${label}${category ? ` · ${category}` : ""} — from ${who}\n\n${message}`,
       );
     } catch (err) {
       console.error("feedback admin notify failed", err);

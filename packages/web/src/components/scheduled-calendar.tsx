@@ -263,7 +263,7 @@ export function ScheduledCalendar({
                         />
                       )}{" "}
                       {p.content}
-                      {st === "failed" && <span className={styles.chipTag}>failed</span>}
+                      {st === "failed" && <span className={styles.chipTag}>Failed</span>}
                       {st === "published" && p.externalUrl && (
                         <a
                           className={styles.chipTag}
@@ -272,7 +272,7 @@ export function ScheduledCalendar({
                           rel="noreferrer"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          view
+                          View
                         </a>
                       )}
                     </div>

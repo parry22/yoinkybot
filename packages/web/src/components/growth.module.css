@@ -90,7 +90,6 @@
 
 .nextLabel {
   font-size: 11px;
-  text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--accent);
   margin-bottom: 8px;
@@ -184,7 +183,6 @@
 
 .tileLabel {
   font-size: 11px;
-  text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--ink-500);
   margin-bottom: 12px;
@@ -557,7 +555,6 @@
 
 .tlLabel {
   font-size: 11px;
-  text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--accent);
   margin-bottom: 6px;

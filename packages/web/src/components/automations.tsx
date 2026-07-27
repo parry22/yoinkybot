@@ -6,6 +6,7 @@ import { ArrowUp01Icon } from "@hugeicons/core-free-icons";
 import panel from "./panel.module.css";
 import { useAgentStream } from "./use-agent-stream";
 import { UpgradeCTA } from "./upgrade-cta";
+import { AgentShimmer } from "./agent-shimmer";
 import styles from "./automations.module.css";
 
 type SourceType = "trend_ride" | "unlock_backlog" | "custom";
@@ -277,28 +278,12 @@ export function Automations({
             </div>
           )}
 
-          {activity.length > 0 && (
-            <div className={styles.agentActivity}>
-              {activity.map((a, i) => (
-                <div
-                  key={`${a.label}-${i}`}
-                  className={`${styles.agentActivityRow} ${a.active ? styles.agentActivityRowActive : ""}`}
-                >
-                  {a.active ? <span className={styles.agentSpin} /> : <span className={styles.agentTick}>✓</span>}
-                  <span className={styles.agentActivityLabel}>{a.label}</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Same guarantee as Compose: while a turn is in flight and no activity
-           *  row is spinning, something on screen still has to be moving. */}
-          {busy && !activity.some((a) => a.active) && (
-            <div className={`${styles.turn} ${styles.turnBot} ${styles.turnTyping}`} role="status" aria-label="Thinking">
-              <i />
-              <i />
-              <i />
-            </div>
+          {/* One shimmering line of the current action for the whole turn —
+           *  same indicator as Compose (see agent-shimmer.tsx). */}
+          {busy && (
+            <AgentShimmer
+              label={activity.find((a) => a.active)?.label ?? activity.at(-1)?.label ?? "Thinking it through"}
+            />
           )}
         </div>
       </div>

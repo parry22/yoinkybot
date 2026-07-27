@@ -1,0 +1,49 @@
+.wrap {
+  align-self: flex-start;
+  padding: 10px 0;
+}
+
+/*
+ * Grayish text with a brighter band sweeping across it. The gradient is clipped
+ * to the glyphs (background-clip: text), so the highlight travels over the words
+ * themselves. Base + highlight are theme tokens, so it reads correctly in both
+ * light (the band darkens toward ink-900) and dark (it brightens toward it).
+ */
+.text {
+  display: inline-block;
+  font-size: 14px;
+  font-weight: 460;
+  line-height: 1.4;
+  background-image: linear-gradient(
+    100deg,
+    var(--ink-500) 0%,
+    var(--ink-500) 38%,
+    var(--ink-900) 50%,
+    var(--ink-500) 62%,
+    var(--ink-500) 100%
+  );
+  background-size: 220% 100%;
+  background-repeat: no-repeat;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: agentShimmerSweep 1.5s linear infinite;
+}
+
+@keyframes agentShimmerSweep {
+  0% {
+    background-position: 180% 0;
+  }
+  100% {
+    background-position: -60% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .text {
+    animation: none;
+    color: var(--ink-600);
+    -webkit-text-fill-color: var(--ink-600);
+  }
+}
