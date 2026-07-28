@@ -13,14 +13,18 @@ import { chatToolExecutor, deliverTurnOutput } from "../telegram/actions.js";
 import { ensureBoss } from "../jobs/boss.js";
 import { collectingChannel } from "./channel.js";
 import { streamingChannel, toolLabel, draftStageLabel, type Emit } from "./stream.js";
+import { runAsUser } from "../byok/context.js";
 
 /** One steady-state chat turn: bounded multi-tool loop, capture, final reply. */
 export async function runWebChatTurn(user: User, text: string): Promise<{ messages: string[] }> {
   // Chat tools (connect, schedule, refresh diagnosis) may enqueue jobs.
   await ensureBoss();
   const { channel, messages } = collectingChannel();
-  const result = await converseWithUser(user.id, text, { executeTool: chatToolExecutor(user, channel) });
-  await deliverTurnOutput(user, text, result, channel);
+  // Ambient BYOK identity — same as the Telegram turn (telegram/turns.ts).
+  await runAsUser(user.id, async () => {
+    const result = await converseWithUser(user.id, text, { executeTool: chatToolExecutor(user, channel) });
+    await deliverTurnOutput(user, text, result, channel);
+  });
   return { messages };
 }
 
@@ -58,13 +62,16 @@ export async function runWebChatTurnStreaming(user: User, text: string, emit: Em
   emit({ type: "stage", label: "Thinking it through" });
 
   try {
-    const result = await converseWithUser(user.id, text, {
-      executeTool: async (tool, replyBeat) => {
-        emit({ type: "stage", label: toolLabel(tool.name) });
-        return execute(tool, replyBeat);
-      },
-    });
-    await deliverTurnOutput(user, text, result, channel);
+    // Ambient BYOK identity, same as the non-streaming turn above.
+    const result = await runAsUser(user.id, () =>
+      converseWithUser(user.id, text, {
+        executeTool: async (tool, replyBeat) => {
+          emit({ type: "stage", label: toolLabel(tool.name) });
+          return execute(tool, replyBeat);
+        },
+      }),
+    );
+    await runAsUser(user.id, () => deliverTurnOutput(user, text, result, channel));
     if (!said) {
       // Reached only when the model returned an empty reply AND no tool spoke.
       spoke({ type: "message", text: "that one came back empty on my side. say it again and i'll have another go?" });

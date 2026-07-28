@@ -5,7 +5,10 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 // visitors are redirected to our branded /sign-in explicitly (rather than relying
 // on NEXT_PUBLIC_CLERK_SIGN_IN_URL / Clerk's hosted portal), so the redirect is
 // deterministic with no extra env config. Clerk still validates the real session.
-const isProtected = createRouteMatcher(["/app(.*)"]);
+// `/setup-keys` is the BYOK gate's destination. It sits outside /app (so it
+// doesn't inherit the redirect that sends people to it) but it is just as
+// private, so it has to be listed here explicitly.
+const isProtected = createRouteMatcher(["/app(.*)", "/setup-keys(.*)"]);
 
 export default clerkMiddleware(async (auth, req) => {
   if (isProtected(req)) {

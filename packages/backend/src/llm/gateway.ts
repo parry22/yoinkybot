@@ -17,6 +17,7 @@ import { createHash } from "node:crypto";
 import { config } from "../config.js";
 import { recordUsage } from "../usage/meter.js";
 import { queryOne } from "../db/pool.js";
+import { keyForUser } from "../byok/keys.js";
 
 // "cheap_floor" is a legacy value some callsites still set; it maps like "cheap".
 export type Tier = "none" | "cheap" | "cheap_floor" | "frontier";
@@ -214,9 +215,25 @@ export async function fetchWithTimeout(
  *  degrade, not kill the turn). Both transports speak the OpenAI chat shape. */
 async function callModel(req: LlmRequest, useJsonMode: boolean, sendReasoning = true): Promise<LlmResponse> {
   // Model AND transport now follow the tier — see routeFor.
-  const { model, xai } = routeFor(req.tier);
-  const cheapModel = !xai && model !== config.MODEL_CHAT;
-  const apiKey = xai ? config.XAI_API_KEY : config.OPENROUTER_API_KEY;
+  let { model, xai } = routeFor(req.tier);
+  let cheapModel = !xai && model !== config.MODEL_CHAT;
+
+  /**
+   * BYOK: a lifetime user's own OpenRouter key, so their generation bills their
+   * account and not ours — that's the whole basis of the uncapped lifetime plan
+   * (billing/entitlements.ts LIFETIME).
+   *
+   * A BYOK key is an OPENROUTER key, so it also forces the OpenRouter transport:
+   * handing it to api.x.ai would 401. That's why `xai` is reassigned rather than
+   * just the key.
+   */
+  const byokKey = await keyForUser(req.userId, "openrouter");
+  if (byokKey && xai) {
+    xai = false;
+    model = config.MODEL_CHAT;
+    cheapModel = model !== config.MODEL_CHAT;
+  }
+  const apiKey = byokKey ?? (xai ? config.XAI_API_KEY : config.OPENROUTER_API_KEY);
   if (!apiKey) throw new Error(`${xai ? "XAI_API_KEY" : "OPENROUTER_API_KEY"} not configured`);
   const baseUrl = xai ? config.XAI_BASE_URL : config.OPENROUTER_BASE_URL;
   const effort = reasoningEffort(req.tier);

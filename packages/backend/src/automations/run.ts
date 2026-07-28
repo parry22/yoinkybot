@@ -27,6 +27,7 @@ import {
   setRunStatus,
 } from "./store.js";
 import type { Automation, RunStatus } from "./types.js";
+import { runAsUser } from "../byok/context.js";
 
 export interface RunResult {
   status: RunStatus;
@@ -43,6 +44,15 @@ export type AutomationStage = "caps" | "select" | "moderate" | "drafting" | "del
  * `onStage` is optional progress reporting — the cron ignores it.
  */
 export async function runAutomationOnce(
+  automation: Automation,
+  opts: { manual?: boolean; onStage?: (s: AutomationStage) => void } = {},
+): Promise<RunResult> {
+  // Ambient BYOK identity for the whole run — source selection, drafting and any
+  // scrape underneath resolve this user's own keys (byok/context.ts).
+  return runAsUser(automation.user_id, () => runAutomationOnceInner(automation, opts));
+}
+
+async function runAutomationOnceInner(
   automation: Automation,
   opts: { manual?: boolean; onStage?: (s: AutomationStage) => void } = {},
 ): Promise<RunResult> {

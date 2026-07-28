@@ -15,6 +15,8 @@
  * (see docs/INTERNAL.md §1).
  */
 
+import { runAsUser } from "../byok/context.js";
+
 interface Slot<C> {
   pending?: { texts: string[]; carrier: C };
 }
@@ -47,7 +49,10 @@ export async function runSerializedTurn<C>(
   try {
     for (;;) {
       try {
-        await handler(currentText, currentCarrier);
+        // Ambient BYOK identity for the whole turn: every tool the chat brain
+        // reaches for underneath — drafts, searches, scrapes — resolves this
+        // user's own keys rather than ours (byok/context.ts).
+        await runAsUser(userId, () => handler(currentText, currentCarrier));
       } catch (err) {
         // The handler owns user-facing error replies; this is the last-resort
         // guard so one failed turn can't wedge the queue.

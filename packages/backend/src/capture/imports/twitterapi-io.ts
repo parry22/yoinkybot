@@ -1,4 +1,6 @@
 import { config } from "../../config.js";
+import { currentUserId } from "../../byok/context.js";
+import { scraperKeyForUser } from "../../byok/keys.js";
 import type { ImportedPost } from "./x.js";
 import type { ProfilePull } from "./apify-profile.js";
 
@@ -85,15 +87,34 @@ export function parseTwitterApiIoTweets(
   return { posts, bio, followers };
 }
 
+/** Usable when EITHER we have a global key or the ambient user brought their own.
+ *  The old guard checked only the global key, which would have refused a BYOK
+ *  user on an instance that has no key of its own. */
+async function assertTwitterApiUsable(): Promise<void> {
+  if (config.TWITTERAPI_IO_KEY) return;
+  const byok = await scraperKeyForUser(currentUserId());
+  if (byok?.provider === "twitterapi") return;
+  throw new Error("TWITTERAPI_IO_KEY not configured");
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-/** One page, retrying once on a 429 (honoring Retry-After if the API sends one). */
+/** One page, retrying once on a 429 (honoring Retry-After if the API sends one).
+ *
+ *  EVERY twitterapi.io request in this file goes through here, which is why BYOK
+ *  key resolution lives at this one point rather than in each of the five
+ *  exported helpers — those only guard on config, they never send the header. */
 async function fetchPage(url: URL): Promise<LastTweetsResponse> {
+  // A lifetime user's own twitterapi.io key when we're inside their work
+  // (byok/context.ts); ours otherwise. See lib/apify.ts for why the fallback
+  // is deliberate rather than a failure.
+  const byok = await scraperKeyForUser(currentUserId());
+  const apiKey = byok?.provider === "twitterapi" ? byok.key : config.TWITTERAPI_IO_KEY;
   for (let attempt = 0; attempt < 2; attempt++) {
     const res = await fetch(url, {
-      headers: { "X-API-Key": config.TWITTERAPI_IO_KEY! },
+      headers: { "X-API-Key": apiKey! },
       signal: AbortSignal.timeout(30_000),
     });
     if (res.status === 429 && attempt === 0) {
@@ -119,7 +140,7 @@ async function fetchTweets(
   maxPosts: number,
   opts?: { sinceDays: number; minPosts: number },
 ): Promise<RawTweet[]> {
-  if (!config.TWITTERAPI_IO_KEY) throw new Error("TWITTERAPI_IO_KEY not configured");
+  await assertTwitterApiUsable();
   const cutoff = opts ? Date.now() - opts.sinceDays * 86_400_000 : 0;
   const all: RawTweet[] = [];
   let cursor = "";
@@ -279,7 +300,7 @@ function toXTweet(t: RawTweet): XTweet | null {
  * handled.
  */
 export async function pullTweetsByIds(ids: string[]): Promise<XTweet[]> {
-  if (!config.TWITTERAPI_IO_KEY) throw new Error("TWITTERAPI_IO_KEY not configured");
+  await assertTwitterApiUsable();
   if (ids.length === 0) return [];
   const url = new URL("/twitter/tweets", config.TWITTERAPI_IO_BASE_URL);
   url.searchParams.set("tweet_ids", ids.join(","));
@@ -308,7 +329,7 @@ export interface SearchOpts {
  * providers), `-filter:replies`, `conversation_id:`, `lang:`.
  */
 export async function searchTweets(query: string, opts: SearchOpts): Promise<XTweet[]> {
-  if (!config.TWITTERAPI_IO_KEY) throw new Error("TWITTERAPI_IO_KEY not configured");
+  await assertTwitterApiUsable();
   const all: XTweet[] = [];
   let cursor = "";
   let lastRequestAt = 0;
@@ -358,7 +379,7 @@ export interface XMention {
  * per fetch cycle is enough, the ingest job runs several times a day.
  */
 export async function pullXMentions(handle: string): Promise<XMention[]> {
-  if (!config.TWITTERAPI_IO_KEY) throw new Error("TWITTERAPI_IO_KEY not configured");
+  await assertTwitterApiUsable();
   const url = new URL("/twitter/user/mentions", config.TWITTERAPI_IO_BASE_URL);
   url.searchParams.set("userName", handle);
   const body = (await fetchPage(url)) as LastTweetsResponse & { tweets?: RawTweet[] };

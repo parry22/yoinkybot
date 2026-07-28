@@ -6,6 +6,7 @@ import { applyRecencyWindow } from "../capture/imports/x.js";
 import { sendTelegram } from "../telegram/bot.js";
 import { track } from "../analytics/posthog.js";
 import type { Platform } from "../lib/types.js";
+import { runAsUser } from "../byok/context.js";
 
 export type { Platform };
 
@@ -82,6 +83,12 @@ export async function startConnect(userId: string, platform: Platform, handle: s
  * diagnosis readiness check.
  */
 export async function handleIngestProfile(job: IngestProfileJob): Promise<void> {
+  // The full history pull is the single biggest scraper spend a user ever
+  // triggers, so it runs under their BYOK identity (byok/context.ts).
+  return runAsUser(job.userId, () => ingestProfileInner(job));
+}
+
+async function ingestProfileInner(job: IngestProfileJob): Promise<void> {
   const account = await queryOne<{ id: string; platform: Platform; handle: string }>(
     `UPDATE connected_accounts SET status = 'ingesting' WHERE id = $1 RETURNING id, platform, handle`,
     [job.accountId],

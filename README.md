@@ -24,6 +24,36 @@ which is where it's most useful. Both share one Postgres and one `users` row.
 
 <!-- Keep newest-first. Update this whenever a change ships that a reader of the repo should know about. -->
 
+- **2026-07-28 — Lifetime plan ($99, BYOK) + Growth $9 → $15.** Detail in
+  `docs/INTERNAL.md` §3u; migration `0037`. The landing page's "Enterprise /
+  Custom" card is now **Lifetime**, and it — not Scale — is the featured card, on
+  both the homepage and `/pricing`, with a "limited time only" line.
+
+  **One payment, no caps.** Every other plan's caps bound what *we* spend; a
+  lifetime user brings their own model and scraper keys, so that spend lands on
+  their account and a cap would only throttle a product they bought outright.
+  Growth moved to $15 to widen the gap and push traffic at the deal — the live
+  Dodo product price was updated too, not just the label, so the page and the
+  checkout agree.
+
+  **Dodo one-time products fire `payment.succeeded`, not `subscription.*`** —
+  which the webhook ignored entirely. Left as-is, a customer could have paid $99
+  and been provisioned nothing, silently. Now handled explicitly, sharing the
+  same webhook-id idempotency claim. `resolveBillingState` also short-circuits on
+  lifetime: it has no renewal, no paid-through date and no dunning, so a stray
+  subscription event must never be able to revoke it. Only a refund or a lost
+  dispute does.
+
+  **BYOK.** Keys are AES-256-GCM encrypted (`BYOK_ENCRYPTION_KEY`, deploy env
+  only), validated with a real authenticated call *before* being stored, and are
+  never readable back — only the last four characters ever leave the database.
+  A lifetime user's keys then power their LLM calls and scrapes; an
+  `AsyncLocalStorage` carries "whose work is this" into the scraper code rather
+  than threading a user id through dozens of signatures, and it falls back to our
+  key if an entry point is ever missed, so the failure mode is "costs us money",
+  never "broken for a paying user". New signed-in users on the plan are gated at
+  `/setup-keys` until both a model key and a reader key are in.
+
 - **2026-07-28 — Account switcher at the bottom of the sidebar.** Detail in
   `docs/INTERNAL.md` §3t. A Clerk session maps 1:1 to a `users` row, and the X
   connection, memory graph, diagnosis, plan and billing all hang off it — so

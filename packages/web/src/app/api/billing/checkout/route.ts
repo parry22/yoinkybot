@@ -26,8 +26,16 @@ export async function GET(req: Request) {
   if (!user) return NextResponse.redirect(new URL("/sign-in", origin));
 
   const planParam = new URL(req.url).searchParams.get("plan");
-  const plan: "paid" | "scale" | "founding" =
-    planParam === "founding" ? "founding" : planParam === "scale" ? "scale" : "paid";
+  const plan: "paid" | "scale" | "founding" | "lifetime" =
+    planParam === "founding"
+      ? "founding"
+      : planParam === "scale"
+        ? "scale"
+        // Lifetime is a ONE-TIME product — createCheckout omits subscription_data
+        // for it, so it never carries a trial and never renews.
+        : planParam === "lifetime"
+          ? "lifetime"
+          : "paid";
 
   try {
     const ov = await billingOverview(user.id);

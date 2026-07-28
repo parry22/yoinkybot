@@ -11,6 +11,7 @@ import { query } from "../db/pool.js";
 import { scanForUser } from "../buyer/scan.js";
 import type { BuyerScanNowJob } from "./boss.js";
 import { scanBuyerSignals, type ScanResponse } from "../web/buyers-radar.js";
+import { runAsUser } from "../byok/context.js";
 
 export async function handleBuyerRadar(): Promise<void> {
   if (!config.BUYER_RADAR_ENABLED || !config.BUYER_RADAR_PROACTIVE) return; // ships dark
@@ -23,7 +24,10 @@ export async function handleBuyerRadar(): Promise<void> {
   );
   for (const u of users) {
     try {
-      await scanForUser(u.user_id);
+      // BYOK: everything under here resolves this user's own scraper key
+      // (byok/context.ts). Wrapping the per-user loop body is what makes the
+      // whole ingestion/search tree below inherit it without threading an id.
+      await runAsUser(u.user_id, () => scanForUser(u.user_id));
     } catch (err) {
       console.error(`buyer radar scan failed for ${u.user_id}`, err);
     }

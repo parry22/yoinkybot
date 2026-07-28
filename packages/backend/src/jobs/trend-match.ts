@@ -17,6 +17,7 @@ import { entitlementsFor } from "../billing/entitlements.js";
 import { casualize, enforceStyle } from "../prompts/style.js";
 import { sendTelegram } from "../telegram/bot.js";
 import { inQuietHours, type UserSettings } from "../lib/time.js";
+import { runAsUser } from "../byok/context.js";
 
 /** Volume-verify at most this many niche-nearest candidates per user per run —
  *  no point paying for tweet volume on a topic that's nowhere near their niche.
@@ -99,7 +100,10 @@ export async function handleTrendMatch(): Promise<void> {
     try {
       const ent = await entitlementsFor(u.id);
       if (!ent.macroMatching) continue;
-      await trendMatchForUser(u.id, u.settings ?? {}, { seed: !u.has_tg });
+      // BYOK: everything under here resolves this user's own scraper key
+      // (byok/context.ts). Wrapping the per-user loop body is what makes the
+      // whole ingestion/search tree below inherit it without threading an id.
+      await runAsUser(u.id, () => trendMatchForUser(u.id, u.settings ?? {}, { seed: !u.has_tg }));
     } catch (err) {
       console.error(`trend match failed for ${u.id}`, err);
     }

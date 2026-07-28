@@ -11,13 +11,29 @@
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  /* Three plans since Lifetime joined Growth and Scale. `minmax(0, 1fr)` rather
+   * than `1fr`: a grid track's default minimum is its content, so a long feature
+   * line would otherwise push the table wider than the settings panel. */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0;
   margin-top: 16px;
   border: 0.5px solid var(--stroke);
   border-radius: var(--radius-md);
   overflow: hidden;
   background: var(--surface);
+}
+
+/* Three cards side by side stop being readable well before the mobile
+ * breakpoint — the price and the feature lines get squeezed together long
+ * before the sidebar collapses. Stack them early. */
+@media (max-width: 900px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+  .card + .card {
+    border-left: 0;
+    border-top: 0.5px solid var(--stroke);
+  }
 }
 
 /* One hairline between the two cards rather than two card borders + a gap. */
@@ -35,6 +51,23 @@
 /* The only emphasis in the table: a 2px ink rule down the active plan. */
 .cardCurrent {
   box-shadow: inset 2px 0 0 var(--ink-900);
+}
+
+/* The promoted plan (Lifetime). Still monochrome — a faint ink wash and a top
+ * rule, not a colour. The whole point of this component's design is that plans
+ * compete on price and contents, so "featured" raises contrast rather than
+ * introducing a second accent that would fight the current-plan rule. */
+.cardFeatured {
+  background: var(--hover);
+  box-shadow: inset 0 2px 0 var(--ink-900);
+}
+
+/* A card that is both current AND featured keeps the current-plan rule readable
+ * by carrying both insets rather than letting one overwrite the other. */
+.cardFeatured.cardCurrent {
+  box-shadow:
+    inset 0 2px 0 var(--ink-900),
+    inset 2px 0 0 var(--ink-900);
 }
 
 .cardTop {

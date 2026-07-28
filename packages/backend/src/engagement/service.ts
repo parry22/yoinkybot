@@ -18,6 +18,7 @@ import {
   learnedThreshold,
   pickNextMention,
 } from "./scoring.js";
+import { runAsUser } from "../byok/context.js";
 
 /** Replies to mentions older than this read as weird — never surface them. */
 const MAX_MENTION_AGE_DAYS = 7;
@@ -43,7 +44,10 @@ export async function handleMentionsFetch(): Promise<void> {
   );
   for (const u of users) {
     try {
-      await ingestMentionsForUser(u.user_id, u.handle);
+      // BYOK: everything under here resolves this user's own scraper key
+      // (byok/context.ts). Wrapping the per-user loop body is what makes the
+      // whole ingestion/search tree below inherit it without threading an id.
+      await runAsUser(u.user_id, () => ingestMentionsForUser(u.user_id, u.handle));
     } catch (err) {
       console.error(`mentions fetch failed for ${u.user_id}`, err);
     }

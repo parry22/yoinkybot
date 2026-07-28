@@ -1,22 +1,27 @@
 import { redirect } from "next/navigation";
 import { SignOutButton } from "@clerk/nextjs";
 import { getSessionUser } from "@/lib/session";
-import { listConnectedAccounts, billingOverview, config } from "@yoink/backend/web";
+import { listConnectedAccounts, billingOverview, byokStatus, config } from "@yoink/backend/web";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { TelegramConnectButton } from "@/components/telegram-connect";
 import { XConnectRow } from "@/components/connect-accounts";
 import { ManageAccountButton } from "@/components/account-manage";
 import { PlanPicker } from "@/components/plan-picker";
+import { ByokSettings } from "@/components/byok-settings";
 import styles from "@/components/panel.module.css";
 
-type PlanKey = "growth" | "scale" | "founding";
+type PlanKey = "growth" | "scale" | "founding" | "lifetime";
 
 /** Resolve which plan card to highlight: the active plan, else the one picked at signup. */
 function currentPlanKey(activePlan: string | null, intended: string | null): PlanKey {
+  // Lifetime first: it's the strictly-highest tier, so once someone holds it no
+  // other card should ever read as "current".
+  if (activePlan === "lifetime") return "lifetime";
   if (activePlan === "scale") return "scale";
   if (activePlan === "founding") return "founding";
   if (activePlan === "paid") return "growth";
   const i = (intended ?? "").toLowerCase();
+  if (i === "lifetime") return "lifetime";
   if (i === "scale") return "scale";
   if (i === "founding") return "founding";
   return "growth";
@@ -34,9 +39,12 @@ export default async function SettingsPage({
   const user = await getSessionUser();
   if (!user) redirect("/sign-in");
 
-  const [accounts, billing, sp] = await Promise.all([
+  const [accounts, billing, byok, sp] = await Promise.all([
     listConnectedAccounts(user.id).catch(() => []),
     billingOverview(user.id).catch(() => null),
+    // Degrade to "not a BYOK user" on error: the panel simply doesn't render,
+    // which is the right failure for a settings page.
+    byokStatus(user.id).catch(() => ({ required: false, complete: true, hasLlm: false, hasScraper: false, keys: [] })),
     searchParams,
   ]);
   const x = accounts.find((a) => a.platform === "x") ?? null;
@@ -109,6 +117,11 @@ export default async function SettingsPage({
               growthWas={config.PAID_PRICE_WAS_LABEL}
               scalePrice={config.SCALE_PRICE_LABEL}
               scaleWas={config.SCALE_PRICE_WAS_LABEL}
+              lifetimePrice={config.LIFETIME_PRICE_LABEL}
+              lifetimeNote={config.LIFETIME_NOTE}
+              // Hidden when the Dodo product isn't configured — better no card
+              // than a card whose checkout can't complete.
+              lifetimeAvailable={Boolean(config.DODO_PRODUCT_LIFETIME)}
             />
           )}
 
@@ -120,6 +133,15 @@ export default async function SettingsPage({
             </div>
           )}
         </div>
+
+        {/* Only for the plan that uses them — every other plan runs on our keys
+          * and would just be confused by a credentials panel. */}
+        {byok.required && (
+          <div className={styles.section}>
+            <div className={styles.sectionLabel}>Your API keys</div>
+            <ByokSettings initial={byok} />
+          </div>
+        )}
 
         <div className={styles.section}>
           <div className={styles.sectionLabel}>Connected X</div>

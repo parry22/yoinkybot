@@ -72,6 +72,54 @@ describe("entitlementsForPlan (Growth vs Scale differentiation)", () => {
   });
 });
 
+describe("lifetime (BYOK)", () => {
+  it("has no caps at all — they fund their own spend", () => {
+    const e = entitlementsForPlan("lifetime");
+    expect(e.scheduledPostsPerMonth).toBeNull();
+    expect(e.buyerIntentsPerMonth).toBeNull();
+    expect(e.viralPerDay).toBeNull();
+    expect(e.automationPostsPerMonth).toBeNull();
+    expect(e.autoAgent).toBe(true);
+    // Politeness, not cost: this bounds unprompted messages, which BYOK doesn't change.
+    expect(e.maxResurfacePerWeek).toBe(7);
+  });
+
+  /**
+   * The whole subscription state machine reasons about renewals, paid-through
+   * dates and dunning. A lifetime purchase has none of those, so a stray
+   * subscription event must never be able to revoke it — that would take access
+   * from someone who paid once and owns it forever.
+   */
+  const lifetimeRow = (over: Partial<SubscriptionRow> = {}): SubscriptionRow => ({
+    plan: "lifetime",
+    status: "active",
+    trial_ends_at: null,
+    current_period_end: null,
+    updated_at: null,
+    intended_plan: null,
+    dodo_subscription_id: null,
+    ...over,
+  });
+
+  it("stays entitled with no period end and no subscription id", () => {
+    const d = resolveBillingState(lifetimeRow(), Date.now());
+    expect(d).toEqual({ state: "active", entitled: true, accessUntil: null });
+  });
+
+  it("survives stray subscription lifecycle events", () => {
+    for (const status of ["cancelled", "expired", "on_hold", "failed", "trialing"]) {
+      const d = resolveBillingState(lifetimeRow({ status }), Date.now());
+      expect(d.entitled, `status=${status} must not revoke a lifetime plan`).toBe(true);
+    }
+  });
+
+  it("IS revoked when the money goes back", () => {
+    for (const status of ["refunded", "disputed"]) {
+      expect(resolveBillingState(lifetimeRow({ status }), Date.now()).entitled).toBe(false);
+    }
+  });
+});
+
 describe("withinCap / remainingFor (null = unlimited)", () => {
   it("a null cap is always within and has null remaining", () => {
     expect(withinCap(9999, null)).toBe(true);

@@ -76,6 +76,12 @@ export const RATE_LIMITS = {
    * drip is fine, a flood is not.
    */
   feedback: { limit: 5, windowSec: 3600 },
+  /**
+   * Saving a BYOK key. Each save makes a live validation call to the provider,
+   * so this bounds us being used to probe someone else's API for valid keys.
+   * Generous enough for a real setup (three providers, a few typos each).
+   */
+  byok_save: { limit: 20, windowSec: 600 },
 } as const satisfies Record<string, RateLimitRule>;
 
 export type RateLimitBucket = keyof typeof RATE_LIMITS;

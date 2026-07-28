@@ -16,6 +16,7 @@ import { viralCaseStudy } from "../prompts/viral-case-study.v1.js";
 import { viralToolSchema } from "../trends/viral-tools.js";
 import { casualize, enforceStyle } from "../prompts/style.js";
 import { sendTelegram } from "../telegram/bot.js";
+import { runAsUser } from "../byok/context.js";
 
 /**
  * The daily viral tweet case study (§3h). Once a day, one high-impression,
@@ -70,7 +71,12 @@ export async function handleViralBenchmark(): Promise<void> {
     try {
       const ent = await entitlementsFor(u.id);
       if (!ent.macroMatching) continue;
-      await viralBenchmarkForUser(u.id, pool, u.settings ?? {}, { viralPerDay: ent.viralPerDay, seed: !u.has_tg });
+      // BYOK: everything under here resolves this user's own scraper key
+      // (byok/context.ts). Wrapping the per-user loop body is what makes the
+      // whole ingestion/search tree below inherit it without threading an id.
+      await runAsUser(u.id, () =>
+        viralBenchmarkForUser(u.id, pool, u.settings ?? {}, { viralPerDay: ent.viralPerDay, seed: !u.has_tg }),
+      );
     } catch (err) {
       console.error(`viral benchmark failed for ${u.id}`, err);
     }

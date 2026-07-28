@@ -320,6 +320,14 @@ const schema = z.object({
   POSTHOG_PERSONAL_API_KEY: z.string().optional(),
   POSTHOG_PROJECT_ID: z.string().optional(),
 
+  // ── BYOK (lifetime plan) ─────────────────────────────────────────────────
+  // 32-byte master key for AES-256-GCM encryption of user-supplied provider API
+  // keys (lib/crypto.ts). Deploy env ONLY — never the database, so a dump of
+  // `user_api_keys` is inert without it. Generate: openssl rand -base64 32
+  // Unset → saving a BYOK key throws rather than storing it in the clear, and a
+  // boot warning fires.
+  BYOK_ENCRYPTION_KEY: z.string().optional(),
+
   DODO_API_KEY: z.string().optional(),
   DODO_WEBHOOK_SECRET: z.string().optional(),
   DODO_ENV: z.enum(["test_mode", "live_mode"]).default("test_mode"),
@@ -329,17 +337,31 @@ const schema = z.object({
   // can tell Growth from Scale.
   DODO_PRODUCT_SCALE: z.string().optional(),
   DODO_PRODUCT_FOUNDING: z.string().optional(),
+  // "Lifetime" — a ONE-TIME product, not a subscription. Dodo fires
+  // `payment.succeeded` for it rather than `subscription.*`, which the webhook
+  // now handles separately (billing/dodo.ts). Unset → the lifetime card is
+  // hidden everywhere rather than offering a checkout that can't complete.
+  DODO_PRODUCT_LIFETIME: z.string().optional(),
   // Human-readable prices shown in /upgrade copy, the checkout button and the
   // Settings plan picker. Keep in sync with the actual Dodo product prices AND
   // with the landing page (separate repo) — nothing derives these from Dodo, so
   // a price change is a three-place edit.
   //
-  // Today: early-bird pricing, Growth $9/mo and Scale $49/mo, anchored against
-  // the standard $29 / $79. The *_WAS_LABEL values are display-only strikethroughs.
-  PAID_PRICE_LABEL: z.string().default("$9/mo"),
+  // Today (2026-07-28): Growth $15/mo and Scale $49/mo, anchored against the
+  // standard $29 / $79. Growth moved $9 → $15 deliberately, to widen the gap to
+  // the lifetime deal and push traffic at it.
+  // The *_WAS_LABEL values are display-only strikethroughs.
+  PAID_PRICE_LABEL: z.string().default("$15/mo"),
   PAID_PRICE_WAS_LABEL: z.string().default("$29"),
   SCALE_PRICE_LABEL: z.string().default("$49/mo"),
   SCALE_PRICE_WAS_LABEL: z.string().default("$79"),
+  // Lifetime: one payment, BYOK, no caps. No "/mo" — splitPrice keys off the
+  // slash to decide whether to render a unit, so this stays a bare amount.
+  LIFETIME_PRICE_LABEL: z.string().default("$99"),
+  // Shown on the lifetime card. It's a deliberately time-boxed offer, so the
+  // copy has to say so — and being a string, the wording can change without a
+  // deploy when the window actually closes.
+  LIFETIME_NOTE: z.string().default("Limited time only — this deal goes away soon."),
   // Off during testing → everyone gets full features. Set true to enforce plans.
   // NOTE: a boot warning fires (index.ts) if this is false in production, so a
   // deploy that forgets the flag can't silently give everyone the paid tier.

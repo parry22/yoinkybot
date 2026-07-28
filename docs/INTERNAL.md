@@ -2093,6 +2093,81 @@ correctness beats the snappier transition.
 header is the always-visible account affordance); on desktop it is now duplicate
 account UI and is a candidate for removal.
 
+## 3u. Lifetime plan + BYOK (2026-07-28)
+
+A one-payment tier that only works because the buyer funds their own API spend.
+Migration `0037_lifetime_byok`. Pricing moved with it: **Growth $9 → $15** (to
+widen the gap to the lifetime deal and push traffic at it), and the landing
+page's "Enterprise / Custom" card was replaced by Lifetime, which is now the
+featured card instead of Scale.
+
+**The plan.** `$99` once, `plan='lifetime'`, **no caps at all** —
+`scheduledPostsPerMonth`, `buyerIntentsPerMonth`, `viralPerDay` and
+`automationPostsPerMonth` are all `null`, `autoAgent` on. Every other plan's caps
+exist to bound what WE spend; with BYOK that spend lands on the user's account,
+so a cap would only throttle a product they already bought outright.
+`maxResurfacePerWeek` stays at 7 because it's a *politeness* limit (how often we
+message them unprompted), not a cost one.
+
+> **`resolveBillingState` short-circuits on lifetime, and has to.** The rest of
+> that function reasons about subscriptions — trial clocks, paid-through dates,
+> dunning grace, "cancelled but paid until". A lifetime purchase has none of
+> those: one payment, no renewal to fail, no period to end. Falling through with
+> `current_period_end IS NULL` would let a stray `cancelled` or `on_hold` event
+> permanently revoke access from someone who paid once and owns it forever — the
+> worst billing bug available to us. Only `refunded`/`disputed` revoke.
+
+**Dodo: a ONE-TIME product, which the webhook was blind to.** Dodo fires
+`subscription.*` for recurring products; a one-time product fires
+`payment.succeeded`, which fell straight into the handler's `!status` early
+return. **A customer could have paid $99 and been provisioned nothing, with no
+error anywhere.** `provisionLifetime` handles it explicitly, identified by
+product id OR by the `plan` metadata we set at checkout (the payment payload
+doesn't always echo the cart). It deliberately does NOT reuse the subscription
+upsert — no `dodo_subscription_id`, no `current_period_end` — but shares the same
+webhook-id idempotency claim. `createCheckout` omits `subscription_data` for a
+one-time plan, so it never carries a trial. Refunds still revoke through the
+existing `REVOKING_STATUSES` path, which correlates by `dodo_customer_id` —
+hence storing it.
+
+**BYOK plumbing.**
+* `lib/crypto.ts` — AES-256-**GCM** (AEAD, so tampering fails rather than
+  silently decrypting to garbage we'd then send to a provider as the user's
+  key). Master key in `BYOK_ENCRYPTION_KEY`, deploy env only, so a dump of
+  `user_api_keys` alone is inert. Fresh IV per write. **Throws when the key is
+  missing** rather than degrading to plaintext.
+* `byok/keys.ts` — save/validate/read. A key is **validated with a real
+  authenticated call before it is stored**, and `validated_at` is only ever set
+  by a success: an unvalidated key is worse than none, because the user believes
+  they're set up and every feature fails later, far from the cause. Keys are
+  **never readable back** — `last4` is the only fragment that leaves the DB.
+  Decrypted keys are cached in-process (5 min) because the chat tool loop alone
+  would otherwise do several DB round-trips + AES decrypts per turn.
+* `byok/context.ts` — `AsyncLocalStorage`. The gateway already has `req.userId`,
+  but the scrapers are called from ingestion/trends/analytics code several frames
+  removed from whoever triggered it; threading an id through all of it would
+  touch dozens of signatures. `runAsUser` is set at each entry point (telegram
+  turn, web chat/draft, automation run, profile ingest, and the per-user job
+  loops for radar/viral/trend-match/mentions). **The fallback is deliberately
+  safe**: miss an entry point and it falls back to OUR key — the work still
+  succeeds, we just don't save the money. Degrading toward "works, costs us"
+  beats "broken for a paying user".
+* Resolution points: `llm/gateway.ts` (a BYOK key is an OpenRouter key, so it
+  also forces the OpenRouter transport — handing it to api.x.ai would 401),
+  `lib/apify.ts`, and `capture/imports/twitterapi-io.ts` (one place: every
+  request in that file funnels through `fetchPage`).
+* **Embeddings are deliberately NOT BYOK.** They run on OpenAI/Qwen and
+  OpenRouter has no embeddings endpoint, so there is nothing to route to.
+  Demanding a fourth key for a line item measured at ~$0.00001/call (§3s) isn't a
+  trade worth making.
+
+**The gate.** `/setup-keys` lives **outside `/app`** — nested under it, the page
+would inherit the very redirect that sends people to it and bounce forever. The
+app layout redirects there when `byokStatus().complete` is false, and both the
+layout and Settings **fail open** on a lookup error so a DB blip can't lock a
+paying customer out. Keys are managed afterwards in Settings → Your API keys,
+which only renders for users on the plan that uses them.
+
 ## 3n. Agent SDK runtime (2026-07-24, IN PROGRESS — Phase 0/1)
 
 Migrating the bounded agent loops (§3c) + eventually the chat brain (§3a) off the

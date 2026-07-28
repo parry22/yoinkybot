@@ -9,7 +9,17 @@ interface EmbeddingProvider {
   costPer1M: number;
 }
 
-/** Prefer OpenAI; fall back to Qwen/DashScope (OpenAI-compatible embeddings endpoint). */
+/**
+ * Prefer OpenAI; fall back to Qwen/DashScope (OpenAI-compatible embeddings endpoint).
+ *
+ * DELIBERATELY NOT BYOK. A lifetime user supplies an OpenRouter key, and
+ * OpenRouter does not serve an embeddings endpoint — there is nothing to route
+ * their embedding traffic to. Asking for a fourth key (OpenAI) to cover this
+ * would add real setup friction for a line item measured at ~$0.00001 per call
+ * (see docs/INTERNAL.md §3s), which is not a trade worth making. Embeddings stay
+ * on our key for everyone, and that is a rounding error against the LLM and
+ * scraper spend BYOK actually shifts.
+ */
 function resolveProvider(): EmbeddingProvider {
   if (config.OPENAI_API_KEY) {
     return {

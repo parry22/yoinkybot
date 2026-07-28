@@ -12,13 +12,24 @@ function apiBase(): string {
   return config.DODO_ENV === "live_mode" ? "https://live.dodopayments.com" : "https://test.dodopayments.com";
 }
 
+/** Plans that can be bought. "lifetime" is a ONE-TIME product, the rest are subscriptions. */
+export type BuyablePlan = "paid" | "scale" | "founding" | "lifetime";
+
 /** Plan → the configured Dodo product id for it (undefined when unconfigured). */
-function productIdFor(plan: "paid" | "scale" | "founding"): string | undefined {
+function productIdFor(plan: BuyablePlan): string | undefined {
   return plan === "founding"
     ? config.DODO_PRODUCT_FOUNDING
     : plan === "scale"
       ? config.DODO_PRODUCT_SCALE
-      : config.DODO_PRODUCT_PAID;
+      : plan === "lifetime"
+        ? config.DODO_PRODUCT_LIFETIME
+        : config.DODO_PRODUCT_PAID;
+}
+
+/** Lifetime is billed once, so it must never carry subscription_data at checkout
+ *  and never gets a trial — there is no recurring charge to defer. */
+export function isOneTimePlan(plan: BuyablePlan): boolean {
+  return plan === "lifetime";
 }
 
 /**
@@ -38,7 +49,7 @@ function checkProductConfig(): void {
   productConfigChecked = true;
 
   const configured: Array<[Plan, string]> = [];
-  for (const plan of ["founding", "scale", "paid"] as const) {
+  for (const plan of ["founding", "scale", "lifetime", "paid"] as const) {
     const id = productIdFor(plan)?.trim();
     if (id) configured.push([plan, id]);
   }
@@ -66,6 +77,7 @@ export function planForProduct(productId: string): Plan | undefined {
   // Precedence on a duplicate id is founding → scale → paid, same as before, but
   // checkProductConfig() has already screamed about the duplicate by this point
   // instead of letting it mis-map in silence.
+  if (productId === config.DODO_PRODUCT_LIFETIME) return "lifetime";
   if (productId === config.DODO_PRODUCT_FOUNDING) return "founding";
   if (productId === config.DODO_PRODUCT_SCALE) return "scale";
   if (productId === config.DODO_PRODUCT_PAID) return "paid";
@@ -107,7 +119,7 @@ export async function foundingSeatsLeft(): Promise<number> {
 export async function createCheckout(
   userId: string,
   email: string | null,
-  plan: "paid" | "scale" | "founding",
+  plan: BuyablePlan,
   opts: { trialDays?: number; returnUrl?: string } = {},
 ): Promise<{ url: string }> {
   if (!config.DODO_API_KEY) throw new Error("DODO_API_KEY not configured");
@@ -137,7 +149,12 @@ export async function createCheckout(
   // set up at all. There is nothing left to degrade to, so this one still throws.
   if (!productId) throw new Error(`Dodo product id for plan "${resolvedPlan}" not configured`);
 
-  const trial = opts.trialDays && opts.trialDays > 0 ? { trial_period_days: opts.trialDays } : undefined;
+  // A one-time product must not be sent subscription_data — Dodo would either
+  // reject it or mint a recurring charge for something sold as "pay once".
+  const trial =
+    !isOneTimePlan(resolvedPlan) && opts.trialDays && opts.trialDays > 0
+      ? { trial_period_days: opts.trialDays }
+      : undefined;
 
   const res = await fetch(`${apiBase()}/checkouts`, {
     method: "POST",
@@ -234,6 +251,77 @@ const STATUS_BY_EVENT: Record<string, string> = {
  */
 const REVOKING_STATUSES = new Set(["refunded", "disputed"]);
 
+/** The event's own clock, preferring the signed webhook timestamp (seconds). */
+function eventAtFor(ctx: DodoEventContext): Date {
+  const tsSeconds = Number(ctx.webhookTimestamp);
+  return new Date(Number.isFinite(tsSeconds) && tsSeconds > 0 ? tsSeconds * 1000 : Date.now());
+}
+
+/** Is this payment the lifetime product? Product id OR our own checkout metadata —
+ *  the payment payload doesn't always echo the cart back. */
+function isLifetimePayment(d: DodoSubscriptionEvent["data"]): boolean {
+  const byProduct = Boolean(config.DODO_PRODUCT_LIFETIME) && d.product_id === config.DODO_PRODUCT_LIFETIME;
+  return byProduct || d.metadata?.["plan"] === "lifetime";
+}
+
+/**
+ * Provision a lifetime purchase.
+ *
+ * Deliberately NOT routed through the subscription upsert below: that path
+ * writes `dodo_subscription_id` and `current_period_end` and is guarded by the
+ * subscription state machine, none of which applies to a single payment. A
+ * lifetime row is simply `plan='lifetime', status='active'` with no period —
+ * `resolveBillingState` short-circuits on it and never expires it (only a refund
+ * or lost dispute revokes, via the existing REVOKING_STATUSES path, which
+ * correlates by `dodo_customer_id` — hence storing it here).
+ *
+ * Shares the same webhook-id idempotency claim as everything else, so a retried
+ * delivery can't double-provision.
+ */
+async function provisionLifetime(
+  d: DodoSubscriptionEvent["data"],
+  ctx: DodoEventContext,
+  eventAt: Date,
+): Promise<void> {
+  const userId = d.metadata?.["user_id"];
+  if (!userId) {
+    const msg =
+      `Dodo payment.succeeded for the LIFETIME product carried no user_id in metadata ` +
+      `(customer ${d.customer?.customer_id ?? "unknown"}). The customer has PAID and is unprovisioned — ` +
+      `grant them lifetime by hand.`;
+    console.error(msg);
+    void alertAdmin("dodo-lifetime-no-user", msg);
+    return;
+  }
+
+  await withTransaction(async (client) => {
+    if (ctx.webhookId) {
+      const claim = await client.query(
+        `INSERT INTO billing_webhook_events (webhook_id, event_type) VALUES ($1, $2)
+         ON CONFLICT (webhook_id) DO NOTHING RETURNING webhook_id`,
+        [ctx.webhookId, "payment.succeeded"],
+      );
+      if (claim.rowCount === 0) {
+        console.log(`dodo webhook ${ctx.webhookId} already applied — ignoring replay`);
+        return;
+      }
+    }
+    await client.query(
+      `INSERT INTO subscriptions (user_id, provider, dodo_customer_id, plan, status, last_event_at, updated_at)
+       VALUES ($1, 'dodo', $2, 'lifetime', 'active', $3, now())
+       ON CONFLICT (user_id) DO UPDATE SET
+         dodo_customer_id = COALESCE(EXCLUDED.dodo_customer_id, subscriptions.dodo_customer_id),
+         plan = 'lifetime',
+         status = 'active',
+         last_event_at = EXCLUDED.last_event_at,
+         updated_at = now()`,
+      [userId, d.customer?.customer_id ?? null, eventAt],
+    );
+  });
+  track(userId, "plan_purchased", { plan: "lifetime" });
+  console.log(`lifetime provisioned for user ${userId}`);
+}
+
 /**
  * Apply a verified Dodo webhook event to the subscriptions table.
  *
@@ -253,8 +341,25 @@ export async function handleDodoEvent(event: DodoSubscriptionEvent, ctx: DodoEve
   const status = STATUS_BY_EVENT[event.type];
   const d = event.data;
 
+  /**
+   * LIFETIME: a one-time purchase, which this whole handler was blind to.
+   *
+   * Dodo fires `subscription.*` for recurring products. A one-time product has
+   * no subscription, so it fires `payment.succeeded` — which falls straight into
+   * the `!status` early return below. Without this branch a customer could pay
+   * $99 and be provisioned nothing at all, with no error anywhere.
+   *
+   * Identified by the product id OR by the `plan` metadata we set at checkout;
+   * either alone is enough, because the payment payload shape varies by whether
+   * the cart or the metadata is echoed back.
+   */
+  if (event.type === "payment.succeeded" && isLifetimePayment(d)) {
+    await provisionLifetime(d, ctx, eventAtFor(ctx));
+    return;
+  }
+
   if (!status) {
-    // payment.* and the non-terminal dispute.* events are informational for now.
+    // Other payment.* and the non-terminal dispute.* events are informational.
     // An unrecognised *product* on a recognised event is a different story — see below.
     return;
   }
@@ -262,8 +367,7 @@ export async function handleDodoEvent(event: DodoSubscriptionEvent, ctx: DodoEve
   // Event ordering. Prefer the signed webhook timestamp (Standard Webhooks, in
   // seconds); fall back to "now" when a caller has none, which degrades to the
   // old last-writer-wins behaviour rather than dropping the event.
-  const tsSeconds = Number(ctx.webhookTimestamp);
-  const eventAt = new Date(Number.isFinite(tsSeconds) && tsSeconds > 0 ? tsSeconds * 1000 : Date.now());
+  const eventAt = eventAtFor(ctx);
 
   const userId = d.metadata?.["user_id"];
   const plan = d.product_id ? planForProduct(d.product_id) : undefined;

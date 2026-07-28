@@ -34,7 +34,20 @@ export {
   type Entitlements,
   type Plan,
 } from "./billing/entitlements.js";
-export { createCheckout, createCustomerPortal } from "./billing/dodo.js";
+export { createCheckout, createCustomerPortal, type BuyablePlan } from "./billing/dodo.js";
+
+// BYOK — the lifetime plan brings its own LLM + scraper keys, so their spend
+// bills their account. `byokStatus().complete` is the gate the app checks before
+// letting a lifetime user do anything (see web/src/lib/byok-gate.ts).
+export {
+  byokStatus,
+  saveKey,
+  deleteKey,
+  KEY_PROVIDERS,
+  type KeyProvider,
+  type ByokStatus,
+  type ByokKeyView,
+} from "./byok/keys.js";
 // Read model for the Settings/Scheduled cap display.
 export { scheduledStatus, type ScheduledStatus } from "./scheduling/service.js";
 

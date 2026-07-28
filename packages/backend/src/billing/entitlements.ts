@@ -5,7 +5,7 @@ import { config } from "../config.js";
 // — it maps to the full paid feature set. It is never written to
 // subscriptions.plan (whose CHECK is free/paid/founding); the trial is stored as
 // status='trialing' + trial_ends_at. See startTrial / trialInfo below.
-export type Plan = "free" | "trialing" | "paid" | "scale" | "founding";
+export type Plan = "free" | "trialing" | "paid" | "scale" | "founding" | "lifetime";
 
 export interface Entitlements {
   plan: Plan;
@@ -100,6 +100,33 @@ const SCALE: Omit<Entitlements, "plan"> = {
 };
 
 /**
+ * Lifetime (BYOK): one payment, no caps.
+ *
+ * Every other plan's caps exist to bound what WE spend on a user — each buyer
+ * lead is a paid twitterapi.io search we pay for, each agent post is model spend
+ * we pay for. A lifetime user brings their own LLM and scraper keys, so that
+ * spend lands on their account, not ours (llm/gateway.ts and the scrapers
+ * resolve their key — see byok/keys.ts). With the cost reason gone, a cap would
+ * only be throttling a product they have already bought outright.
+ *
+ * `maxResurfacePerWeek` is 7 rather than `null` on purpose: it's a PROACTIVE
+ * cadence — how often we message them unprompted — so it's a politeness limit,
+ * not a cost one. Once a day is already the ceiling of what anyone wants.
+ */
+const LIFETIME: Omit<Entitlements, "plan"> = {
+  scheduledPostsPerMonth: null,
+  buyerIntentsPerMonth: null,
+  viralPerDay: null,
+  automationPostsPerMonth: null,
+  maxResurfacePerWeek: 7,
+  autoAgent: true,
+  consistencyChecks: true,
+  voiceProfile: true,
+  drafting: true,
+  macroMatching: true,
+};
+
+/**
  * Telegram ids that bypass the paywall: PAYWALL_WHITELIST (comma-separated) plus
  * ADMIN_TELEGRAM_ID, which is always exempt so the operator never has to upgrade
  * their own account to use the product.
@@ -143,6 +170,10 @@ export async function isPaidOrExempt(user: { id: string; telegram_id: string | n
  */
 export function entitlementsForPlan(plan: Plan): Entitlements {
   switch (plan) {
+    // BYOK — they fund their own model + scraper spend, so there is nothing for
+    // a cap to protect. See LIFETIME.
+    case "lifetime":
+      return { plan, ...LIFETIME };
     case "scale":
     case "founding":
       return { plan, ...SCALE };
@@ -221,6 +252,23 @@ function ms(v: string | Date | null | undefined): number | null {
  */
 export function resolveBillingState(sub: SubscriptionRow | undefined | null, now: number): AccessDecision {
   if (!sub) return { state: "none", entitled: false, accessUntil: null };
+
+  /**
+   * LIFETIME SHORT-CIRCUITS THE WHOLE STATE MACHINE, and has to.
+   *
+   * Everything below reasons about a SUBSCRIPTION — trial clocks, paid-through
+   * dates, dunning grace, "cancelled but paid until". A lifetime purchase has
+   * none of those: it's one payment, there is no renewal to fail and no period
+   * to end. Fall through and `current_period_end IS NULL` would make a stray
+   * `cancelled` or `on_hold` event revoke access permanently from someone who
+   * paid once and owns it forever — the worst billing bug available to us.
+   *
+   * The ONLY thing that takes a lifetime plan away is the money coming back:
+   * a refund or a lost dispute, both handled below by falling through.
+   */
+  if (sub.plan === "lifetime" && sub.status !== "refunded" && sub.status !== "disputed") {
+    return { state: "active", entitled: true, accessUntil: null };
+  }
 
   const trialEnds = ms(sub.trial_ends_at);
   const periodEnd = ms(sub.current_period_end);
@@ -350,7 +398,7 @@ export async function startTrial(userId: string, intendedPlan?: string | null): 
 }
 
 /** The only values the landing CTAs ever send, and the only ones we'll store. */
-const INTENDED_PLANS = new Set(["growth", "scale", "founding"]);
+const INTENDED_PLANS = new Set(["growth", "scale", "founding", "lifetime"]);
 
 /**
  * Record the plan the user picked on the landing page (growth/scale/founding),

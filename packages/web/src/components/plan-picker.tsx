@@ -1,6 +1,6 @@
 import styles from "./plan-picker.module.css";
 
-type PlanKey = "growth" | "scale" | "founding";
+type PlanKey = "growth" | "scale" | "founding" | "lifetime";
 
 /** Splits "$9/mo" into the number and its unit so the price can be typeset as a
  *  headline with a small trailing "/mo", rather than one flat 13px string. */
@@ -28,6 +28,9 @@ export function PlanPicker({
   growthWas,
   scalePrice,
   scaleWas,
+  lifetimePrice,
+  lifetimeNote,
+  lifetimeAvailable,
 }: {
   currentKey: PlanKey;
   onTrial: boolean;
@@ -36,6 +39,12 @@ export function PlanPicker({
   growthWas: string;
   scalePrice: string;
   scaleWas: string;
+  lifetimePrice: string;
+  /** "Limited time only …" — the deal is deliberately time-boxed, so say so. */
+  lifetimeNote: string;
+  /** False when DODO_PRODUCT_LIFETIME is unset — hide the card rather than
+   *  offer a checkout that cannot complete. */
+  lifetimeAvailable: boolean;
 }) {
   const base = onTrial ? "/api/billing/start-trial" : "/api/billing/checkout";
 
@@ -46,6 +55,11 @@ export function PlanPicker({
     was: string;
     blurb: string;
     features: string[];
+    /** The visually promoted card. Lifetime, not Scale — it's the push. */
+    featured?: boolean;
+    /** Replaces the "/mo" unit; lifetime is billed once. */
+    unitOverride?: string;
+    note?: string;
   }[] = [
     {
       key: "growth",
@@ -78,35 +92,89 @@ export function PlanPicker({
         "Proactive resurfacing, 5 a week",
       ],
     },
+    ...(lifetimeAvailable
+      ? [
+          {
+            key: "lifetime" as PlanKey,
+            name: "Lifetime",
+            price: lifetimePrice,
+            was: "",
+            unitOverride: "once",
+            featured: true,
+            note: lifetimeNote,
+            blurb: "Pay once, bring your own keys, and nothing is ever capped.",
+            features: [
+              "Everything in Scale, uncapped",
+              "Unlimited Auto Agent posts, hands-off",
+              "Unlimited buyer radar leads",
+              "BYOK — runs on your own keys, at cost",
+              "One payment. No subscription, ever.",
+            ],
+          },
+        ]
+      : []),
   ];
 
   return (
     <div className={styles.grid}>
       {cards.map((c) => {
         const isCurrent = c.key === currentKey;
-        // The card's action: current + subscribed = nothing to do; switching
-        // while subscribed goes through the portal; otherwise start checkout.
-        const href = isCurrent && hasSubscription ? null : hasSubscription ? "/api/billing/portal" : `${base}?plan=${c.key}`;
-        const ctaLabel = hasSubscription
-          ? isCurrent
-            ? null
-            : `Switch to ${c.name}`
-          : onTrial
-            ? `Choose ${c.name}`
-            : `Get ${c.name}`;
+        const isLifetimeCard = c.key === "lifetime";
+        const ownsLifetime = currentKey === "lifetime";
+
+        /**
+         * The card's action.
+         *
+         * Lifetime is a ONE-TIME product, so it never routes through the
+         * subscription portal and never through the trial checkout — there is no
+         * recurring charge to manage or defer. It always goes straight to a
+         * plain checkout, even for someone who already holds a subscription
+         * (buying it out is exactly what that person is trying to do).
+         *
+         * And once someone owns lifetime, the monthly cards have nothing to
+         * offer them — they already have strictly more — so those go inert
+         * rather than inviting a pointless downgrade.
+         */
+        let href: string | null;
+        let ctaLabel: string | null;
+        if (isCurrent) {
+          href = null;
+          ctaLabel = null;
+        } else if (isLifetimeCard) {
+          href = `/api/billing/checkout?plan=lifetime`;
+          ctaLabel = "Get lifetime";
+        } else if (ownsLifetime) {
+          href = null;
+          ctaLabel = null;
+        } else if (hasSubscription) {
+          href = "/api/billing/portal";
+          ctaLabel = `Switch to ${c.name}`;
+        } else {
+          href = `${base}?plan=${c.key}`;
+          ctaLabel = onTrial ? `Choose ${c.name}` : `Get ${c.name}`;
+        }
         const { amount, unit } = splitPrice(c.price);
+        const shownUnit = c.unitOverride ?? unit;
         return (
-          <div key={c.key} className={`${styles.card} ${isCurrent ? styles.cardCurrent : ""}`}>
+          <div
+            key={c.key}
+            className={`${styles.card} ${isCurrent ? styles.cardCurrent : ""} ${c.featured ? styles.cardFeatured : ""}`}
+          >
             <div className={styles.cardTop}>
               <span className={styles.name}>{c.name}</span>
-              {isCurrent && <span className={styles.badge}>Current</span>}
+              {isCurrent ? (
+                <span className={styles.badge}>Current</span>
+              ) : (
+                c.featured && <span className={styles.badge}>Best value</span>
+              )}
             </div>
             <div className={styles.priceRow}>
               <span className={styles.price}>{amount}</span>
-              {unit && <span className={styles.priceUnit}>{unit}</span>}
+              {shownUnit && <span className={styles.priceUnit}>{shownUnit}</span>}
               {c.was && <span className={styles.priceWas}>{c.was}</span>}
             </div>
             {c.was && <div className={styles.priceNote}>Early-bird price, first 50 users</div>}
+            {c.note && <div className={styles.priceNote}>{c.note}</div>}
             <div className={styles.blurb}>{c.blurb}</div>
             <ul className={styles.features}>
               {c.features.map((f) => (

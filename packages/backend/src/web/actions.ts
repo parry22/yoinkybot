@@ -8,6 +8,7 @@ import type { User } from "../lib/auth.js";
 import { runDraft } from "../telegram/actions.js";
 import { query } from "../db/pool.js";
 import { collectingChannel } from "./channel.js";
+import { runAsUser } from "../byok/context.js";
 
 /** Generate + persist a draft in the user's voice. Respects the paywall/allowance. */
 export async function runWebDraft(
@@ -16,7 +17,7 @@ export async function runWebDraft(
   topic: string,
 ): Promise<{ messages: string[] }> {
   const { channel, messages } = collectingChannel();
-  await runDraft(user, topic, platform, channel);
+  await runAsUser(user.id, () => runDraft(user, topic, platform, channel));
   return { messages };
 }
 
