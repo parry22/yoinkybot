@@ -1,0 +1,168 @@
+/* Account switcher, pinned to the bottom of the sidebar.
+ * `margin-top: auto` is what does the pinning — the sidebar is a flex column,
+ * so this pushes the switcher to the floor regardless of how many nav items
+ * sit above it. */
+.wrap {
+  position: relative;
+  margin-top: auto;
+  padding-top: 12px;
+}
+
+.trigger {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  border: 0.5px solid transparent;
+  background: transparent;
+  border-radius: 12px;
+  padding: 8px;
+  min-height: 44px;
+  color: var(--ink-700);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.trigger:hover:not(:disabled) {
+  background: var(--hover);
+  border-color: var(--stroke);
+}
+
+.trigger:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.avatarSm {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+/* min-width: 0 so a long email actually ellipsises instead of forcing the
+ * sidebar wider than its fixed 236px. */
+.triggerText,
+.menuText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  line-height: 1.25;
+}
+
+.triggerName,
+.menuName {
+  color: var(--ink-900);
+  font-size: 13.5px;
+  font-weight: 460;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.triggerMail,
+.menuMail {
+  color: var(--ink-500);
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chev {
+  flex-shrink: 0;
+  color: var(--ink-500);
+}
+
+/* The menu opens UPWARD (bottom: 100%) because the trigger is on the floor of
+ * the sidebar — dropping down would render it off-screen. */
+.menu {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  margin-bottom: 6px;
+  z-index: 70;
+  background: var(--surface);
+  border: 0.5px solid var(--stroke);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-drawer);
+  padding: 6px;
+  /* A long session list stays usable rather than growing past the viewport. */
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
+}
+
+.menuLabel {
+  color: var(--ink-500);
+  font-size: 11px;
+  margin: 6px 0 4px 8px;
+}
+
+.menuItem {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  border-radius: 10px;
+  padding: 7px 8px;
+  min-height: 34px;
+  color: var(--ink-700);
+  font: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.menuItem:hover:not(:disabled):not(.menuItemStatic) {
+  background: var(--hover);
+  color: var(--ink-900);
+}
+
+.menuItem:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* The "signed in as" row is a label, not an action — no pointer, no hover. */
+.menuItemStatic {
+  cursor: default;
+}
+
+.tick {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.switching {
+  color: var(--ink-500);
+  flex-shrink: 0;
+}
+
+.divider {
+  height: 0.5px;
+  background: var(--stroke);
+  margin: 6px 4px;
+}
+
+.signOut:hover {
+  /* Destructive-adjacent, so it reads differently from the neutral items —
+   * but still a normal item, since signing out is routine and reversible. */
+  color: #d3455b;
+}

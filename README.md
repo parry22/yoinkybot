@@ -24,6 +24,21 @@ which is where it's most useful. Both share one Postgres and one `users` row.
 
 <!-- Keep newest-first. Update this whenever a change ships that a reader of the repo should know about. -->
 
+- **2026-07-28 — Account switcher at the bottom of the sidebar.** Detail in
+  `docs/INTERNAL.md` §3t. A Clerk session maps 1:1 to a `users` row, and the X
+  connection, memory graph, diagnosis, plan and billing all hang off it — so
+  switching accounts switches the whole workspace (the agency / multi-brand
+  case). Shows the active account, lists other signed-in sessions to switch to,
+  plus add-account, manage-account and sign-out. The switch is a full document
+  load on purpose: Next's router cache would otherwise serve the previous
+  account's server-rendered pages under the new account's name.
+
+  **Needs one dashboard toggle to do anything:** the instance is currently on
+  `single_session_mode: true`, so Clerk holds only one session and there is
+  nothing to switch to. Turn on **Clerk dashboard → Configure → Sessions →
+  Multi-session handling**. Until then the component degrades to a clean account
+  menu rather than showing an empty or broken switcher.
+
 - **2026-07-27 — LLM cost down ~47%: real prompt caching + two-model routing.**
   Detail in `docs/INTERNAL.md` §3s. Measured first: 3,612 production
   `usage_events` re-priced at Grok rates said an average user costs $5.71/mo on a

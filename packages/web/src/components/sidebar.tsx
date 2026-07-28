@@ -20,6 +20,7 @@ import type { TrialInfo } from "@yoink/backend/web";
 import { TrialPill } from "./trial-banner";
 import { useTelegramLink } from "./use-telegram-link";
 import { FeedbackModal } from "./feedback-modal";
+import { AccountSwitcher } from "./account-switcher";
 import styles from "./sidebar.module.css";
 
 type NavItem = { href: string; label: string; icon: typeof BotIcon };
@@ -137,6 +138,12 @@ export function Sidebar({
         {renderGroup("Grow", GROW_NAV)}
         {renderGroup("Account", ACCOUNT_NAV, feedbackItem)}
       </nav>
+
+      {/* Pinned to the floor of the sidebar via `margin-top: auto` — switching
+        * here swaps the whole workspace (a Clerk session maps 1:1 to a `users`
+        * row), which is why it sits apart from the nav groups rather than
+        * inside "Account". */}
+      <AccountSwitcher onNavigate={onNavigate} />
 
       <FeedbackModal open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
     </aside>

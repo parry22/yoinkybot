@@ -2048,6 +2048,51 @@ the cheap model. Degraded extraction is a slow, quiet failure — worse memories
 make everything downstream worse. It ran on GLM 5.2 in production for months, so
 the family is proven here, but this is the one to spot-check.
 
+## 3t. Account switcher in the sidebar (2026-07-28)
+
+`components/account-switcher.tsx` (+ its CSS module), pinned to the floor of the
+sidebar via `margin-top: auto`.
+
+**Why it's more than a login menu here.** A Clerk session maps 1:1 to a `users`
+row through `clerk_user_id` (`lib/session.ts`), and the connected X account, the
+memory graph, the diagnosis, the plan and the billing all hang off that row. So
+switching accounts switches the entire workspace — this is the agency /
+multi-brand case: run your own brand and a client's without signing out.
+
+Built on `useSessionList()` (`sessions`, `setActive`) + `useClerk()`
+(`openSignIn`, `openUserProfile`, `signOut`). The menu opens **upward**
+(`bottom: 100%`) because the trigger sits on the floor of the sidebar.
+
+**The switch is a full document load, deliberately** — `setActive({ navigate })`
+sends the browser to `/app` via `window.location.href` rather than
+`router.push`. Switching the session changes which `users` row every server
+component reads, and Next's client router cache would happily serve the previous
+account's rendered output — one account's drafts and diagnosis under another
+account's name. That is the one failure this feature must not have, so
+correctness beats the snappier transition.
+
+> ### PREREQUISITE: multi-session must be enabled on the Clerk instance
+> Production currently has **`single_session_mode: true`**, so Clerk holds only
+> one session on the client, `sessions` always has length 1, and there is
+> nothing to switch to. It is a **dashboard-only toggle** — Clerk exposes no
+> Backend API for it, the same as social connections (§3f history):
+> **Clerk dashboard → Configure → Sessions → Multi-session handling.**
+> Verify with:
+> ```
+> curl -s "https://clerk.meetyoinky.com/v1/environment?_clerk_js_version=5" \
+>   -H "Origin: https://app.meetyoinky.com" | jq .auth_config.single_session_mode
+> ```
+> The component is written to be correct either way: with one session it is a
+> clean account menu (who am I / manage / sign out) and it grows the "Switch to"
+> list the moment a second session can exist. Nothing misleads while it's off —
+> the switcher group renders conditionally on `others.length > 0` rather than
+> showing an empty heading.
+
+**Known redundancy:** the top bar and mobile header still render Clerk's own
+`<UserButton />`. On mobile that's necessary (the sidebar is a drawer, so the
+header is the always-visible account affordance); on desktop it is now duplicate
+account UI and is a candidate for removal.
+
 ## 3n. Agent SDK runtime (2026-07-24, IN PROGRESS — Phase 0/1)
 
 Migrating the bounded agent loops (§3c) + eventually the chat brain (§3a) off the
