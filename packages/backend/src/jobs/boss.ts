@@ -96,21 +96,85 @@ export function getBoss(): PgBoss {
 let ensurePromise: Promise<PgBoss> | undefined;
 
 /**
- * Lazily start pg-boss so a process that only ENQUEUES jobs can do so — namely
- * the web app (`packages/web`), which runs domain code in-process but never
- * calls `startBoss()` (that's the backend server's job). Idempotent and
- * concurrency-safe; it starts the same engine `startBoss()` does (queues get
- * created), but the caller registers no workers/crons, so nothing here consumes
- * jobs — the backend worker still does that. No-op if already started.
+ * Lazily start pg-boss for a process that only ENQUEUES — namely the web app
+ * (`packages/web`), which runs domain code in-process but never calls
+ * `startBoss()` (that's the backend server's job). Idempotent and
+ * concurrency-safe. No-op if already started.
+ *
+ * THIS USED TO CALL `startBoss()`, and that was expensive in a way nothing made
+ * visible. Vercel is serverless, so every cold start that touched chat, connect,
+ * scheduling or buyer radar paid for: pg-boss's schema migrate check, its
+ * supervision + monitoring timers (in a process that is about to be frozen), and
+ * a loop of 27 `createQueue` + 27 `updateQueue` calls — **54 queries to
+ * re-declare queues the backend already owns**. All of it billed as Neon compute
+ * time, none of it doing anything.
+ *
+ * Enqueue-only mode instead: no supervision, no cron scheduling, no schema
+ * migration, and no queue declarations. The backend's `startBoss()` remains the
+ * single writer of queue configuration, which is where that responsibility
+ * belonged anyway — two processes racing on `updateQueue` was never intentional.
  */
 export async function ensureBoss(): Promise<PgBoss> {
   if (boss) return boss;
-  if (!ensurePromise) ensurePromise = startBoss();
+  if (!ensurePromise) {
+    ensurePromise = (async () => {
+      const b = new PgBoss({
+        connectionString: config.DATABASE_URL,
+        schema: "pgboss",
+        // Nothing here consumes jobs, so none of the background machinery earns
+        // its keep. `migrate: false` is safe because the backend, which does run
+        // migrations, deploys from the same commit.
+        supervise: false,
+        schedule: false,
+        migrate: false,
+      });
+      b.on("error", (err) => console.error("pg-boss error (enqueue-only)", err));
+      await b.start();
+      boss = b;
+      return b;
+    })().catch((err) => {
+      // Don't cache a rejected promise — a transient DB blip at cold start would
+      // otherwise poison every later enqueue in this instance's lifetime.
+      ensurePromise = undefined;
+      throw err;
+    });
+  }
   return ensurePromise;
 }
 
+/**
+ * How often an idle worker asks the database for work.
+ *
+ * WHY THIS IS SET AT ALL. pg-boss defaults to 2000ms, and `registerWorkers`
+ * makes ~33 workers (27 `work()` sites, two of them inside an
+ * INGEST_CONCURRENCY=4 loop). At the default that is ~16 queries/second — about
+ * 1.4 MILLION "any jobs?" round-trips a day — every one of them almost always
+ * returning nothing. Postgres barely notices the load, but Neon bills COMPUTE
+ * TIME, and a database questioned 16×/second never gets to suspend. That is what
+ * exhausted the compute quota and took production down with PG 53000
+ * (`insufficient_resources`) on 2026-07-30: every /app page 500'd because the
+ * database had been cut off, not because anything in the app was wrong.
+ *
+ * 30s is chosen against what the queues actually are: crons, fleet sweeps and
+ * ingest fan-out, none of which care about half a minute. The three queues where
+ * a human is genuinely waiting get an explicit override — see FAST_POLL_SECONDS
+ * and its call sites in workers.ts. Net effect is ~85% fewer idle queries.
+ */
+export const POLL_SECONDS = 30;
+
+/** For queues where someone is watching a spinner. Keep these responsive. */
+export const FAST_POLL_SECONDS = 2;
+
+/** Scheduled posts are `startAfter`-driven, so polling only bounds how LATE one
+ *  can be. 15s of drift on a post the user scheduled for 09:00 is invisible. */
+export const SCHEDULED_POST_POLL_SECONDS = 15;
+
 export async function startBoss(): Promise<PgBoss> {
-  boss = new PgBoss({ connectionString: config.DATABASE_URL, schema: "pgboss" });
+  boss = new PgBoss({
+    connectionString: config.DATABASE_URL,
+    schema: "pgboss",
+    pollingIntervalSeconds: POLL_SECONDS,
+  });
   boss.on("error", (err) => console.error("pg-boss error", err));
   await boss.start();
   // Scheduled fleet jobs that hit PAID external providers and re-run on their

@@ -2,6 +2,8 @@ import type PgBoss from "pg-boss";
 import { queryOne } from "../db/pool.js";
 import {
   QUEUES,
+  FAST_POLL_SECONDS,
+  SCHEDULED_POST_POLL_SECONDS,
   type EmbedLinkJob,
   type ExtractJob,
   type OfferAnglesJob,
@@ -72,7 +74,17 @@ function logged<T>(queue: string, fn: (data: T, jobId: string) => Promise<unknow
 const INGEST_CONCURRENCY = 4;
 
 export async function registerWorkers(boss: PgBoss): Promise<void> {
-  await boss.work<TranscribeJob>(QUEUES.transcribe, logged(QUEUES.transcribe, (d: TranscribeJob) => handleTranscribe(d)));
+  // Every worker below inherits the 30s default set on the PgBoss constructor
+  // (see POLL_SECONDS in boss.ts for why — it is the fix for the Neon compute
+  // quota outage). Only the queues a human is actively waiting on override it.
+  //
+  // A voice note is a person who has just spoken into Telegram and is waiting for
+  // a reply, so this one stays fast.
+  await boss.work<TranscribeJob>(
+    QUEUES.transcribe,
+    { pollingIntervalSeconds: FAST_POLL_SECONDS },
+    logged(QUEUES.transcribe, (d: TranscribeJob) => handleTranscribe(d)),
+  );
   for (let i = 0; i < INGEST_CONCURRENCY; i++) {
     await boss.work<ExtractJob>(QUEUES.extract, logged(QUEUES.extract, (d: ExtractJob) => handleExtract(d)));
     await boss.work<EmbedLinkJob>(QUEUES.embedLink, logged(QUEUES.embedLink, (d: EmbedLinkJob) => handleEmbedLink(d)));
@@ -93,9 +105,12 @@ export async function registerWorkers(boss: PgBoss): Promise<void> {
   await boss.work(QUEUES.buyerRadar, logged(QUEUES.buyerRadar, () => handleBuyerRadar()));
   await boss.work(QUEUES.buyerRecalibrate, logged(QUEUES.buyerRecalibrate, () => handleBuyerRecalibration()));
   // On-demand "Scan now" from the web app. Runs here, not in the Vercel route,
-  // because SDK-mode composition spawns subprocesses (§3n).
+  // because SDK-mode composition spawns subprocesses (§3n). Fast poll: the web
+  // app is sitting on this job's result, so the poll interval is dead time the
+  // user watches a spinner through.
   await boss.work<BuyerScanNowJob>(
     QUEUES.buyerScanNow,
+    { pollingIntervalSeconds: FAST_POLL_SECONDS },
     logged(QUEUES.buyerScanNow, (d: BuyerScanNowJob) => handleBuyerScanNow(d)),
   );
   await boss.work<{ userId: string }>(
@@ -129,6 +144,7 @@ export async function registerWorkers(boss: PgBoss): Promise<void> {
   // double-post across a delivery retry.
   await boss.work<ScheduledPostJob>(
     QUEUES.scheduledPost,
+    { pollingIntervalSeconds: SCHEDULED_POST_POLL_SECONDS },
     logged(QUEUES.scheduledPost, (d: ScheduledPostJob) => handleScheduledPost(d)),
   );
   // The claim above is what makes a crash mid-publish unrecoverable on its own:
@@ -195,11 +211,12 @@ export async function registerWorkers(boss: PgBoss): Promise<void> {
   // fetch is on the 8-hour boundary — 01:00 and 13:00 UTC are clear of all three,
   // so the sequential twitterapi.io throttle isn't fighting another sweep.
   await boss.schedule(QUEUES.xRefresh, "0 1,13 * * *"); // 06:30 / 18:30 IST
-  // Stranded-publish sweep. Every 5 minutes: the handler only touches rows that
-  // have been in 'publishing' for 30+ minutes, so over-firing is free, and a
-  // tight cadence keeps a post that died to a redeploy going out minutes late
-  // rather than never.
-  await boss.schedule(QUEUES.scheduledPostReap, "*/5 * * * *");
+  // Stranded-publish sweep. Every 15 minutes — was every 5, which was 288 wake-ups
+  // a day for a sweep whose own threshold is 30 minutes, so four out of every five
+  // runs could not possibly have found anything. The handler only touches rows
+  // stuck in 'publishing' for 30+ minutes, so the recovery window is unchanged;
+  // all the extra runs bought was Neon compute time (see POLL_SECONDS in boss.ts).
+  await boss.schedule(QUEUES.scheduledPostReap, "*/15 * * * *");
 
   // Retired schedules — pg-boss persists these in its own table independent of
   // the code, so removing a boss.schedule() call above does nothing on an
