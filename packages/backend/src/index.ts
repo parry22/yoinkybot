@@ -8,8 +8,77 @@ import { webhookRoutes } from "./routes/webhooks.js";
 import { oauthRoutes } from "./routes/oauth.js";
 import { analyticsEnabled, shutdownAnalytics } from "./analytics/posthog.js";
 
+/**
+ * Postgres error classes that mean "the database is not available right now",
+ * as opposed to "your SQL is wrong". 53xxx is insufficient_resources — which is
+ * what Neon returns (53000) when a project has burned its compute-time quota.
+ * 57P0x is admin shutdown / crash recovery, 08xxx is connection failure.
+ */
+function isDatabaseUnavailable(err: unknown): boolean {
+  const code = (err as { code?: string } | null)?.code ?? "";
+  return (
+    code.startsWith("53") ||
+    code.startsWith("08") ||
+    code === "57P01" ||
+    code === "57P02" ||
+    code === "57P03" ||
+    ["ECONNREFUSED", "ETIMEDOUT", "ENOTFOUND", "ECONNRESET"].includes(code)
+  );
+}
+
+/**
+ * Migrate, but never turn a database outage into a restart storm.
+ *
+ * WHAT HAPPENED ON 2026-07-30. Neon cut the database off for exceeding its
+ * compute-time quota. `migrate()` threw PG 53000 on line one of main(), the
+ * bottom-of-file `.catch` called process.exit(1), Railway restarted the
+ * container, and it threw again — 22 times in one log window. Every one of those
+ * restarts opened a fresh pool, ran pg-boss's schema check, re-declared 27
+ * queues and fired both boot nudges, all aimed at a database that was already
+ * over its compute budget. The crash loop was actively feeding the outage it was
+ * caused by, and it kept the endpoint pinned awake so the quota could never
+ * recover on its own.
+ *
+ * So: back off patiently when the database is merely unavailable, and let the
+ * process live. A broken migration still fails fast and loudly, because that is a
+ * deterministic error a retry cannot fix — the distinction is the whole point.
+ */
+async function migrateWithBackoff(): Promise<void> {
+  const MAX_DELAY_MS = 60_000;
+  let delay = 2_000;
+  let attempt = 0;
+
+  for (;;) {
+    try {
+      await migrate();
+      if (attempt > 0) console.log(`migrations applied after ${attempt} retr${attempt === 1 ? "y" : "ies"}`);
+      return;
+    } catch (err) {
+      if (!isDatabaseUnavailable(err)) throw err; // real migration bug — surface it
+      attempt++;
+      const detail = err instanceof Error ? err.message : String(err);
+      console.warn(
+        `database unavailable (attempt ${attempt}) — retrying in ${Math.round(delay / 1000)}s: ${detail}`,
+      );
+      // Page the operator once, early. This is the state where the product is
+      // fully down and nothing in the app itself is wrong, which is exactly the
+      // case that took hours to diagnose the first time.
+      if (attempt === 3) {
+        void import("./lib/alerts.js").then(({ alertAdmin }) =>
+          alertAdmin(
+            "db:unavailable",
+            `Backend cannot reach Postgres: ${detail}. If this is Neon reporting a compute-time quota (PG 53000), the plan needs upgrading — the app is fully down until then.`,
+          ),
+        );
+      }
+      await new Promise((r) => setTimeout(r, delay));
+      delay = Math.min(delay * 2, MAX_DELAY_MS);
+    }
+  }
+}
+
 async function main(): Promise<void> {
-  await migrate();
+  await migrateWithBackoff();
 
   const boss = await startBoss();
   await registerWorkers(boss);
