@@ -104,6 +104,15 @@ jobs:
           pnpm --filter @yoink/backend build
           PW_ENC=$(python3 -c "import urllib.parse,os;print(urllib.parse.quote(os.environ['PW'],safe=''))")
           HOST=aws-1-us-west-2.pooler.supabase.com
+          echo "=== certificate chain the pooler actually presents ==="
+          openssl s_client -starttls postgres -connect ${HOST}:5432 -showcerts </dev/null 2>/dev/null \
+            | grep -E "^ *[0-9]+ s:|^ *i:" | head -10 || echo "(chain dump unavailable)"
+          echo "=== verify against the pinned root ==="
+          openssl s_client -starttls postgres -connect ${HOST}:5432 -CAfile <(node -e '
+            const m = require("./packages/backend/dist/db/supabase-ca.js");
+            process.stdout.write(m.SUPABASE_ROOT_CA);
+          ') </dev/null 2>/dev/null | grep -E "Verify return code|Verification" | head -3
+
           for PORT in 5432 6543; do
             echo "--- port $PORT ---"
             DATABASE_URL="postgresql://postgres.${REF}:${PW_ENC}@${HOST}:${PORT}/postgres?sslmode=require" \

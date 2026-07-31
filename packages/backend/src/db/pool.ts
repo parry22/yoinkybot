@@ -47,10 +47,36 @@ const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTI
  */
 const isSupabase = /\.supabase\.(co|com)(:|\/|$)/.test(config.DATABASE_URL);
 
+/**
+ * Strip `sslmode` from the URL when we're supplying our own TLS config.
+ *
+ * THIS IS LOAD-BEARING, and the reason the first attempt at CA pinning silently
+ * did nothing. `pg` builds its parameters as
+ *   Object.assign({}, config, parse(config.connectionString))
+ * — the parsed connection string is merged ON TOP of the explicit options, so a
+ * `sslmode=require` in the URL overwrites the `ssl` object rather than deferring
+ * to it. The CA was simply never consulted, and the failure was identical to
+ * having passed no CA at all ("self-signed certificate in certificate chain"),
+ * which is exactly what made it look like the wrong cert.
+ *
+ * Removing the parameter here rather than relying on whoever writes DATABASE_URL
+ * to leave it out: the env var is edited by hand across two deploy surfaces, and
+ * a re-added `sslmode` would quietly disable verification again.
+ */
+function withoutSslMode(url: string): string {
+  try {
+    const u = new URL(url);
+    u.searchParams.delete("sslmode");
+    return u.toString();
+  } catch {
+    return url; // unparseable — leave it alone and let pg report the real error
+  }
+}
+
 export const pool = new pg.Pool({
-  connectionString: config.DATABASE_URL,
-  // An explicit `ssl` object takes precedence over the connection string's
-  // sslmode, which is what lets us keep verify-full semantics with our own root.
+  connectionString: isSupabase ? withoutSslMode(config.DATABASE_URL) : config.DATABASE_URL,
+  // Full verification (chain + hostname) against Supabase's own root, which the
+  // public trust store doesn't carry.
   ...(isSupabase ? { ssl: { ca: SUPABASE_ROOT_CA, rejectUnauthorized: true } } : {}),
   max: isServerless ? 2 : 10,
   // Serverless instances are frozen between invocations and then discarded. An
