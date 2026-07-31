@@ -1,0 +1,39 @@
+name: Supabase verify
+on: workflow_dispatch
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Verify the migrated schema on both ports
+        env:
+          REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          PW: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile --silent
+          pnpm --filter @yoink/backend build
+          PW_ENC=$(python3 -c "import urllib.parse,os;print(urllib.parse.quote(os.environ['PW'],safe=''))")
+          HOST=aws-1-us-west-2.pooler.supabase.com
+          for PORT in 5432 6543; do
+            echo "=== port $PORT ($([ $PORT = 5432 ] && echo 'Railway session' || echo 'Vercel transaction')) ==="
+            DATABASE_URL="postgresql://postgres.${REF}:${PW_ENC}@${HOST}:${PORT}/postgres" \
+            node --input-type=module -e '
+              const { query, pool } = await import("./packages/backend/dist/db/pool.js");
+              const t = await query("select count(*)::int n from information_schema.tables where table_schema=$1",["public"]);
+              console.log("  public tables:", t[0].n);
+              const m = await query("select count(*)::int n from schema_migrations");
+              console.log("  migrations applied:", m[0].n);
+              const b = await query("select count(*)::int n from information_schema.schemata where schema_name=$1",["pgboss"]);
+              console.log("  pgboss schema present:", b[0].n === 1 ? "yes" : "NO");
+              const v = await query("select extversion from pg_extension where extname=$1",["vector"]);
+              console.log("  pgvector:", v[0]?.extversion ?? "MISSING");
+              // The thing the app does constantly: a pgvector round-trip.
+              const e = await query("select $1::vector <-> $2::vector d", ["[1,0,0]","[0,1,0]"]);
+              console.log("  vector distance op:", e[0].d);
+              await pool.end();
+            '
+          done
