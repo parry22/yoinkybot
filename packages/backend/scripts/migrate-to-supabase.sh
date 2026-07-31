@@ -60,6 +60,11 @@ command -v pg_restore >/dev/null || die "pg_restore not found. brew install post
 command -v psql       >/dev/null || die "psql not found. brew install postgresql@17"
 
 # Source resolution, in order of preference:
+#   0. The NEON_SOURCE_URL / SUPABASE_DIRECT_URL environment variables. This is how
+#      CI supplies them (see .github/workflows/migrate-to-supabase.yml) — GitHub
+#      Actions has unrestricted egress, whereas some local sandboxes block outbound
+#      5432 entirely, which makes running this locally impossible rather than
+#      merely awkward.
 #   1. NEON_SOURCE_URL in .env.supabase, if you pasted one (an explicit override
 #      wins — e.g. you want a specific Neon branch).
 #   2. Railway's own environment, fetched live.
@@ -69,7 +74,9 @@ command -v psql       >/dev/null || die "psql not found. brew install postgresql
 # one less secret at rest and one less thing to forget to delete afterwards. It also
 # removes the failure mode this script exists to prevent: you cannot paste the wrong
 # URL if you never paste one.
-SRC_URL="$(read_env "$SUPA_ENV" NEON_SOURCE_URL || true)"
+SRC_URL="${NEON_SOURCE_URL:-}"
+[ -n "$SRC_URL" ] && note "source taken from the environment (CI mode)"
+[ -z "$SRC_URL" ] && SRC_URL="$(read_env "$SUPA_ENV" NEON_SOURCE_URL || true)"
 if [ -z "${SRC_URL:-}" ]; then
   if command -v railway >/dev/null 2>&1; then
     note "NEON_SOURCE_URL not set — reading DATABASE_URL from Railway (never written to disk)…"
@@ -79,8 +86,24 @@ if [ -z "${SRC_URL:-}" ]; then
   fi
 fi
 
+# Target: environment first (CI), then the gitignored handoff file (local).
+DST_URL="${SUPABASE_DIRECT_URL:-}"
+[ -z "$DST_URL" ] && DST_URL="$(read_env "$SUPA_ENV" SUPABASE_DIRECT_URL || true)"
+
 [ -n "${SRC_URL:-}" ] || die "no source URL. Either paste NEON_SOURCE_URL into .env.supabase, or make sure 'railway' is logged in and linked to the yoinky project (railway status)."
-[ -n "${DST_URL:-}" ] || die "SUPABASE_DIRECT_URL is empty in .env.supabase — paste the SESSION pooler string (port 5432)"
+[ -n "${DST_URL:-}" ] || die "SUPABASE_DIRECT_URL is empty — set it in the environment (CI) or in .env.supabase (local). Must be the SESSION pooler string, port 5432."
+
+# Egress check. Some sandboxes block outbound 5432 wholesale, which produces a
+# confusing wall of connection timeouts that look like wrong credentials. Name it
+# up front instead: if the target's port is unreachable at the TCP layer, no
+# credential is going to help, and CI (unrestricted egress) is the place to run.
+DST_HOST="$(printf '%s' "$DST_URL" | sed -E 's#.*@([^:/?]+).*#\1#')"
+DST_PORT="$(printf '%s' "$DST_URL" | sed -E 's#.*@[^:]+:([0-9]+).*#\1#')"
+if command -v nc >/dev/null 2>&1; then
+  nc -z -w 8 "$DST_HOST" "${DST_PORT:-5432}" 2>/dev/null \
+    || die "cannot open a TCP connection to $DST_HOST:${DST_PORT:-5432}. Outbound Postgres is likely blocked on this network — run this via the GitHub Actions workflow instead: Actions → 'Migrate to Supabase' → Run workflow."
+  ok "TCP reachable: $DST_HOST:${DST_PORT:-5432}"
+fi
 
 # The exact mistake that made the first draft of this script dangerous. A source
 # pointing at localhost would migrate dev data and pass every check, because the
