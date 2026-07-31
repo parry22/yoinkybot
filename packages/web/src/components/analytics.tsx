@@ -270,7 +270,18 @@ export function Analytics({ data }: { data: Data }) {
                 {data.weekly.map((w) => (
                   <div key={w.weeksAgo} className={styles.sparkCol} title={`${w.posts} posts, ${fmt(w.impressions)} impressions`}>
                     <div className={styles.sparkBarWrap}>
-                      <div className={styles.sparkBar} style={{ height: `${Math.max(4, Math.round((w.posts / maxWeekPosts) * 100))}%` }} />
+                      {/* A week with no posts draws NO bar. `Math.max(4, …)` floored
+                          every week to a visible 4% stub, so seven empty weeks
+                          rendered as seven small pink bars — zero looking like a
+                          quantity, which is the one thing a bar chart must never
+                          do. The floor still applies to real values, so a 1-post
+                          week next to a 40-post week stays visible. */}
+                      {w.posts > 0 && (
+                        <div
+                          className={styles.sparkBar}
+                          style={{ height: `${Math.max(6, Math.round((w.posts / maxWeekPosts) * 100))}%` }}
+                        />
+                      )}
                     </div>
                     <div className={styles.sparkVal}>{w.posts}</div>
                     <div className={styles.sparkLabel}>{w.weeksAgo === 0 ? "now" : `${w.weeksAgo}w`}</div>
@@ -524,10 +535,15 @@ function TimingSection({
             <div key={d.key} className={styles.daypartRow}>
               <span className={styles.daypartLabel}>{d.label}</span>
               <span className={styles.daypartBarWrap}>
-                <span
-                  className={styles.daypartBar}
-                  style={{ width: `${Math.max(2, Math.round((d.perPost / maxDaypart) * 100))}%` }}
-                />
+                {/* Same rule as the momentum chart: a daypart you have never posted
+                    in gets no bar at all. The old 2% floor drew a stub next to the
+                    words "no posts", so the row contradicted itself. */}
+                {d.posts > 0 && (
+                  <span
+                    className={styles.daypartBar}
+                    style={{ width: `${Math.max(3, Math.round((d.perPost / maxDaypart) * 100))}%` }}
+                  />
+                )}
               </span>
               <span className={styles.daypartValue}>
                 {d.posts === 0 ? "no posts" : `${fmt(Math.round(d.perPost))} / post`}

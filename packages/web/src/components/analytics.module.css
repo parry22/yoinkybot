@@ -72,8 +72,17 @@
 
 /* Posted here exactly once: outlined, never filled — a single post is evidence
  * that you posted, not evidence that the slot works. */
+/* Posted here exactly once. It must be clearly VISIBLE (a post really did land in
+ * this slot) while clearly not claiming a pattern — those are two different jobs,
+ * and `background: transparent` only did the second one. On a dark canvas a
+ * transparent cell with a faint border is indistinguishable from "never posted",
+ * so an account whose every slot has a single post rendered an apparently empty
+ * grid sitting directly above daypart bars full of real numbers. That reads as a
+ * broken chart, not as a careful one.
+ *
+ * A muted fill plus the outline says "present, not yet meaningful". */
 .cellThin {
-  background: transparent;
+  background: var(--accent-soft);
   border: 1px solid var(--accent-border);
 }
 
@@ -110,10 +119,13 @@
   gap: 6px;
 }
 
+/* Must match .cellThin exactly, or the legend explains a swatch the grid
+ * never draws. */
 .legendThin i {
   width: 11px;
   height: 11px;
   border-radius: 3px;
+  background: var(--accent-soft);
   border: 1px solid var(--accent-border);
 }
 
