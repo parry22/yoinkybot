@@ -42,6 +42,9 @@ export const QUEUES = {
   /** Twice-daily incremental re-pull of every connected X account, so nobody has
    *  to reconnect just to get fresh data (jobs/x-refresh.ts). */
   xRefresh: "x.refresh",
+  /** Weekly housekeeping: roll up usage_events and prune the operational tables
+   *  so storage stays bounded (jobs/retention.ts). */
+  retention: "db.retention",
 } as const;
 
 export interface TranscribeJob {

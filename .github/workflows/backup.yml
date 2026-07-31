@@ -1,0 +1,117 @@
+name: Database backup
+
+# A nightly logical backup, kept as a workflow artifact.
+#
+# WHY THIS EXISTS. The database holds the one thing in this product that cannot be
+# regenerated: every user's captured corpus, their extracted memories, their
+# belief graph and their voice profile. Everything else — code, prompts, deploys —
+# is reproducible from git in minutes. This is not.
+#
+# Managed-Postgres free tiers generally include no point-in-time recovery and a
+# thin (or absent) backup story, so on a free plan the hosted copy is effectively
+# the ONLY copy. That is an unacceptable position for data users are paying for —
+# and it gets worse the moment lifetime licences are sold, because those are
+# permanent obligations against permanent data.
+#
+# Runs in GitHub Actions rather than as an in-app job on purpose: `pg_dump` is the
+# right tool and it produces a restorable artifact, whereas a hand-rolled
+# JSON-dumping job inside the backend would be a worse `pg_dump` that also
+# competes with the app for the very compute we are trying to conserve. Free on
+# GitHub's hosted runners.
+#
+# REQUIRED repo secret (Settings → Secrets and variables → Actions):
+#   DATABASE_BACKUP_URL — a read-capable connection string for the primary DB.
+#                         Use a read-only role if the host supports one; this
+#                         workflow never writes.
+# Until it exists the job SKIPS cleanly rather than failing red.
+
+on:
+  schedule:
+    # 03:20 UTC daily — deliberately off the hour, since scheduled runs cluster
+    # (and get queued) on exact-hour crons across all of GitHub.
+    - cron: "20 3 * * *"
+  workflow_dispatch:
+
+# Never let two dumps overlap; a queued run replaces a pending one.
+concurrency:
+  group: db-backup
+  cancel-in-progress: false
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    steps:
+      # pg_dump refuses to run against a server newer than itself, and the runner
+      # image's bundled client lags. Install the client explicitly from PGDG so a
+      # host upgrading its Postgres major can't silently break backups.
+      #
+      # Deliberately NOT `container: postgres:17-alpine`: actions/upload-artifact
+      # is a JavaScript action, GitHub injects its own glibc Node into job
+      # containers, and that does not run on musl — the upload step would fail
+      # inside an Alpine container.
+      - name: Install PostgreSQL 17 client
+        run: |
+          set -euo pipefail
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
+            https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17
+          pg_dump --version
+
+      - name: Check for the backup secret
+        id: guard
+        env:
+          DATABASE_BACKUP_URL: ${{ secrets.DATABASE_BACKUP_URL }}
+        run: |
+          if [ -z "$DATABASE_BACKUP_URL" ]; then
+            echo "DATABASE_BACKUP_URL is not set — skipping backup."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Dump
+        if: steps.guard.outputs.ready == 'true'
+        env:
+          # Passed via env, never as a command-line argument: argv is visible to
+          # other processes and can end up in logs.
+          DATABASE_BACKUP_URL: ${{ secrets.DATABASE_BACKUP_URL }}
+        run: |
+          set -euo pipefail
+          STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+          echo "DUMP_FILE=yoinky-$STAMP.dump" >> "$GITHUB_ENV"
+          # -Fc  custom format: compressed, and restorable selectively with
+          #      pg_restore (a plain .sql dump is all-or-nothing).
+          # --no-owner / --no-acl: the restore target is a different host with
+          #      different role names, so carrying ownership just breaks it.
+          pg_dump "$DATABASE_BACKUP_URL" \
+            --format=custom \
+            --no-owner \
+            --no-acl \
+            --file="yoinky-$STAMP.dump"
+          ls -lh "yoinky-$STAMP.dump"
+          # A dump that restores to nothing is worse than no dump, because it
+          # looks like protection. Verify the archive's table of contents is
+          # readable and non-trivial before we call this a backup.
+          TABLES="$(pg_restore --list "yoinky-$STAMP.dump" | grep -c 'TABLE DATA' || true)"
+          echo "tables with data: $TABLES"
+          if [ "$TABLES" -lt 5 ]; then
+            echo "::error::Dump contains only $TABLES data tables — treating as failed."
+            exit 1
+          fi
+
+      - name: Upload
+        if: steps.guard.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.DUMP_FILE }}
+          path: ${{ env.DUMP_FILE }}
+          # 30 days of daily dumps. Long enough to notice and recover from
+          # corruption that went unspotted for weeks; short enough to stay inside
+          # the free artifact storage allowance.
+          retention-days: 30
+          if-no-files-found: error

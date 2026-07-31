@@ -1,7 +1,48 @@
 import pg from "pg";
 import { config } from "../config.js";
 
-export const pool = new pg.Pool({ connectionString: config.DATABASE_URL, max: 10 });
+/**
+ * Two very different consumers share this module, and they need opposite pool
+ * shapes — which the old flat `max: 10` got wrong for one of them.
+ *
+ * The BACKEND is a single long-lived process. Ten connections is right: pg-boss's
+ * workers plus the bot plus the crons genuinely want concurrency, and the process
+ * holds them for its whole lifetime.
+ *
+ * The WEB APP is Vercel serverless. Every concurrent function instance builds its
+ * OWN pool, so `max: 10` means ten connections *per instance* — a traffic spike
+ * that spins up 20 instances asks for 200 connections. Against a managed
+ * Postgres's connection ceiling (Supabase free is far below that, and a pooler in
+ * transaction mode has its own client limit) this exhausts the server and the
+ * failure looks random: most requests fine, some throwing "too many clients", no
+ * pattern. Each serverless invocation handles one request and does a handful of
+ * sequential queries, so it needs 1-2 connections, not ten.
+ *
+ * Detected via the runtime rather than a new env var, so it cannot drift out of
+ * sync with where the code is actually running. Vercel sets VERCEL=1 on all its
+ * runtimes; AWS_LAMBDA_FUNCTION_NAME is the belt-and-braces check.
+ */
+const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+
+export const pool = new pg.Pool({
+  connectionString: config.DATABASE_URL,
+  max: isServerless ? 2 : 10,
+  // Serverless instances are frozen between invocations and then discarded. An
+  // idle connection held by a frozen instance is a connection the server has
+  // reserved for nobody, so let it go quickly; the long-lived backend keeps its
+  // connections warm instead (0 = never time out).
+  idleTimeoutMillis: isServerless ? 10_000 : 0,
+  // Fail fast rather than hanging a request for the platform's full timeout when
+  // the database is unreachable — which is exactly what happened when the Neon
+  // compute quota ran out: every page sat waiting instead of erroring cleanly.
+  connectionTimeoutMillis: 10_000,
+});
+
+// A pooled connection can be killed server-side (pooler recycling, a failover, an
+// idle reaper). `pg` emits that on the pool, and an unhandled 'error' event on an
+// EventEmitter takes the whole process down — so this listener is what stops a
+// routine connection drop from becoming a crash.
+pool.on("error", (err) => console.error("pg pool error (connection dropped)", err.message));
 
 export async function query<T extends pg.QueryResultRow = pg.QueryResultRow>(
   text: string,

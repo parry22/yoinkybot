@@ -35,6 +35,7 @@ import { handleMonthlyRecalibration } from "../memory/corrections.js";
 import { handleScheduledPost, reapStuckPublishing } from "./scheduled-post.js";
 import { handleAutomationTick } from "../automations/tick.js";
 import { handleXRefresh, nudgeStaleXRefresh } from "./x-refresh.js";
+import { handleRetention, logStorageFootprint } from "./retention.js";
 import type {
   IngestProfileJob,
   DiagnoseJob,
@@ -151,6 +152,16 @@ export async function registerWorkers(boss: PgBoss): Promise<void> {
   // the row leaves 'pending', so neither pg-boss's retry nor a later delivery can
   // re-claim it. This sweep is the recovery path.
   await boss.work(QUEUES.scheduledPostReap, logged(QUEUES.scheduledPostReap, () => reapStuckPublishing()));
+  // Storage housekeeping. Logs the footprint alongside the sweep so growth is
+  // visible in the logs before it becomes a hard stop.
+  await boss.work(
+    QUEUES.retention,
+    logged(QUEUES.retention, async () => {
+      const res = await handleRetention();
+      await logStorageFootprint();
+      return res;
+    }),
+  );
 
   // Web "agent mode": once/day, for each user who's opted in, run the full
   // topic→draft→schedule loop. The handler enforces a per-user ~daily gap.
@@ -217,6 +228,10 @@ export async function registerWorkers(boss: PgBoss): Promise<void> {
   // stuck in 'publishing' for 30+ minutes, so the recovery window is unchanged;
   // all the extra runs bought was Neon compute time (see POLL_SECONDS in boss.ts).
   await boss.schedule(QUEUES.scheduledPostReap, "*/15 * * * *");
+  // Storage housekeeping: weekly, in the quietest hour. Nothing about it is
+  // time-sensitive — it exists so the table sizes never become the thing that
+  // takes production down, which is a slow problem, not an urgent one.
+  await boss.schedule(QUEUES.retention, "20 4 * * 0"); // Sundays 09:50 IST
 
   // Retired schedules — pg-boss persists these in its own table independent of
   // the code, so removing a boss.schedule() call above does nothing on an
