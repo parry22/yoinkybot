@@ -92,14 +92,45 @@ export function dbConnectionOptions(): { connectionString: string; ssl?: pg.Pool
   };
 }
 
+/**
+ * THE SESSION-POOLER BUDGET. Supabase's session pooler (port 5432, what the
+ * Railway backend uses) allows **15 client connections total**, and exceeding it
+ * does not queue — it throws:
+ *
+ *     error: (EMAXCONNSESSION) max clients reached in session mode
+ *            - max clients are limited to pool_size: 15
+ *
+ * which surfaces as random query failures across unrelated features. It looked
+ * like "analytics isn't fetching" because that page runs several queries and any
+ * one of them could lose the race for a slot.
+ *
+ * The backend opens TWO independent pools against that one budget: this one, and
+ * pg-boss's (jobs/boss.ts). Neither used to declare a size, so this pool took 10
+ * and pg-boss's default took another 10 — 20 against a ceiling of 15. It worked
+ * on Neon, which allows far more, and broke the moment we moved.
+ *
+ * So the 15 is now divided on purpose:
+ *   pg-boss   8   (BOSS_POOL_MAX in jobs/boss.ts — it needs the most; 27 workers
+ *                  poll plus maintenance)
+ *   this pool 4   (request/job query traffic)
+ *   spare     3   (boot migrations, a one-off script, a human's psql)
+ *
+ * Keep the sum under 15. If you raise one, lower the other.
+ */
+export const APP_POOL_MAX = 4;
+
 export const pool = new pg.Pool({
   ...dbConnectionOptions(),
-  max: isServerless ? 2 : 10,
+  max: isServerless ? 2 : APP_POOL_MAX,
   // Serverless instances are frozen between invocations and then discarded. An
   // idle connection held by a frozen instance is a connection the server has
-  // reserved for nobody, so let it go quickly; the long-lived backend keeps its
-  // connections warm instead (0 = never time out).
-  idleTimeoutMillis: isServerless ? 10_000 : 0,
+  // reserved for nobody, so let it go quickly.
+  //
+  // The backend releases idle connections too, which it did not before (0 = never).
+  // Against a shared 15-slot pooler, holding connections open while idle is just
+  // hoarding slots that boot migrations and pg-boss need — and reconnecting is
+  // cheap next to failing.
+  idleTimeoutMillis: isServerless ? 10_000 : 30_000,
   // Fail fast rather than hanging a request for the platform's full timeout when
   // the database is unreachable — which is exactly what happened when the Neon
   // compute quota ran out: every page sat waiting instead of erroring cleanly.

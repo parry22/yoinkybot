@@ -133,6 +133,9 @@ export async function ensureBoss(): Promise<PgBoss> {
         supervise: false,
         schedule: false,
         migrate: false,
+        // Enqueue-only, and it runs on Vercel where each serverless instance
+        // builds its own pool — so it takes the smallest slice that still works.
+        max: 2,
       });
       b.on("error", (err) => console.error("pg-boss error (enqueue-only)", err));
       await b.start();
@@ -175,11 +178,22 @@ export const FAST_POLL_SECONDS = 2;
  *  can be. 15s of drift on a post the user scheduled for 09:00 is invisible. */
 export const SCHEDULED_POST_POLL_SECONDS = 15;
 
+/**
+ * pg-boss's share of Supabase's 15-connection session-pooler budget (the split is
+ * documented on APP_POOL_MAX in db/pool.ts). pg-boss defaults to 10 and declared
+ * nothing here, so it took 10 while the app pool took another 10 — 20 against a
+ * ceiling of 15, which threw EMAXCONNSESSION and made unrelated queries fail at
+ * random. It gets the larger share because 27 registered workers poll plus its
+ * maintenance and cron machinery.
+ */
+const BOSS_POOL_MAX = 8;
+
 export async function startBoss(): Promise<PgBoss> {
   boss = new PgBoss({
     ...dbConnectionOptions(),
     schema: "pgboss",
     pollingIntervalSeconds: POLL_SECONDS,
+    max: BOSS_POOL_MAX,
   });
   boss.on("error", (err) => console.error("pg-boss error", err));
   await boss.start();
