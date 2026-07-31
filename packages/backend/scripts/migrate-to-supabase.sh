@@ -59,10 +59,27 @@ command -v pg_dump    >/dev/null || die "pg_dump not found. brew install postgre
 command -v pg_restore >/dev/null || die "pg_restore not found. brew install postgresql@17"
 command -v psql       >/dev/null || die "psql not found. brew install postgresql@17"
 
+# Source resolution, in order of preference:
+#   1. NEON_SOURCE_URL in .env.supabase, if you pasted one (an explicit override
+#      wins — e.g. you want a specific Neon branch).
+#   2. Railway's own environment, fetched live.
+#
+# Preferring (2) is deliberate. It means the production database credential is read
+# into memory for the length of this run and never written to disk — which is both
+# one less secret at rest and one less thing to forget to delete afterwards. It also
+# removes the failure mode this script exists to prevent: you cannot paste the wrong
+# URL if you never paste one.
 SRC_URL="$(read_env "$SUPA_ENV" NEON_SOURCE_URL || true)"
-DST_URL="$(read_env "$SUPA_ENV" SUPABASE_DIRECT_URL || true)"
+if [ -z "${SRC_URL:-}" ]; then
+  if command -v railway >/dev/null 2>&1; then
+    note "NEON_SOURCE_URL not set — reading DATABASE_URL from Railway (never written to disk)…"
+    SRC_URL="$(railway variables --service backend --kv 2>/dev/null \
+                | sed -n 's/^DATABASE_URL=//p' | head -1 || true)"
+    [ -n "${SRC_URL:-}" ] && ok "source resolved from Railway"
+  fi
+fi
 
-[ -n "${SRC_URL:-}" ] || die "NEON_SOURCE_URL is empty in .env.supabase — this must be the PRODUCTION Neon URL from Railway, not packages/backend/.env (which is localhost)"
+[ -n "${SRC_URL:-}" ] || die "no source URL. Either paste NEON_SOURCE_URL into .env.supabase, or make sure 'railway' is logged in and linked to the yoinky project (railway status)."
 [ -n "${DST_URL:-}" ] || die "SUPABASE_DIRECT_URL is empty in .env.supabase — paste the SESSION pooler string (port 5432)"
 
 # The exact mistake that made the first draft of this script dangerous. A source
