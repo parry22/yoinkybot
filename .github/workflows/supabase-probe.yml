@@ -1,0 +1,84 @@
+name: Supabase probe
+
+# Finds the correct Supabase connection strings, then throws itself away.
+#
+# WHY THIS EXISTS. The Session/Transaction pooler hostnames embed the project's
+# REGION (aws-{0,1}-<region>.pooler.supabase.com) and there is no way to read it
+# from outside: the direct host `db.<ref>.supabase.co` no longer resolves at all
+# (Supabase moved direct IPv4 behind a paid add-on), and the REST endpoint sits
+# behind Cloudflare so its headers describe the edge, not the database. Every
+# candidate pooler hostname resolves whether or not YOUR project lives there, so
+# DNS can't answer it either — only an authenticated connection can.
+#
+# Port 5432 is blocked outbound on the dev machine, so this has to run in CI.
+#
+# READ-ONLY. It runs `SELECT 1` and inspects pg_available_extensions. It creates
+# nothing and writes nothing. Safe to re-run.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install PostgreSQL 17 client
+        run: |
+          set -euo pipefail
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
+            https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17
+
+      - name: Find the region
+        env:
+          REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          PW: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          set -uo pipefail
+          REGIONS="ap-south-1 ap-southeast-1 ap-southeast-2 ap-northeast-1 ap-northeast-2 \
+                   us-east-1 us-east-2 us-west-1 us-west-2 \
+                   eu-central-1 eu-central-2 eu-west-1 eu-west-2 eu-west-3 eu-north-1 \
+                   sa-east-1 ca-central-1"
+          FOUND=""
+          # Encode the password for the URL — a literal @ or / in it would
+          # otherwise be parsed as part of the host, giving a misleading failure.
+          PW_ENC=$(python3 -c "import urllib.parse,os;print(urllib.parse.quote(os.environ['PW'],safe=''))")
+          for P in 0 1; do
+            for R in $REGIONS; do
+              HOST="aws-${P}-${R}.pooler.supabase.com"
+              URL="postgresql://postgres.${REF}:${PW_ENC}@${HOST}:5432/postgres?sslmode=require"
+              # 8s is generous for a TLS handshake + auth; a wrong region either
+              # refuses the tenant fast or never answers.
+              if timeout 12 psql "$URL" -tAc 'select 1' >/dev/null 2>&1; then
+                echo "MATCH  $HOST"
+                FOUND="$HOST"
+                break 2
+              fi
+            done
+          done
+
+          if [ -z "$FOUND" ]; then
+            echo "::error::No region matched. Either the password is wrong or the project is in a region not listed above."
+            exit 1
+          fi
+
+          echo "----------------------------------------------------------------"
+          echo "SESSION pooler (Railway backend)  -> ${FOUND}:5432"
+          echo "TRANSACTION pooler (Vercel web)   -> ${FOUND}:6543"
+          echo "----------------------------------------------------------------"
+
+          URL="postgresql://postgres.${REF}:${PW_ENC}@${FOUND}:5432/postgres?sslmode=require"
+          echo "server version:"
+          psql "$URL" -tAc 'show server_version'
+          echo "pgvector available (migration 0001 needs it):"
+          psql "$URL" -tAc "select name||' '||default_version from pg_available_extensions where name='vector'"
+          echo "existing user tables (expect 0 on a fresh project):"
+          psql "$URL" -tAc "select count(*) from information_schema.tables where table_schema='public'"
+
+          echo "transaction pooler on 6543 reachable:"
+          psql "postgresql://postgres.${REF}:${PW_ENC}@${FOUND}:6543/postgres?sslmode=require" -tAc 'select 1'
