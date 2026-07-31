@@ -24,9 +24,21 @@ export async function GET(req: Request) {
   const existing = await getSessionUser();
   if (!existing) return NextResponse.redirect(new URL("/sign-in", origin));
 
-  const fail = (reason: string) => {
+  /**
+   * `kind` separates "try again" from "an operator has to fix something".
+   *
+   * Everything used to funnel into connect_error=1, whose copy says "please try
+   * again" — advice that is actively wrong for a 401. X returns 401
+   * unauthorized_client when the client credentials it was handed are not the
+   * ones it issued, and no amount of retrying changes that. Telling the user to
+   * retry in that case wastes their time and hides a config bug from us.
+   *
+   * The distinction is safe to expose: it says which side the fault is on, and
+   * nothing about the credentials themselves.
+   */
+  const fail = (reason: string, kind: "retry" | "config" = "retry") => {
     console.error("x oauth callback:", reason);
-    return NextResponse.redirect(new URL("/app?connect_error=1", origin));
+    return NextResponse.redirect(new URL(`/app?connect_error=${kind}`, origin));
   };
 
   const jar = await cookies();
@@ -41,7 +53,7 @@ export async function GET(req: Request) {
 
   const clientId = process.env.X_CLIENT_ID;
   const clientSecret = process.env.X_CLIENT_SECRET;
-  if (!clientId || !clientSecret) return fail("x not configured");
+  if (!clientId || !clientSecret) return fail("x not configured", "config");
   const redirectUri = `${origin}/api/auth/x/callback`;
 
   try {
@@ -57,7 +69,21 @@ export async function GET(req: Request) {
         client_id: clientId,
       }),
     });
-    if (!tokRes.ok) return fail(`token exchange ${tokRes.status}`);
+    if (!tokRes.ok) {
+      // Log X's own error body, not just the status. "401" alone sent us hunting
+      // through PKCE, cookies and redirect URIs; X actually says
+      // `unauthorized_client / Missing valid authorization header`, which names
+      // the client credentials directly and would have ended that hunt at once.
+      const body = await tokRes.text().catch(() => "");
+      // 401 = X does not recognise the client credentials we sent. Since X only
+      // issues a code for a client_id it knows, a 401 here means the SECRET is
+      // stale or mismatched — an operator fix, never a user retry.
+      // 400 = a genuinely spent/expired code, which retrying does resolve.
+      return fail(
+        `token exchange ${tokRes.status}: ${body.slice(0, 300)}`,
+        tokRes.status === 401 || tokRes.status === 403 ? "config" : "retry",
+      );
+    }
     const tok = (await tokRes.json()) as { access_token?: string; refresh_token?: string; expires_in?: number; scope?: string };
     if (!tok.access_token) return fail("no access token");
 

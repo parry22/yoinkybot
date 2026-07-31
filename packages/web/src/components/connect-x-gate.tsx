@@ -63,7 +63,12 @@ function Gate({ connected, reading, failed }: { connected: boolean; reading: boo
   // the layout's read of it raced; the poll below is what actually resolves it.
   const justConnected = params.get("connected") === "x";
   // Set when the OAuth handshake itself blew up before any account row existed.
-  const connectError = params.get("connect_error") === "1";
+  // "config" means X rejected OUR credentials — retrying cannot fix that, so the
+  // copy must not ask the user to. "1" is kept so an in-flight redirect issued by
+  // the previous deploy still renders as the retryable case.
+  const connectErrorKind = params.get("connect_error");
+  const connectError = connectErrorKind === "1" || connectErrorKind === "retry";
+  const connectBlocked = connectErrorKind === "config";
 
   const [status, setStatus] = useState<GateStatus>(() => statusOf({ connected, reading, failed }));
   const [ingested, setIngested] = useState(() => statusOf({ connected, reading, failed }) === "ready");
@@ -174,6 +179,19 @@ function Gate({ connected, reading, failed }: { connected: boolean; reading: boo
         {connectError && (
           <div className={styles.error}>
             That didn&apos;t go through — X sent us back without finishing the handshake. Please try again.
+          </div>
+        )}
+        {/* Deliberately owns the fault and does NOT say "try again". X rejected
+            our credentials, so every retry lands in the same place; sending
+            someone round that loop is worse than telling them to stop.
+            It also stops short of promising we've been paged — the failure is
+            logged server-side, but alertAdmin routes through the Telegram bot,
+            which isn't running in this serverless context, so claiming an alert
+            fired would be untrue. */}
+        {connectBlocked && (
+          <div className={styles.error}>
+            X turned us away — that&apos;s a misconfiguration on our side, not anything you did, and retrying
+            won&apos;t clear it. Please reach out and we&apos;ll get it fixed.
           </div>
         )}
         <a className={styles.xBtn} href="/api/auth/x/start">
