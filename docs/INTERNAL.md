@@ -2168,6 +2168,71 @@ layout and Settings **fail open** on a lookup error so a DB blip can't lock a
 paying customer out. Keys are managed afterwards in Settings → Your API keys,
 which only renders for users on the plan that uses them.
 
+## 3v. Neon → Supabase (2026-07-31)
+
+Production went down with Neon `compute time quota exceeded` (PG 53000, HTTP 402
+over the serverless driver). We moved to Supabase.
+
+**No data was migrated, deliberately.** Neon held 4 users — all test accounts —
+2 trialing subscription rows and 0 paying customers. A `pg_dump`/restore was
+built and then thrown away: there was nothing worth carrying, and the exhausted
+compute would have blocked the dump from reading regardless. Instead both
+surfaces were repointed at a fresh project and the migration chain rebuilt the
+schema on backend boot — all 39 applied clean, which is the documented §4
+invariant ("must apply cleanly on a fresh DB") getting its first real exercise.
+
+```
+project  ihhyiregpxbjnahzvkui, region us-west-2, PG 17.6, pgvector 0.8.2
+Railway  aws-1-us-west-2.pooler.supabase.com:5432   SESSION mode (pg-boss needs
+                                                    session-scoped state)
+Vercel   aws-1-us-west-2.pooler.supabase.com:6543   TRANSACTION mode
+```
+
+The region was **not** discoverable from outside: `db.<ref>.supabase.co` no
+longer resolves (direct IPv4 is a paid add-on), the REST endpoint sits behind
+Cloudflare so its headers describe the edge, and every candidate pooler hostname
+resolves whether or not your project is there. Only an authenticated connection
+answers it — found by a throwaway CI probe, and it was us-west-2, not the
+ap-south-1 the earlier notes had assumed.
+
+### The TLS trap (would have been a total outage)
+
+> Supabase's pooler serves a chain rooted in **Supabase Root 2021 CA**, which is
+> not in the public trust store. node-postgres treats `sslmode=require` as
+> **verify-full**, so it rejects it outright:
+> `Error: self-signed certificate in certificate chain` — on both ports.
+> Repointing `DATABASE_URL` without handling this would not have degraded; the
+> app simply would not have connected, and since production was already down the
+> symptom would have looked like the move itself had failed.
+
+`db/pool.ts` pins the root (`db/supabase-ca.ts`, inlined as a TS constant because
+`tsc` won't copy a `.crt` into `dist/` — the same trap that already bites
+`migrate.js` with the `.sql` files) and **strips `sslmode` from the URL**. That
+strip is load-bearing: `pg` builds params as
+`Object.assign({}, config, parse(connectionString))`, so the parsed URL is merged
+*on top of* explicit options and an `sslmode` silently overwrites the `ssl`
+object. The first CA-pinning attempt therefore did nothing and failed
+byte-identically to having no CA at all.
+
+`sslmode=no-verify` / `rejectUnauthorized: false` were rejected as fixes: they
+encrypt while authenticating nothing, leaving the DB credential open to anyone in
+the path.
+
+**pg-boss builds its own connection** and was passing the raw `DATABASE_URL`. Left
+alone it would have hit the same rejection — every background job down while the
+web app looked healthy. Both call sites now share `dbConnectionOptions()`.
+
+### Verification
+
+`.github/workflows/supabase-verify.yml` (read-only, kept) exercises the app's own
+pool module against **both** pooler ports: 50 tables, 38 migrations, `pgboss`
+schema present, pgvector 0.8.2, and a live vector-distance round-trip. Worth
+knowing that the public API routes returning 401 proves nothing about the
+database — auth short-circuits before any query.
+
+CI is also the only place this could be tested: outbound 5432 is blocked on the
+dev machine.
+
 ## 3n. Agent SDK runtime (2026-07-24, IN PROGRESS — Phase 0/1)
 
 Migrating the bounded agent loops (§3c) + eventually the chat brain (§3a) off the
