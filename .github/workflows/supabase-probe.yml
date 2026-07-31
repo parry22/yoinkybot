@@ -83,36 +83,38 @@ jobs:
           echo "transaction pooler on 6543 reachable:"
           psql "postgresql://postgres.${REF}:${PW_ENC}@${FOUND}:6543/postgres?sslmode=require" -tAc 'select 1'
 
-      # psql's sslmode=require only ENCRYPTS; node-postgres treats the same
-      # string as verify-full (it warns about this on every boot). So psql
-      # connecting proves nothing about whether the app will. Test with the
-      # actual driver, actual connection string, actual TLS policy.
-      - name: Connect with node-postgres, exactly as the app does
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+
+      # The decisive test: the app's OWN pool module, with the CA pinning, against
+      # both pooler ports. psql's sslmode=require only encrypts; node-postgres
+      # treats the identical string as verify-full, so only this proves the app
+      # can actually connect.
+      - name: Connect using the app's real db/pool.ts
         env:
           REF: ${{ secrets.SUPABASE_PROJECT_REF }}
           PW: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: |
           set -euo pipefail
-          npm i --silent pg@8 >/dev/null 2>&1
-          node -e '
-            const { Pool } = require("pg");
-            const pw = encodeURIComponent(process.env.PW);
-            const host = "aws-1-us-west-2.pooler.supabase.com";
-            (async () => {
-              for (const [label, port] of [["session (Railway)", 5432], ["transaction (Vercel)", 6543]]) {
-                const url = `postgresql://postgres.${process.env.REF}:${pw}@${host}:${port}/postgres?sslmode=require`;
-                const pool = new Pool({ connectionString: url, connectionTimeoutMillis: 10000 });
-                try {
-                  const r = await pool.query("select current_database() db, version() v");
-                  console.log(`OK   ${label} :${port} -> ${r.rows[0].db}`);
-                  // pgvector must be creatable, not just available — migration 0001 runs CREATE EXTENSION.
-                  await pool.query("create extension if not exists vector");
-                  const e = await pool.query("select extversion from pg_extension where extname=$1", ["vector"]);
-                  console.log(`     pgvector installed: ${e.rows[0]?.extversion ?? "FAILED"}`);
-                } catch (err) {
-                  console.log(`FAIL ${label} :${port} -> ${err.message}`);
-                  process.exitCode = 1;
-                } finally { await pool.end(); }
-              }
-            })();
-          '
+          pnpm install --frozen-lockfile --silent
+          pnpm --filter @yoink/backend build
+          PW_ENC=$(python3 -c "import urllib.parse,os;print(urllib.parse.quote(os.environ['PW'],safe=''))")
+          HOST=aws-1-us-west-2.pooler.supabase.com
+          for PORT in 5432 6543; do
+            echo "--- port $PORT ---"
+            DATABASE_URL="postgresql://postgres.${REF}:${PW_ENC}@${HOST}:${PORT}/postgres?sslmode=require" \
+            node --input-type=module -e '
+              const { query, pool } = await import("./packages/backend/dist/db/pool.js");
+              const r = await query("select current_database() db, version() v");
+              console.log("OK  connected ->", r[0].db, String(r[0].v).slice(0,30));
+              await query("create extension if not exists vector");
+              const e = await query("select extversion from pg_extension where extname=$1", ["vector"]);
+              console.log("    pgvector:", e[0]?.extversion ?? "FAILED");
+              await pool.end();
+            ' || { echo "FAILED on port $PORT"; exit 1; }
+          done
+        working-directory: .
+

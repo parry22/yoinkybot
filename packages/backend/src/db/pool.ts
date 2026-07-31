@@ -1,5 +1,6 @@
 import pg from "pg";
 import { config } from "../config.js";
+import { SUPABASE_ROOT_CA } from "./supabase-ca.js";
 
 /**
  * Two very different consumers share this module, and they need opposite pool
@@ -24,8 +25,33 @@ import { config } from "../config.js";
  */
 const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
 
+/**
+ * TLS for Supabase.
+ *
+ * The Supabase pooler serves a chain rooted in Supabase's own CA, which is not
+ * in the public trust store. node-postgres treats the `sslmode=require` in the
+ * connection string as `verify-full`, so it rejects that chain outright:
+ *   Error: self-signed certificate in certificate chain
+ * — confirmed against both pooler ports in CI before the cutover, which is the
+ * only reason this wasn't a production outage.
+ *
+ * Pinning the real CA keeps verification ON, including the hostname check. The
+ * easy alternatives (`sslmode=no-verify`, `rejectUnauthorized: false`) would
+ * encrypt while authenticating nothing, leaving the database credential open to
+ * anyone who can get in the path — not a trade worth making for a managed
+ * database reached across the public internet.
+ *
+ * Host-matched rather than applied unconditionally, so a non-Supabase
+ * DATABASE_URL (Neon today, local dev, a future move) keeps the public trust
+ * store and is unaffected by this.
+ */
+const isSupabase = /\.supabase\.(co|com)(:|\/|$)/.test(config.DATABASE_URL);
+
 export const pool = new pg.Pool({
   connectionString: config.DATABASE_URL,
+  // An explicit `ssl` object takes precedence over the connection string's
+  // sslmode, which is what lets us keep verify-full semantics with our own root.
+  ...(isSupabase ? { ssl: { ca: SUPABASE_ROOT_CA, rejectUnauthorized: true } } : {}),
   max: isServerless ? 2 : 10,
   // Serverless instances are frozen between invocations and then discarded. An
   // idle connection held by a frozen instance is a connection the server has
