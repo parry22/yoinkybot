@@ -2539,6 +2539,23 @@ deletion — set them in the deploy dashboard only.
   assume exactly one running replica.
 - **Pre-deploy gate:** `pnpm verify` (typecheck + full unit suite). Don't ship red.
 - **Migrations** run automatically on boot; also `pnpm db:migrate`.
+- **A migration that has run anywhere is IMMUTABLE.** `db/migrate.ts` skips on
+  `applied.has(file)` — keyed on the **filename**, never the contents — so editing
+  an already-applied file means the edit never executes and the declaration silently
+  diverges from the database. Add a new file instead.
+  *This has already bitten once:* `0030_x_auto_refresh.sql` originally added only
+  `last_refreshed_at`; `last_refresh_attempt_at` was appended to the same file
+  afterwards. The column was never created, so every `x.refresh` query referencing
+  it raised `column does not exist` — and because that queue is `retryLimit: 0`, it
+  failed silently and waited 12h to fail again. Nobody's X data refreshed at all
+  until `0038_repair_refresh_attempt_column.sql`. Repaired, but the class of bug is
+  worth remembering: a `retryLimit: 0` queue plus a schema error equals silence.
+- **Renaming a migration re-runs it.** Same filename-keyed logic in reverse. Several
+  files were renumbered mid-review and `schema_migrations` now records
+  `billing_hardening` three times (0032, 0034, 0035) and `publish_recovery` twice.
+  Harmless *only* because every statement in them is `IF NOT EXISTS` / `DROP … IF
+  EXISTS`. Renumber before applying, never after, and keep migrations idempotent so
+  a double-apply stays survivable.
 - **Prod vs dev bot:** with `PUBLIC_URL=https://…` the bot uses webhooks; without
   it, long-polling. No flag to flip.
 - **Alerts:** job failures/crashes DM `ADMIN_TELEGRAM_ID` via the bot (throttled).
@@ -2631,6 +2648,53 @@ Dodo dashboard, these vars, and the landing repo
 (`yoinky-landing/app/(frontend)/components/HomePricing.tsx`).
 
 `FOUNDING_CAP` 500 → **50**, to match the landing's seat claim.
+
+### 6ab. The Neon compute-quota outage (2026-07-30)
+
+**Symptom.** Every page under `/app` rendered the error boundary. The web digest
+matched a PostgreSQL `53000` (`insufficient_resources`) carrying Neon's message:
+*"Your account or project has exceeded the compute time quota."* Not a code bug —
+the database was refusing connections, and every app page queries it server-side.
+
+**Mechanism, and the thing that is easy to get wrong.** Neon bills **active
+compute-time**, and the compute autosuspends only after ~5 minutes of *zero*
+activity. pg-boss registers ~27 workers that poll continuously, so the database is
+queried well inside that window and **never suspends** — ~730 active hours/month
+against a free allowance of roughly 192, exhausted about 8 days into every period.
+
+The trap: *lengthening the poll interval does not help.* Active-time is effectively
+binary. Going from 2s to 30s cuts CPU (worth doing, and done) but the compute still
+never suspends, so the quota burns identically. Any always-on job queue is
+structurally incompatible with a compute-hour quota.
+
+Aggravating factor: the `litellm` service had **its own Neon project**, and Neon's
+free compute-hours are **per account, shared across projects** — so two always-on
+databases competed for one allowance. Torn down 2026-07-31 (`railway down --service
+litellm`, env preserved so `railway redeploy` restores it), which was possible only
+because all six `AGENT_RUNTIME_*` flags went back to `legacy` — a supported
+one-flag-per-feature rollback (`config.ts`), same model and same tools, so nothing
+user-visible changed.
+
+**Resolution direction: leave compute-hour metering, don't tune it.** The codebase
+has zero host coupling — the DB is reached purely via `DATABASE_URL` + `pg`, needing
+only the `vector` and `pgcrypto` extensions — so a host swap is a connection string
+plus a dump/restore.
+
+**Rejected: batching pg-boss into drain windows** so Neon could suspend. The
+arithmetic works (~73 h/month), but making the DB suspend means the queue stops
+polling, which means scheduled posts fire up to 30 minutes late — a direct
+regression in the product's core feature, traded for something a non-metered free
+tier gives away. It would have looked like progress while making the product worse.
+
+**Hardening that shipped alongside** (`0039`, `jobs/retention.ts`, `db/pool.ts`):
+storage retention with `usage_events` rolled up into `usage_daily` rather than
+deleted (per-user spend history is the instrument for pricing decisions), a
+runtime-detected pool size — `max: 10` was being applied to Vercel serverless too,
+where every instance builds its own pool, so a spike to 20 instances asked for 200
+connections — a pool `error` listener (an unhandled EventEmitter error kills the
+process, so a routine pooler recycle was a latent crash), and a nightly `pg_dump`
+in Actions that verifies the archive's table of contents before calling itself a
+backup.
 
 ---
 

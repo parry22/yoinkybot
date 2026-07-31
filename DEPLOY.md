@@ -34,6 +34,39 @@ railway up --service backend          # builds + uploads the local Dockerfile bu
 
 Railway auto-detects the repo's `Dockerfile` either way — no build config needed.
 
+> ## ⚠️ PUSHING TO `main` DOES NOT DEPLOY THE BACKEND
+>
+> As of **2026-07-31** the `backend` service reports `source.repo` as
+> `parry22/yoinkybot` — i.e. it *looks* connected — but a push to `main` does **not**
+> produce a deployment. Only the Vercel apps (web + landing) auto-deploy.
+>
+> This is not a theoretical footgun. It cost ~15 hours: six `AGENT_RUNTIME_*` env
+> vars were set to `legacy` and a commit was pushed, and both sat inert while the
+> live container kept running the previous build. It was only caught by noticing the
+> retry counter — `database unavailable (attempt 881)` at 60s intervals ≈ 14.8h,
+> which matched the *previous* deployment's timestamp rather than the push.
+>
+> **Every backend change needs an explicit deploy:**
+>
+> ```bash
+> railway up --service backend --detach
+> ```
+>
+> Two corollaries that are easy to miss:
+> - **Env var changes need a deploy too.** `railway variables --set` with
+>   `--skip-deploys` (or on a service that doesn't auto-deploy) leaves the running
+>   container on its old environment.
+> - **Migrations run on boot**, so an un-deployed backend also means un-applied
+>   migrations — while a freshly-deployed *web* app may already be querying columns
+>   that don't exist yet. Deploy the backend first when a change spans both.
+>
+> To diagnose whether what's running is what you pushed, compare the deployment's
+> `createdAt` against your commit time:
+>
+> ```bash
+> railway status --json | python3 -c "import json,sys; d=json.load(sys.stdin); print([ (s['node']['serviceName'], (s['node'].get('latestDeployment') or {}).get('createdAt')) for e in d['environments']['edges'] for s in e['node']['serviceInstances']['edges'] ])"
+> ```
+
 ## 2. Database: use the existing Neon instance — do NOT create a new one
 
 Earlier drafts of this doc had you provision a self-hosted `pgvector/pgvector`

@@ -24,6 +24,44 @@ which is where it's most useful. Both share one Postgres and one `users` row.
 
 <!-- Keep newest-first. Update this whenever a change ships that a reader of the repo should know about. -->
 
+- **2026-07-31 — The database ran out of compute, and the bill was the Agent SDK.**
+  Production went down with a generic error page on every `/app` route. The cause
+  wasn't code: Neon was refusing connections on an exhausted **compute-time** quota,
+  and every page queries the DB server-side.
+
+  The mechanism is worth internalising, because the obvious fix doesn't work. Neon
+  bills *active time* and suspends only after ~5 minutes of total inactivity —
+  pg-boss's ~27 workers poll continuously, so the compute **never** suspends: ~730
+  active hours/month against a ~192 allowance. Lengthening the poll interval cuts
+  CPU but not active-time, so it doesn't move the quota at all. An always-on job
+  queue and a compute-hour quota are structurally incompatible.
+
+  Worse, `litellm` had **its own Neon project**, and Neon's free compute-hours are
+  **per account** — two always-on databases splitting one allowance. That service
+  existed solely to proxy Agent-SDK traffic, so flipping all six `AGENT_RUNTIME_*`
+  flags back to `legacy` (a supported one-flag rollback: same model, same tools,
+  nothing user-visible) let it be torn down entirely. Env vars preserved, so
+  `railway redeploy --service litellm` restores it.
+
+  Shipped alongside: **storage retention** — `usage_events` grew a row per LLM call
+  with no policy while `underDailyCap` reads it on the hot path of every model call,
+  so old rows now **roll up** into `usage_daily` rather than being deleted (per-user
+  spend history is what pricing decisions are made from). A **runtime-detected pool
+  size**, because `max: 10` was applied to Vercel serverless too, where every
+  instance builds its own pool — a spike to 20 instances asked for 200 connections,
+  and the failure looked random. A pool `error` listener, since an unhandled
+  EventEmitter error takes the process down and a routine pooler recycle would have
+  done it. And a **nightly `pg_dump`** that verifies the archive's table of contents
+  before calling itself a backup — a dump that restores to nothing is worse than
+  none, because it looks like protection.
+
+  Two operational truths now written into `DEPLOY.md` and `docs/INTERNAL.md`:
+  **pushing to `main` does not deploy the backend** (only the Vercel apps
+  auto-deploy; this left env changes inert for ~15 hours), and **an applied
+  migration is immutable** — `migrate.ts` skips on filename, so editing an
+  already-run file means the edit never executes. That one had already silently
+  broken the twice-daily X refresh for days; repaired in `0038`.
+
 - **2026-07-28 — Lifetime plan ($99, BYOK) + Growth $9 → $15.** Detail in
   `docs/INTERNAL.md` §3u; migration `0037`. The landing page's "Enterprise /
   Custom" card is now **Lifetime**, and it — not Scale — is the featured card, on
