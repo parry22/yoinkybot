@@ -168,7 +168,94 @@ async function fetchTweets(
     if (!body.has_next_page || !body.next_cursor) break;
     cursor = body.next_cursor;
   }
+
+  // `last_tweets` cannot be trusted to return a user's history.
+  //
+  // Measured against a real account (4,115 tweets, public, not protected):
+  // page 1 returned TWO tweets with `has_next_page: true`, and following that
+  // cursor returned zero with `has_next_page: false`. The endpoint reported the
+  // feed as exhausted after two posts. `advanced_search?query=from:<handle>`
+  // returned twelve on its first page for the same account, still paginating,
+  // and included a newer tweet `last_tweets` had never returned at all.
+  //
+  // The symptom was an analytics page that looked broken: two posts, both in the
+  // current week, every earlier week empty. Nothing downstream was wrong — the
+  // corpus really did contain two posts, because that is all the provider handed
+  // over. So when the primary endpoint comes back implausibly thin, re-pull
+  // through search and merge. Kept as a fallback rather than a replacement
+  // because last_tweets is one request for accounts where it behaves, and
+  // advanced_search costs a page walk.
+  const wanted = Math.min(maxPosts, opts?.minPosts ?? MIN_HISTORY_BEFORE_SEARCH_FALLBACK);
+  if (all.length < wanted) {
+    console.warn(
+      `[twitterapi] last_tweets returned only ${all.length} for @${userName} (wanted ${wanted}) — falling back to advanced_search`,
+    );
+    const viaSearch = await fetchOwnTweetsViaSearch(userName, maxPosts, opts);
+    const seen = new Set(all.map((t) => t.id).filter(Boolean));
+    for (const t of viaSearch) {
+      if (t.id && seen.has(t.id)) continue;
+      if (t.id) seen.add(t.id);
+      all.push(t);
+    }
+    console.log(`[twitterapi] advanced_search fallback brought @${userName} to ${all.length} posts`);
+  }
+
   return all.length > maxPosts ? all.slice(0, maxPosts) : all;
+}
+
+/** Below this many posts from `last_tweets`, assume it under-delivered and reach
+ *  for search. Only used when the caller set no explicit `minPosts`. */
+const MIN_HISTORY_BEFORE_SEARCH_FALLBACK = 20;
+
+/**
+ * A user's own recent tweets via `advanced_search?query=from:<handle>`, which
+ * paginates honestly where `last_tweets` does not. Same shape and same early-stop
+ * behaviour as `fetchTweets`, so it can be merged into that result directly.
+ */
+async function fetchOwnTweetsViaSearch(
+  userName: string,
+  maxPosts: number,
+  opts?: { sinceDays: number; minPosts: number },
+): Promise<RawTweet[]> {
+  const cutoff = opts ? Date.now() - opts.sinceDays * 86_400_000 : 0;
+  const all: RawTweet[] = [];
+  let cursor = "";
+  let lastRequestAt = 0;
+
+  for (let page = 0; page < MAX_PAGES && all.length < maxPosts; page++) {
+    const wait = lastRequestAt + MIN_REQUEST_INTERVAL_MS - Date.now();
+    if (wait > 0) await sleep(wait);
+
+    const url = new URL("/twitter/tweet/advanced_search", config.TWITTERAPI_IO_BASE_URL);
+    // Deliberately NOT `-filter:replies`, though that looks like the obvious
+    // optimisation. Measured on the same account: `from:handle` returned 12 on
+    // page 1, `from:handle -filter:replies` returned 2. On a reply-heavy timeline
+    // the server-side filter collapses each page to a handful of rows while still
+    // consuming a page of the cursor walk, so it *starves* the search instead of
+    // focusing it. Page through everything and let parseTwitterApiIoTweets drop
+    // the replies and retweets, which it already does.
+    url.searchParams.set("query", `from:${userName}`);
+    url.searchParams.set("queryType", "Latest");
+    if (cursor) url.searchParams.set("cursor", cursor);
+    lastRequestAt = Date.now();
+
+    const body = (await fetchPage(url)) as LastTweetsResponse & { tweets?: RawTweet[] };
+    if (body.status && body.status !== "success") {
+      throw new Error(`twitterapi.io advanced_search: ${body.msg ?? "unknown error"}`);
+    }
+    // advanced_search puts them at the top level; last_tweets nests under `data`.
+    const tweets = body.tweets ?? body.data?.tweets ?? [];
+    all.push(...tweets);
+
+    if (opts && all.length >= opts.minPosts) {
+      const oldest = tweets[tweets.length - 1]?.createdAt;
+      const oldestMs = oldest ? new Date(oldest).getTime() : NaN;
+      if (Number.isFinite(oldestMs) && oldestMs < cutoff) break;
+    }
+    if (!body.has_next_page || !body.next_cursor || tweets.length === 0) break;
+    cursor = body.next_cursor;
+  }
+  return all;
 }
 
 /** Pull a user's public X history via twitterapi.io — richer than the Apify actor. */
