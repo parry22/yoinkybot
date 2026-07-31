@@ -73,11 +73,27 @@ function withoutSslMode(url: string): string {
   }
 }
 
+/**
+ * The connection settings every Postgres client in this codebase must use.
+ *
+ * Exported because `pg.Pool` is NOT the only consumer: pg-boss (jobs/boss.ts)
+ * builds its own connection, and it passed the raw DATABASE_URL — so the moment
+ * the URL pointed at Supabase it would have hit the same TLS rejection the pool
+ * did, taking every background job down with it while the web app looked fine.
+ * One helper means TLS cannot be right in one place and wrong in another.
+ */
+export function dbConnectionOptions(): { connectionString: string; ssl?: pg.PoolConfig["ssl"] } {
+  if (!isSupabase) return { connectionString: config.DATABASE_URL };
+  return {
+    connectionString: withoutSslMode(config.DATABASE_URL),
+    // Full verification (chain + hostname) against Supabase's own root, which
+    // the public trust store doesn't carry.
+    ssl: { ca: SUPABASE_ROOT_CA, rejectUnauthorized: true },
+  };
+}
+
 export const pool = new pg.Pool({
-  connectionString: isSupabase ? withoutSslMode(config.DATABASE_URL) : config.DATABASE_URL,
-  // Full verification (chain + hostname) against Supabase's own root, which the
-  // public trust store doesn't carry.
-  ...(isSupabase ? { ssl: { ca: SUPABASE_ROOT_CA, rejectUnauthorized: true } } : {}),
+  ...dbConnectionOptions(),
   max: isServerless ? 2 : 10,
   // Serverless instances are frozen between invocations and then discarded. An
   // idle connection held by a frozen instance is a connection the server has

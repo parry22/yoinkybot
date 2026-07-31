@@ -1,5 +1,6 @@
 import PgBoss from "pg-boss";
 import { config } from "../config.js";
+import { dbConnectionOptions } from "../db/pool.js";
 
 export const QUEUES = {
   transcribe: "capture.transcribe",
@@ -122,7 +123,9 @@ export async function ensureBoss(): Promise<PgBoss> {
   if (!ensurePromise) {
     ensurePromise = (async () => {
       const b = new PgBoss({
-        connectionString: config.DATABASE_URL,
+        // Shared with db/pool.ts so TLS can't be right in one place and wrong
+        // here — a raw DATABASE_URL fails Supabase's cert check outright.
+        ...dbConnectionOptions(),
         schema: "pgboss",
         // Nothing here consumes jobs, so none of the background machinery earns
         // its keep. `migrate: false` is safe because the backend, which does run
@@ -174,7 +177,7 @@ export const SCHEDULED_POST_POLL_SECONDS = 15;
 
 export async function startBoss(): Promise<PgBoss> {
   boss = new PgBoss({
-    connectionString: config.DATABASE_URL,
+    ...dbConnectionOptions(),
     schema: "pgboss",
     pollingIntervalSeconds: POLL_SECONDS,
   });
