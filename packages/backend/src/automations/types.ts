@@ -23,7 +23,7 @@ export interface Automation {
   name: string;
   source_type: SourceType;
   delivery_mode: DeliveryMode;
-  platform: "x";
+  platform: "x" | "linkedin";
   enabled: boolean;
   cadence_kind: CadenceKind;
   cadence_meta: { days?: string[]; hour?: number } & Record<string, unknown>;

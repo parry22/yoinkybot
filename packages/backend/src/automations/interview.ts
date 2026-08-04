@@ -35,6 +35,7 @@ export interface AgentSpec {
   angles: string[];
   hooks: string[];
   source: SourceType | null;
+  platform: "x" | "linkedin" | null;
   cadence: CadenceKind | null;
   delivery: DeliveryMode | null;
   name: string | null;
@@ -46,6 +47,7 @@ export const EMPTY_SPEC: AgentSpec = {
   angles: [],
   hooks: [],
   source: null,
+  platform: null,
   cadence: null,
   delivery: null,
   name: null,
@@ -83,6 +85,10 @@ const SLOTS: Array<{ key: keyof AgentSpec; brief: string }> = [
     brief:
       "which HOOK styles suit them — blunt claim, a number, a question, a story open, a " +
       "'nobody tells you' reveal. Name real examples in their voice.",
+  },
+  {
+    key: "platform",
+    brief: "where it should publish — X or LinkedIn. Explain that the writing will be shaped for that feed.",
   },
   {
     key: "source",
@@ -123,6 +129,7 @@ const turnSchema = z.object({
       angles: z.array(z.string()).nullish(),
       hooks: z.array(z.string()).nullish(),
       source: z.string().nullish(),
+      platform: z.string().nullish(),
       cadence: z.string().nullish(),
       delivery: z.string().nullish(),
       name: z.string().nullish(),
@@ -238,6 +245,7 @@ async function extract(
           angles: known.angles,
           hooks: known.hooks,
           source: known.source,
+          platform: known.platform,
           cadence: known.cadence,
           delivery: known.delivery,
           name: known.name,
@@ -262,6 +270,7 @@ async function extract(
         angles: cleanList(s.angles).length ? cleanList(s.angles) : known.angles,
         hooks: cleanList(s.hooks).length ? cleanList(s.hooks) : known.hooks,
         source: SOURCE_TYPES.includes(s.source as SourceType) ? (s.source as SourceType) : known.source,
+        platform: s.platform === "x" || s.platform === "linkedin" ? s.platform : known.platform,
         cadence: CADENCES.includes(s.cadence as CadenceKind) ? (s.cadence as CadenceKind) : known.cadence,
         delivery: DELIVERIES.includes(s.delivery as DeliveryMode) ? (s.delivery as DeliveryMode) : known.delivery,
         name: (s.name ?? "").trim().slice(0, 60) || known.name,
@@ -288,6 +297,8 @@ function fallbackQuestion(key: keyof AgentSpec): string {
       return "which topics is it allowed to work? name a couple of lanes.";
     case "hooks":
       return "what kind of opening line lands for you — a blunt claim, a number, a question, a story?";
+    case "platform":
+      return "should this agent write for X or LinkedIn?";
     case "source":
       return "should it ride what's trending in your niche, work through your idea backlog, or just follow the brief you gave me?";
     case "cadence":
@@ -305,6 +316,8 @@ function fallbackOptions(key: keyof AgentSpec | null): string[] {
       return ["hot takes", "teardowns", "personal stories", "how-tos"];
     case "hooks":
       return ["blunt claim", "a number", "a question", "story open"];
+    case "platform":
+      return ["X", "LinkedIn"];
     case "source":
       return ["ride trends", "my idea backlog", "just my brief"];
     case "cadence":
@@ -329,6 +342,7 @@ export function specToAutomationInput(spec: AgentSpec): {
   sourceType: SourceType;
   deliveryMode: DeliveryMode;
   cadenceKind: CadenceKind;
+  platform: "x" | "linkedin";
   brief: string;
   pillarScope: string[] | null;
 } {
@@ -346,6 +360,7 @@ export function specToAutomationInput(spec: AgentSpec): {
     sourceType: spec.source ?? "custom",
     deliveryMode: spec.delivery ?? "approval",
     cadenceKind: spec.cadence ?? "daily",
+    platform: spec.platform ?? "x",
     brief: brief.slice(0, BRIEF_MAX),
     // The angles double as the pillar scope, which the run pipeline appends to the
     // seed as a hard "stay within" constraint.
@@ -359,6 +374,7 @@ export function describeSpec(spec: AgentSpec): string {
   if (spec.postTypes.length) bits.push(`writes ${spec.postTypes.slice(0, 3).join(", ")}`);
   if (spec.angles.length) bits.push(`on ${spec.angles.slice(0, 3).join(", ")}`);
   if (spec.hooks.length) bits.push(`opening with ${spec.hooks.slice(0, 2).join(" or ")}`);
+  bits.push(`for ${spec.platform === "linkedin" ? "LinkedIn" : "X"}`);
   const cadence =
     spec.cadence === "daily" ? "checks daily" : spec.cadence === "weekly" ? "checks weekly" : "runs when you say";
   const delivery = spec.delivery === "auto" ? "posts on its own" : "asks you first";

@@ -1,4 +1,4 @@
-import { query } from "../db/pool.js";
+import { query, queryOne } from "../db/pool.js";
 import type { UserSettings } from "../lib/time.js";
 
 /**
@@ -95,15 +95,15 @@ const engagementWeight = (e: { likeCount?: number; retweetCount?: number; replyC
   Math.max(0, e.likeCount ?? 0) + Math.max(0, e.retweetCount ?? 0) * 2 + Math.max(0, e.replyCount ?? 0) * 2;
 
 /** Load the user's own published posts with engagement, for the best-window read. */
-async function loadEngagedPosts(userId: string): Promise<EngagedPost[]> {
+async function loadEngagedPosts(userId: string, platform: "x" | "linkedin"): Promise<EngagedPost[]> {
   const rows = await query<{ captured_at: string; engagement: Record<string, number> | null }>(
     `SELECT captured_at::text, metadata->'engagement' AS engagement
      FROM captures
      WHERE user_id = $1
-       AND source IN ('x_import','linkedin_import')
+       AND source = $2
        AND metadata->>'published' = 'true'
        AND metadata->'engagement' IS NOT NULL`,
-    [userId],
+    [userId, platform === "linkedin" ? "linkedin_import" : "x_import"],
   );
   return rows
     .map((r) => ({ postedAtMs: new Date(r.captured_at).getTime(), engagement: engagementWeight(r.engagement ?? {}) }))
@@ -115,9 +115,14 @@ async function loadEngagedPosts(userId: string): Promise<EngagedPost[]> {
  * (the ask is "make sure to advise", not "only when it matters"), honest about
  * whether it's personalized or a general default, and never blocks scheduling.
  */
-export async function bestTimeAdvisory(userId: string, settings: UserSettings, candidateWhenMs: number): Promise<string> {
+export async function bestTimeAdvisory(
+  userId: string,
+  settings: UserSettings,
+  candidateWhenMs: number,
+  platform: "x" | "linkedin" = "x",
+): Promise<string> {
   const tz = settings.timezone ?? "UTC";
-  const posts = await loadEngagedPosts(userId).catch(() => [] as EngagedPost[]);
+  const posts = await loadEngagedPosts(userId, platform).catch(() => [] as EngagedPost[]);
   const result = computeBestWindow(posts, tz);
   const label = DAYPART_LABEL[result.daypart];
   const basis = result.personalized
@@ -128,4 +133,27 @@ export async function bestTimeAdvisory(userId: string, settings: UserSettings, c
     return `this lands right in your best window (${label}, ${basis}).`;
   }
   return `heads up: your best window tends to be ${label} (${basis}) — this slot is outside it. keeping it as scheduled, just flagging.`;
+}
+
+/** Earliest upcoming 15-minute slot in the platform-specific best daypart.
+ * Auto Agent uses this instead of a blind fixed delay; when history is thin the
+ * same honest late-morning default used by the advisory applies. */
+export async function nextBestScheduleTime(
+  userId: string,
+  platform: "x" | "linkedin",
+  earliestMs: number,
+): Promise<Date> {
+  const row = await queryOne<{ settings: UserSettings }>(`SELECT settings FROM users WHERE id = $1`, [userId]);
+  const settings = row?.settings ?? {};
+  const tz = settings.timezone ?? "UTC";
+  const posts = await loadEngagedPosts(userId, platform).catch(() => [] as EngagedPost[]);
+  const result = computeBestWindow(posts, tz);
+  const step = 15 * 60_000;
+  let candidate = Math.ceil(earliestMs / step) * step;
+  const deadline = candidate + 72 * 60 * 60_000;
+  while (candidate <= deadline) {
+    if (isInRecommendedWindow(candidate, tz, result)) return new Date(candidate);
+    candidate += step;
+  }
+  return new Date(earliestMs);
 }

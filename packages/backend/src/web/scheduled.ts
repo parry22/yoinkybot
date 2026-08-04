@@ -9,9 +9,11 @@ import { ensureBoss } from "../jobs/boss.js";
 import { schedulePost, type ScheduleResult } from "../scheduling/service.js";
 import { assertClean } from "../moderation/filter.js";
 import { validateStagedSet } from "./media.js";
+import type { Platform } from "../lib/types.js";
 
 export async function createWebScheduledPost(
   userId: string,
+  platform: Platform,
   content: string,
   scheduledForIso: string,
   mediaIds: string[] = [],
@@ -26,7 +28,7 @@ export async function createWebScheduledPost(
   if (!set.ok) return { ok: false, reason: set.reason };
   await ensureBoss();
   return schedulePost(userId, {
-    platform: "x",
+    platform,
     content,
     scheduledFor: new Date(scheduledForIso),
     mediaIds,

@@ -118,7 +118,7 @@ function liftPct(bucketMedian: number, overall: number): number {
  * Build the writer's evidence pack: their own baseline, their hits and misses
  * with real numbers, and which shapes/intents actually work FOR THEM.
  */
-export async function draftEvidence(userId: string): Promise<DraftEvidence> {
+export async function draftEvidence(userId: string, platform: "x" | "linkedin" = "x"): Promise<DraftEvidence> {
   let rows: Row[];
   try {
     rows = await query<Row>(
@@ -126,12 +126,12 @@ export async function draftEvidence(userId: string): Promise<DraftEvidence> {
               rhetorical_mode, sincerity_register, motive
        FROM captures
        WHERE user_id = $1
-         AND source = 'x_import'
+         AND source = $3
          AND metadata->>'published' = 'true'
          AND metadata ? 'engagement'
        ORDER BY captured_at DESC
        LIMIT $2`,
-      [userId, HISTORY_LIMIT],
+      [userId, HISTORY_LIMIT, platform === "linkedin" ? "linkedin_import" : "x_import"],
     );
   } catch (err) {
     console.error("draftEvidence query failed (falling back to no evidence)", err);

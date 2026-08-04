@@ -159,7 +159,7 @@ full prior implementation if it ever needs to come back.
 
 | Area | Path | What it does |
 |---|---|---|
-| Telegram bot | `src/telegram/` | grammY bot, command handlers, conversation state. Commands (deliberately lean): `start, help, connect, draft, repurpose, peers, settings, upgrade`. `/connectposting` was removed 2026-07-13 — `/connect` is the only connect command. The scheduling engine is built and tested, but its user-facing surface (`/scheduled`, the `schedule_post` chat tool) is deliberately not wired in yet — see §3e. Everything else (check, search/ask, status, diagnosis refresh, voice, forget, positions, clearing your account) is done in plain language via the agentic chat layer (see §3a). |
+| Telegram bot | `src/telegram/` | grammY bot, command handlers, conversation state. Commands stay deliberately lean; Compose-like capabilities are plain-language chat tools, including X/LinkedIn drafting, X→LinkedIn repurposing with media, and scheduling. No separate LinkedIn command was added. |
 | Strategist flow | `src/strategist/` | The a16z Personal Brand Strategist onboarding. Profile-first arc: profiling (Stages 1-6, 7 fields) → connect → **brand diagnosis (terminal free step)** → paywall/steady-state. The three-month plan was removed from the funnel 2026-07-13 (see §3b). `session-machine.ts` is the state machine; `state.ts` persists it; `profile.ts` owns the stated profile; `gap.ts` computes the stated-vs-actual gap. See §3b. |
 | Capture pipeline | `src/capture/` | Immutable capture of user input + imports (X via twitterapi.io→Apify, LinkedIn via Apify). Captures are never mutated. |
 | Memory core | `src/memory/` | Extraction → embed → link → search (RRF hybrid). `positions.ts` (stated positions), `confidence.ts`, `forget.ts` (hard delete), `classification.ts` (rhetorical mode/sincerity/motive taxonomy + gating helper), `corrections.ts` (user-correction mechanism + monthly recalibration). See §3d. |
@@ -513,8 +513,9 @@ interprets — same doctrine as `evidence.ts`/`performance.ts`. It measures:
 positioning drift (cosine of idea/claim embeddings vs the stated niche vector, as
 an off-niche %), goal alignment (inside-out ratio vs what the stated goal needs),
 tone gap (selected taxonomy keys vs `voice-stats` measurements, incl. cross-cluster
-tensions), audience fit, and the plain baseline (followers, cadence, top/bottom X
-posts; LinkedIn perf acknowledged unavailable). `openGapSession` narrates it via
+tensions), audience fit, and the plain baseline (followers, cadence, top/bottom
+posts; LinkedIn reactions/comments/reposts now arrive from the public-profile
+reader). `openGapSession` narrates it via
 `gap-analysis.v1` as a paced reveal and stashes the gap text on state for the plan.
 
 **The three-month plan** (`plan.ts#generateThreeMonthPlan` + `plan.v2`): a
@@ -779,8 +780,8 @@ platform API docs).
 - **Publishing (`social/publish.ts`) is the one WRITE path.** Everything else
   reads public history by handle (Apify/twitterapi.io, no auth). This posts as
   the user via a stored user-context OAuth token (`connected_accounts.post_*`
-  columns, migration 0018), calling `POST /2/tweets` (X) and `POST /v2/ugcPosts`
-  (LinkedIn, needs the member URN as author). It **fails closed**: no app creds
+  columns, migration 0018), calling `POST /2/tweets` (X) and the versioned
+  `POST /rest/posts` (LinkedIn, needs the member URN as author). It **fails closed**: no app creds
   (`publishConfigured`) or no stored token (`resolveWriteAuth`) → the post is
   marked `failed` with a plain-language reason, never a silent drop. Verified
   live end-to-end (schedule → enqueue → atomic-claim → fail-closed → cancel);
@@ -1114,12 +1115,11 @@ A dark theme was added (the original was light-only); the toggle lives in
 **Settings** now (`components/theme-toggle.tsx`, extracted from the sidebar),
 stamps `data-theme` on `<html>`, persists to `localStorage`.
 
-**LinkedIn is web-only removed (2026-07-20).** Compose is X-only in the web app
-— `/api/draft` hardcodes `platform: "x"`. This does **not** touch the Telegram
-bot or backend LinkedIn support (`connect.ts`, `apify-profile.ts`,
-`drafting/repurpose.ts`, `social/publish.ts` all still fully support it) — a
-user who connected LinkedIn via Telegram still has that `connected_accounts`
-row; the web's account list just filters to `platform === 'x'`.
+**LinkedIn returned to the web app (2026-08-04).** Compose reaches it through the
+shared conversational `draft_post` / `repurpose_x_post` tools, Auto Agent stores
+the target platform per automation, Scheduled has an X/LinkedIn selector, and
+Settings exposes both official LinkedIn posting OAuth and public-profile history
+ingestion. This supersedes the temporary web-only removal from 2026-07-20.
 
 **Connect X is OAuth, not a typed handle (2026-07-20, `web/oauth-connect.ts`).**
 Settings' "Connect X" is a plain `<a href>` to the **backend's own**
@@ -1484,6 +1484,8 @@ posts as day chips and nudging "add a post" on empty future days. A new
 existing `schedulePost`) behind `POST /api/schedule` lets a web user write and
 queue a post for a chosen day — the first manual web scheduling path (previously
 Telegram/agent-only).
+The composer now selects X or LinkedIn; both text and staged media flow through
+the same `schedulePost` and `jobs/scheduled-post.ts` path.
 
 **Seeded Inspiration.** At the tail of `runDiagnosis` (first moment the niche
 exists) an `inspiration.seed` job (`jobs/inspiration-seed.ts`) runs the existing
@@ -1545,7 +1547,8 @@ as an instruction to `reviseDraft` (a new revise-by-instruction composer; none
 existed), re-presents the card, capped at `AUTOMATION_MAX_EDITS`.
 
 **Auto mode (DARK until `AUTOMATIONS_AUTO_ENABLED`).** Never instant: schedules
-`AUTOMATION_AUTO_DELAY_MIN` out (cancellable from the queue). A warmup ramp routes
+no earlier than `AUTOMATION_AUTO_DELAY_MIN`, then advances to the platform-specific
+best measured daypart (cancellable from the queue). A warmup ramp routes
 the first `AUTOMATION_AUTO_WARMUP` posts of a new auto automation through approval
 first. Outcome DMs come from the existing `jobs/scheduled-post.ts`. All gates still
 run.
@@ -1738,10 +1741,12 @@ chart to be part of the point.
 `post_scopes` and the composer says "reconnect your X account" **at attach time** —
 the alternative is finding out at the scheduled time.
 
-**LinkedIn media is deliberately not built.** Its media flow is a different
-(versioned REST) API from the `/v2/ugcPosts` call `publish.ts` makes, and the web
-scheduler only queues X posts. It fails with a plain reason rather than being
-half-implemented.
+**LinkedIn media is built (2026-08-04).** Images/GIFs initialize through
+`/rest/images`, videos use initialize → signed multipart PUTs → finalize through
+`/rest/videos`, and the resulting URNs are attached to `/rest/posts` as one native
+media object or `multiImage`. Every call carries `Linkedin-Version` (configured by
+`LINKEDIN_API_VERSION`) and `X-Restli-Protocol-Version`. The all-or-nothing failure
+contract is the same as X.
 
 ### Links in scheduled posts
 
@@ -2232,6 +2237,41 @@ database — auth short-circuits before any query.
 
 CI is also the only place this could be tested: outbound 5432 is blocked on the
 dev machine.
+
+## 3w. LinkedIn content system (2026-08-04)
+
+LinkedIn is a target on the existing shared paths, not a parallel product:
+Compose uses the same chat tools, Auto Agent stores `automations.platform`, the
+calendar sends `platform` into `createWebScheduledPost`, and Telegram invokes the
+same domain functions without gaining another slash command. Migration `0040`
+widens the automation check, adds `posting_connected` for OAuth-before-history,
+and stores `repurposed_content.media_ids` so a transform can retain attachments.
+
+**Two connections, two authorities.** `w_member_social openid profile` is the
+official member OAuth grant and is used only for identity plus writing posts and
+media. It does not grant open member-post history. Settings therefore also takes
+the member's public `/in/…` URL, which runs the already-established Apify reader.
+The latter supplies writing history and public reactions/comments/reposts; a
+daily `linkedin.refresh` job updates metrics and ingests new posts for active
+plans. OAuth is never used for scraping or engagement automation.
+
+**X → LinkedIn with media.** `repurpose_x_post` resolves an owned imported X post
+(latest when no URL is named), and can fall back to X's official read endpoint,
+verifying the post author against `/2/users/me`. Provider-discovered media is
+host-allowlisted to X/Twitter CDN domains, staged in `scheduled_post_media`, and
+its ids travel on the repurposed row. A subsequent `schedule_post` references
+that row instead of asking the model to copy text, which preserves both exact
+content and attachments. The ordinary publisher then uploads them to LinkedIn.
+
+**Ghostwriting and policy boundary.** `LINKEDIN_WRITING_RULES` is injected only
+for LinkedIn drafts/repurposes: grounded professional relevance, firsthand detail
+from source evidence, skimmable but non-formulaic structure, no X-only mechanics,
+no invented credentials/results, and no engagement bait. The product authors and
+publishes through official APIs; it does not automate comments, likes, reciprocal
+engagement, scraping with the member token, or impersonation. The user's measured
+LinkedIn results (`draftEvidence(userId, 'linkedin')`) outrank generic doctrine,
+and `nextBestScheduleTime` selects a platform-specific daypart when enough data
+exists (honest late-morning fallback otherwise).
 
 ## 3n. Agent SDK runtime (2026-07-24, IN PROGRESS — Phase 0/1)
 

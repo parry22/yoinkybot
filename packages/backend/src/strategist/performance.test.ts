@@ -168,12 +168,12 @@ describe("renderPerformance", () => {
     expect(text).toContain("130% of baseline");
     expect(text).toContain("1 developed this period · 2 developed total · 3 still pending");
     expect(text).toContain("committed 2/week · actual 1/week");
-    expect(text).toContain("LinkedIn: engagement metrics are not available");
+    expect(text).toContain("Connected social history");
   });
 
   it("states unavailable data plainly instead of numbers", () => {
     const text = renderPerformance(data({ xConfidence: "unavailable", xConfidenceReason: "no posts carry engagement metrics" }));
-    expect(text).toContain("X engagement: unavailable this period");
+    expect(text).toContain("Social engagement: unavailable this period");
     expect(text).not.toContain("baseline median engagement");
   });
 

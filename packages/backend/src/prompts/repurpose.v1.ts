@@ -1,5 +1,5 @@
 import type { Prompt } from "./types.js";
-import { CHAT_STYLE_RULES, REACH_PRINCIPLES } from "./style.js";
+import { CHAT_STYLE_RULES, LINKEDIN_WRITING_RULES, REACH_PRINCIPLES } from "./style.js";
 
 export interface RepurposeVars {
   mode: "cross_platform" | "cross_format" | "synthesis";
@@ -95,6 +95,7 @@ Respond with ONLY valid JSON: {"output": "...", "notes": "..."}`,
     blocks.push(
       `MODE: ${v.mode}${v.direction ? ` (${v.direction})` : ""} · TARGET PLATFORM: ${v.targetPlatform}${v.theme ? `\nTHEME: ${v.theme}` : ""}`,
     );
+    if (v.targetPlatform === "linkedin") blocks.push(LINKEDIN_WRITING_RULES);
     blocks.push(
       `TARGET CONTEXT (measured from their real history):\n` +
         (ctx.hasHistory

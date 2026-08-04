@@ -108,10 +108,48 @@ export function parseLinkedInItems(items: unknown[]): ImportedPost[] {
         ? new Date(created)
         : new Date(String(created))
       : new Date();
+    const stats = (t["stats"] ?? {}) as Record<string, unknown>;
+    const hasStats = ["total_reactions", "likes", "comments", "reposts", "shares"].some(
+      (key) => typeof stats[key] === "number",
+    );
+    const mediaRaw = t["media"];
+    const mediaObjects = Array.isArray(mediaRaw) ? mediaRaw : mediaRaw && typeof mediaRaw === "object" ? [mediaRaw] : [];
+    const media: NonNullable<ImportedPost["media"]> = [];
+    for (const value of mediaObjects) {
+      const m = value as Record<string, unknown>;
+      const type = str(m["type"]).toLowerCase();
+      const direct = str(m["url"]);
+      if (direct) {
+        media.push({
+          kind: type.includes("video") ? "video" : type.includes("gif") ? "gif" : "image",
+          url: direct,
+          mimeType: type.includes("video") ? "video/mp4" : type.includes("gif") ? "image/gif" : "image/jpeg",
+          altText: str(m["alt_text"] ?? m["altText"]) || undefined,
+        });
+      }
+      const images = Array.isArray(m["images"]) ? m["images"] : [];
+      for (const image of images) {
+        const url = typeof image === "string" ? image : str((image as Record<string, unknown>)["url"]);
+        if (url && !media.some((existing) => existing.url === url)) {
+          media.push({ kind: "image", url, mimeType: "image/jpeg" });
+        }
+      }
+    }
     posts.push({
       text,
       postedAt: Number.isNaN(date.getTime()) ? new Date() : date,
       url: str(t["url"]) || undefined,
+      ...(hasStats
+        ? {
+            engagement: {
+              likeCount: num(stats["total_reactions"] ?? stats["likes"]),
+              replyCount: num(stats["comments"]),
+              retweetCount: num(stats["reposts"] ?? stats["shares"]),
+              quoteCount: 0,
+            },
+          }
+        : {}),
+      media,
     });
   }
   return posts;

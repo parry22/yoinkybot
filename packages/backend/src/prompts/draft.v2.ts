@@ -1,5 +1,5 @@
 import type { Prompt } from "./types.js";
-import { POST_WRITING_RULES, REACH_PRINCIPLES } from "./style.js";
+import { LINKEDIN_WRITING_RULES, POST_WRITING_RULES, REACH_PRINCIPLES } from "./style.js";
 import type { DraftEvidence } from "../drafting/evidence.js";
 
 /**
@@ -159,6 +159,7 @@ Respond with ONLY valid JSON:
 If the memories are insufficient, or the request crosses an off-limits topic: {"draft":"","source_memory_ids":[],"media_suggestion":"","note":"why"}`,
   render: (v) =>
     `Request: ${v.request}\nPlatform: ${v.platform}\n\n` +
+    (v.platform === "linkedin" ? `${LINKEDIN_WRITING_RULES}\n\n` : "") +
     (v.profileSummary ? `THEIR STATED PROFILE:\n${v.profileSummary}\n\n` : "") +
     (v.offLimits?.length
       ? `OFF-LIMITS TOPICS (never draft on these):\n${v.offLimits.map((t) => `- ${t}`).join("\n")}\n\n`

@@ -34,6 +34,7 @@ export interface AutomationView {
   name: string;
   sourceType: SourceType;
   deliveryMode: DeliveryMode;
+  platform: Automation["platform"];
   cadenceKind: CadenceKind;
   cadenceMeta: Record<string, unknown>;
   monthlyCap: number;
@@ -68,6 +69,7 @@ function toView(a: Automation, pending = 0): AutomationView {
     name: a.name,
     sourceType: a.source_type,
     deliveryMode: a.delivery_mode,
+    platform: a.platform,
     cadenceKind: a.cadence_kind,
     cadenceMeta: a.cadence_meta ?? {},
     monthlyCap: a.monthly_cap,
@@ -145,6 +147,7 @@ function sanitize(input: AutomationFormInput): AutomationInput {
   const sourceType = SOURCE_TYPES.includes(input.sourceType as SourceType) ? (input.sourceType as SourceType) : "trend_ride";
   const deliveryMode = DELIVERY_MODES.includes(input.deliveryMode as DeliveryMode) ? (input.deliveryMode as DeliveryMode) : "approval";
   const cadenceKind = CADENCE_KINDS.includes(input.cadenceKind as CadenceKind) ? (input.cadenceKind as CadenceKind) : "daily";
+  const platform = input.platform === "linkedin" ? "linkedin" : "x";
   const pillarScope = Array.isArray(input.pillarScope)
     ? input.pillarScope.map((s) => String(s)).filter(Boolean)
     : null;
@@ -158,6 +161,7 @@ function sanitize(input: AutomationFormInput): AutomationInput {
     name: name || (brief ? brief.slice(0, 60) : "Untitled automation"),
     source_type: sourceType,
     delivery_mode: deliveryMode,
+    platform,
     cadence_kind: cadenceKind,
     cadence_meta: sanitizeCadenceMeta(input.cadenceMeta),
     monthly_cap: typeof input.monthlyCap === "number" ? input.monthlyCap : config.AUTOMATION_DEFAULT_MONTHLY_CAP,

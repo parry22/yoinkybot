@@ -16,13 +16,16 @@ export async function POST(req: Request) {
     content?: unknown;
     scheduledFor?: unknown;
     mediaIds?: unknown;
+    platform?: unknown;
   };
   const content = typeof body.content === "string" ? body.content.trim() : "";
   const scheduledFor = typeof body.scheduledFor === "string" ? body.scheduledFor : "";
+  const platform = body.platform === "linkedin" ? "linkedin" : body.platform === "x" ? "x" : null;
   const mediaIds = Array.isArray(body.mediaIds)
     ? body.mediaIds.filter((m): m is string => typeof m === "string").slice(0, 4)
     : [];
   if (!scheduledFor) return NextResponse.json({ error: "time required" }, { status: 400 });
+  if (!platform) return NextResponse.json({ error: "platform must be X or LinkedIn" }, { status: 400 });
   // An image on its own is a valid post, so text is only required when nothing
   // is attached.
   if (!content && mediaIds.length === 0) {
@@ -30,7 +33,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const res = await createWebScheduledPost(user.id, content, scheduledFor, mediaIds);
+    const res = await createWebScheduledPost(user.id, platform, content, scheduledFor, mediaIds);
     if (!res.ok) {
       // The monthly cap → 429 + Scale CTA; every other rejection (links, bad
       // time) stays a plain 400.

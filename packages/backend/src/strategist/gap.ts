@@ -230,20 +230,20 @@ export function topBottomLines(posts: RankablePost[], hasX: boolean): string[] {
     const bottom = withEng[withEng.length - 1]!.e;
     if (top > bottom) {
       return [
-        `TOP X POSTS:\n${withEng.slice(0, 2).map(fmt).join("\n")}`,
-        `QUIETEST X POSTS:\n${withEng.slice(-2).map(fmt).join("\n")}`,
+        `TOP CONNECTED POSTS:\n${withEng.slice(0, 2).map(fmt).join("\n")}`,
+        `QUIETEST CONNECTED POSTS:\n${withEng.slice(-2).map(fmt).join("\n")}`,
       ];
     }
     // Metrics exist and are all the same number — usually all zero. Naming the
     // number is more useful than pretending there's a best and a worst.
     return [
-      `X post-level engagement is flat: all ${withEng.length} posts with metrics score exactly ${top}, so there is no best ` +
+      `Connected post-level engagement is flat: all ${withEng.length} posts with metrics score exactly ${top}, so there is no best ` +
         `and no quietest post to compare. Say that plainly — do NOT invent a performance contrast.`,
     ];
   }
   if (hasX) {
     return [
-      "X post-level engagement isn't available (no engagement source configured), so top/bottom posts are thin. Say so honestly.",
+      "Connected post-level engagement isn't available (no engagement source configured), so top/bottom posts are thin. Say so honestly.",
     ];
   }
   return [];
@@ -294,10 +294,11 @@ async function baselineBlock(
     cadence = `Historic cadence: ~${perWeek} posts/week (${n} posts over ~${Math.round(days)} days).`;
   }
 
-  // Top/bottom X posts by engagement (LinkedIn has no post-level metrics).
+  // Top/bottom posts across connected platforms. LinkedIn's public-profile
+  // actor now carries reactions/comments/reposts, so it participates honestly.
   const xPosts = await query<{ raw_text: string | null; captured_at: string; eng: unknown }>(
     `SELECT raw_text, captured_at::text, metadata->'engagement' AS eng
-     FROM captures WHERE user_id = $1 AND source = 'x_import' AND raw_text IS NOT NULL`,
+     FROM captures WHERE user_id = $1 AND source IN ('x_import','linkedin_import') AND raw_text IS NOT NULL`,
     [userId],
   );
 
@@ -310,12 +311,9 @@ async function baselineBlock(
   lines.push(
     ...topBottomLines(
       xPosts.map((p) => ({ text: p.raw_text!, at: p.captured_at, e: engagementTotal(p.eng) })),
-      !!x,
+      !!x || !!li,
     ),
   );
-  if (li) {
-    lines.push("LinkedIn doesn't give reliable post-level performance, so that side of the picture is thinner than X. Everything else holds. State this plainly.");
-  }
   return {
     text: `STARTING POINT (the real baseline the plan moves from):\n${lines.join("\n")}`,
     followers,

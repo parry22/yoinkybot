@@ -306,6 +306,9 @@ const schema = z.object({
   X_CLIENT_SECRET: z.string().optional(),
   LINKEDIN_CLIENT_ID: z.string().optional(),
   LINKEDIN_CLIENT_SECRET: z.string().optional(),
+  // LinkedIn's versioned REST APIs require YYYYMM on every request. Keep this
+  // deploy-configurable so the API can be rolled forward without a code change.
+  LINKEDIN_API_VERSION: z.string().regex(/^\d{6}$/).default("202604"),
 
   // Product analytics (PostHog, server-side via posthog-node). Optional: unset
   // → every track/identify call is a silent no-op, nothing else changes. This

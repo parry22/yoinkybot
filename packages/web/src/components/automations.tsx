@@ -16,6 +16,7 @@ interface AutomationView {
   name: string;
   sourceType: SourceType;
   deliveryMode: "approval" | "auto";
+  platform: "x" | "linkedin";
   cadenceKind: "daily" | "weekly" | "manual";
   cadenceMeta: Record<string, unknown>;
   monthlyCap: number;
@@ -244,7 +245,7 @@ export function Automations({
                     <div className={styles.cardName}>{a.name}</div>
                     <div className={styles.cardMeta}>
                       {SOURCE_LABEL[a.sourceType]} · {CADENCE_LABEL[a.cadenceKind]} · {DELIVERY_LABEL[a.deliveryMode]} ·
-                      up to {a.monthlyCap}/mo
+                      {a.platform === "x" ? "X" : "LinkedIn"} · up to {a.monthlyCap}/mo
                     </div>
                     {a.pendingApprovals > 0 && <div className={styles.pendingTag}>{a.pendingApprovals} waiting on you</div>}
                   </div>

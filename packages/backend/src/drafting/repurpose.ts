@@ -174,6 +174,8 @@ export interface RepurposeRequest {
   theme?: string;
   /** Known lineage ids (draft id, capture-derived memory ids). */
   sourceIds?: string[];
+  /** Staged attachments copied from the source post. */
+  mediaIds?: string[];
 }
 
 export interface RepurposeResult {
@@ -181,6 +183,20 @@ export interface RepurposeResult {
   id?: string;
   output: string;
   notes: string;
+}
+
+export async function repurposedForSchedule(
+  userId: string,
+  id: string,
+): Promise<{ platform: Platform; content: string; mediaIds: string[] } | null> {
+  const row = await queryOne<{ target_platform: Platform; output_text: string; media_ids: string[] | null }>(
+    `SELECT target_platform, output_text, media_ids FROM repurposed_content
+     WHERE id = $1 AND user_id = $2`,
+    [id, userId],
+  );
+  return row
+    ? { platform: row.target_platform, content: row.output_text, mediaIds: row.media_ids ?? [] }
+    : null;
 }
 
 export async function repurposeContent(userId: string, req: RepurposeRequest): Promise<RepurposeResult> {
@@ -270,9 +286,9 @@ export async function repurposeContent(userId: string, req: RepurposeRequest): P
 
   const output = enforceStyle(parsed.output);
   const row = await queryOne<{ id: string }>(
-    `INSERT INTO repurposed_content (user_id, source_type, source_ids, mode, target_platform, output_text)
-     VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-    [userId, req.sourceType, sourceIds, req.mode, req.target, output],
+    `INSERT INTO repurposed_content (user_id, source_type, source_ids, mode, target_platform, output_text, media_ids)
+     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+    [userId, req.sourceType, sourceIds, req.mode, req.target, output, req.mediaIds ?? []],
   );
   return { ok: true, id: row?.id, output, notes: parsed.notes };
 }

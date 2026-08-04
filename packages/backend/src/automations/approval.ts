@@ -11,7 +11,7 @@ import { schedulePost } from "../scheduling/service.js";
 import { ensureBoss } from "../jobs/boss.js";
 import { reviseDraft } from "../drafting/revise.js";
 import { casualize } from "../prompts/style.js";
-import { claimRun, getRun, setRunScheduled, setRunStatus, updateRunDraft } from "./store.js";
+import { claimRun, getRun, platformForRun, setRunScheduled, setRunStatus, updateRunDraft } from "./store.js";
 
 /** The approval DM: casual framing line + VERBATIM draft body + media line. Lives
  *  here (not run.ts) so both run.ts and telegram/bot.ts import it without a cycle. */
@@ -45,11 +45,13 @@ export async function approveRun(userId: string, runId: string): Promise<{ ok: b
   if (!run) return { ok: false, reason: "not found" };
   if (run.status === "expired") return { ok: false, reason: EXPIRY_NOTE };
   if (!run.draft_body) return { ok: false, reason: "no draft" };
+  const platform = await platformForRun(runId, userId);
+  if (!platform) return { ok: false, reason: "automation not found" };
   const claimed = await claimRun(runId, "awaiting_approval", "approved");
   if (!claimed) return { ok: false, reason: "already handled" };
   await ensureBoss();
   const res = await schedulePost(userId, {
-    platform: "x",
+    platform,
     content: run.draft_body,
     scheduledFor: new Date(Date.now() + APPROVED_DELAY_MS),
   });
@@ -89,7 +91,9 @@ export async function applyEdit(userId: string, runId: string, instruction: stri
   if (run.status === "expired") return { ok: false, reason: EXPIRY_NOTE };
   if (run.status !== "awaiting_approval") return { ok: false, reason: "not open for edits" };
   if (run.edit_count >= config.AUTOMATION_MAX_EDITS) return { ok: false, capped: true };
-  const revised = await reviseDraft(userId, run.draft_body, instruction, "x");
+  const platform = await platformForRun(runId, userId);
+  if (!platform) return { ok: false, reason: "automation not found" };
+  const revised = await reviseDraft(userId, run.draft_body, instruction, platform);
   if (!revised.ok) return { ok: false, reason: revised.note || "couldn't apply that" };
   await updateRunDraft(runId, revised.draft);
   return { ok: true, draft: revised.draft };

@@ -158,7 +158,7 @@ export async function generateDraft(
   // just falls back to universal doctrine instead of measured evidence.
   const [brandProfile, evidence, provenance] = await Promise.all([
     getProfile(userId).catch(() => null),
-    draftEvidence(userId).catch(() => EMPTY_EVIDENCE),
+    draftEvidence(userId, platform).catch(() => EMPTY_EVIDENCE),
     memoryProvenance(
       userId,
       memories.map((m) => m.capture_id).filter((id): id is string => !!id),

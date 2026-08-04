@@ -24,6 +24,24 @@ which is where it's most useful. Both share one Postgres and one `users` row.
 
 <!-- Keep newest-first. Update this whenever a change ships that a reader of the repo should know about. -->
 
+- **2026-08-04 — LinkedIn is a first-class Compose, Auto Agent, scheduling, and Telegram target.**
+  Settings now connects LinkedIn twice for two different jobs: official OAuth grants
+  `w_member_social` for member publishing, while the public profile URL feeds the
+  existing Apify reader so the writer can learn LinkedIn-native voice, reactions,
+  comments, reposts, media use, and posting windows. Publishing moved from the old
+  `/v2/ugcPosts` shape to the versioned `/rest/posts` API, with native image,
+  multi-image, GIF, and multipart-video upload.
+
+  The shared writer has a LinkedIn ghostwriter brief (grounded professional value,
+  no invented credentials or results, no X thread syntax, no engagement bait or
+  prohibited engagement automation), while the user's own measured history still
+  wins over generic advice. Auto Agent setup now asks X vs LinkedIn and schedules
+  into that platform's best measured daypart. Compose and Telegram can turn the
+  user's latest or linked X post into a native LinkedIn post and retain its source
+  media; scheduling that result reuses the staged media without adding a new bot
+  command. Migration `0040_linkedin_content.sql` widens the automation platform
+  constraint and stores media lineage on repurposed content.
+
 - **2026-07-31 — The database ran out of compute, and the bill was the Agent SDK.**
   Production went down with a generic error page on every `/app` route. The cause
   wasn't code: Neon was refusing connections on an exhausted **compute-time** quota,

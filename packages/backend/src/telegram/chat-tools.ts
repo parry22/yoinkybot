@@ -24,6 +24,11 @@ export const chatToolSchema = z.discriminatedUnion("name", [
     form: z.enum(["x", "linkedin", "compress", "expand", "synthesis"]),
     text: z.string().min(1),
   }),
+  z.object({
+    name: z.literal("repurpose_x_post"),
+    /** Omit for the latest owned X post already in connected history. */
+    url: z.string().optional(),
+  }),
   z.object({ name: z.literal("search_memory"), question: z.string().min(1) }),
   // What's happening RIGHT NOW on a topic: live X search + cached trends + news.
   // The counterpart to search_memory — that one looks inward at what the user has
@@ -47,7 +52,9 @@ export const chatToolSchema = z.discriminatedUnion("name", [
   z.object({
     name: z.literal("schedule_post"),
     platform: z.enum(["x", "linkedin"]),
-    content: z.string().min(1),
+    content: z.string().default(""),
+    /** Set after repurpose_x_post so its staged source media is scheduled too. */
+    repurposedContentId: z.string().uuid().optional(),
     // Resolved to an absolute ISO instant by the model, using the CURRENT TIME
     // injected into its context — never a relative phrase like "tomorrow 9am".
     when: z.string().min(1),

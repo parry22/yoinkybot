@@ -174,6 +174,7 @@ async function ingestProfileInner(job: IngestProfileJob): Promise<void> {
           url: post.url ?? null,
           connected_account: account.id,
           ...(post.engagement ? { engagement: post.engagement } : {}),
+          ...(post.media?.length ? { media: post.media } : {}),
         },
         enqueue: false,
       });

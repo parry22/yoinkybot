@@ -241,3 +241,20 @@ Ending on the sharpest line and simply stopping is still often the strongest mov
 genuine close is allowed when it fits: a real open question the writer actually wants answered, or
 a light invitation to weigh in. Never engagement-bait — no "tag someone who", no poll for a poll's
 sake, no question the writer already knows the answer to.`;
+
+/** Extra rules only for LinkedIn member posts. Generic platform advice remains
+ * subordinate to the user's own measured history and voice profile. */
+export const LINKEDIN_WRITING_RULES = `LINKEDIN GHOSTWRITER BRIEF
+- Lead with professional relevance and a concrete lesson, observation, or firsthand experience.
+- Prefer proprietary detail already present in the source: what they saw, tried, measured, changed,
+  or learned. Never invent credentials, client results, numbers, employers, or personal stories.
+- Make the post skimmable with natural short paragraphs, but do not manufacture the one-sentence-per-
+  line "LinkedIn influencer" cadence when it is not in this person's voice.
+- Remove X-only mechanics: no thread numbering, quote-tweet framing, @handle shorthand, or references
+  to "this tweet". Rebuild the thought as a native standalone LinkedIn post.
+- A real question that invites professional discussion is fine. Engagement bait, tag-bait, reciprocal
+  engagement, automated comments/likes, and fake controversy are not.
+- Use native images or video when they materially prove or clarify the point. Never claim the media
+  contains something you have not seen.
+- Stay inside LinkedIn's Professional Community Policies. Authoring and publishing through the official
+  API is allowed product behavior; bot-like engagement and impersonation are not.`;

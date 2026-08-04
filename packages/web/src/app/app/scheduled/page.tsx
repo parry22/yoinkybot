@@ -14,16 +14,23 @@ export const dynamic = "force-dynamic";
 export default async function ScheduledPage() {
   const user = await getSessionUser();
   if (!user) redirect("/sign-in");
-  const [posts, status, media] = await Promise.all([
+  const [posts, status, xMedia, linkedInMedia] = await Promise.all([
     // includeRecent: the queue alone isn't enough here. A post that failed used
     // to disappear from this screen entirely, and the only failure notice the
     // backend sends is a Telegram DM — which no-ops for a web-only user. Recent
     // failures and successes stay listed so the outcome is visible somewhere.
     listScheduled(user.id, { includeRecent: true }).catch(() => []),
-    scheduledStatus(user.id).catch(() => ({ used: 0, cap: null, remaining: null, reauthRequired: false })),
+    scheduledStatus(user.id).catch(() => ({
+      used: 0,
+      cap: null,
+      remaining: null,
+      reauthRequired: false,
+      reauthRequiredPlatforms: [],
+    })),
     // Whether their X token can actually upload media — surfaced in the composer
     // so a missing permission is known at attach time, not at publish time.
-    mediaReadiness(user.id).catch(() => ({ canPostMedia: false, warning: null })),
+    mediaReadiness(user.id, "x").catch(() => ({ canPostMedia: false, warning: null })),
+    mediaReadiness(user.id, "linkedin").catch(() => ({ canPostMedia: false, warning: null })),
   ]);
   const attachments = await mediaForScheduledPosts(
     user.id,
@@ -42,8 +49,12 @@ export default async function ScheduledPage() {
         externalUrl: p.external_url,
         media: attachments.get(p.id) ?? [],
       }))}
-      usage={{ used: status.used, cap: status.cap, reauthRequired: status.reauthRequired }}
-      media={media}
+      usage={{
+        used: status.used,
+        cap: status.cap,
+        reauthRequiredPlatforms: status.reauthRequiredPlatforms,
+      }}
+      media={{ x: xMedia, linkedin: linkedInMedia }}
     />
   );
 }

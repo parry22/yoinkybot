@@ -117,13 +117,16 @@ export interface MediaReadiness {
  * Whether media will actually publish for this user. Surfaced in the scheduler UI
  * up front, because the alternative is finding out at the scheduled time.
  */
-export async function mediaReadiness(userId: string): Promise<MediaReadiness> {
-  const ok = await hasMediaScope(userId, "x").catch(() => false);
+export async function mediaReadiness(userId: string, platform: "x" | "linkedin" = "x"): Promise<MediaReadiness> {
+  const ok = await hasMediaScope(userId, platform).catch(() => false);
+  const label = platform === "x" ? "X" : "LinkedIn";
   return {
     canPostMedia: ok,
     warning: ok
       ? null
-      : "Reconnect your X account in Settings to attach images or video — the permission to upload media was added after you connected.",
+      : platform === "x"
+        ? "Reconnect your X account in Settings to attach images or video — the permission to upload media was added after you connected."
+        : `Connect ${label} for posting in Settings before scheduling images or video.`,
   };
 }
 

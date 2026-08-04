@@ -54,6 +54,38 @@ export async function finalizeXConnect(
   }
 }
 
+/** Store a LinkedIn member write token. OpenID does not expose the vanity
+ * profile URL the public-history actor needs, so history connection remains a
+ * separate one-line URL action in Settings while publishing works immediately. */
+export async function finalizeLinkedInConnect(
+  userId: string,
+  linkedIn: { accessToken: string; authorUrn: string; expiresIn?: number; displayName?: string },
+): Promise<void> {
+  const expiresAt = linkedIn.expiresIn ? new Date(Date.now() + linkedIn.expiresIn * 1000).toISOString() : null;
+  await query(
+    `INSERT INTO connected_accounts
+       (user_id, platform, handle, status, post_access_token, post_token_expires_at, post_scopes, post_author_urn)
+     VALUES ($1,'linkedin',$2,'posting_connected',$3,$4,'w_member_social openid profile',$5)
+     ON CONFLICT (user_id, platform) DO UPDATE SET
+       post_access_token = EXCLUDED.post_access_token,
+       post_token_expires_at = EXCLUDED.post_token_expires_at,
+       post_scopes = EXCLUDED.post_scopes,
+       post_author_urn = EXCLUDED.post_author_urn,
+       post_reauth_required_at = NULL`,
+    [userId, linkedIn.displayName?.trim() || "connected-for-posting", linkedIn.accessToken, expiresAt, linkedIn.authorUrn],
+  );
+}
+
+export async function connectLinkedInProfileFromWeb(userId: string, profileUrl: string): Promise<void> {
+  const value = profileUrl.trim();
+  if (!/^https:\/\/(?:[a-z]{2,3}\.)?linkedin\.com\/in\/[A-Za-z0-9_%.-]+\/?(?:\?.*)?$/i.test(value)) {
+    throw new Error("Paste a full LinkedIn profile URL, like https://www.linkedin.com/in/your-name");
+  }
+  if (!config.APIFY_TOKEN) throw new Error("LinkedIn profile reading isn't configured on this instance");
+  await ensureBoss();
+  await startConnect(userId, "linkedin", value);
+}
+
 /** Read the current X connection/ingest state for the mandatory-connect popup poll. */
 export async function getXConnectStatus(userId: string): Promise<XConnectStatus> {
   const row = await query<{ status: string; post_count: number }>(

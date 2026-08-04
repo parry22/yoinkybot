@@ -28,7 +28,7 @@ type PostStatus = "pending" | "publishing" | "published" | "failed" | "canceled"
 
 interface Post {
   id: string;
-  platform: string;
+  platform: Platform;
   content: string;
   scheduledFor: string; // ISO
   /** Absent on posts this component just created optimistically — treated as pending. */
@@ -38,6 +38,9 @@ interface Post {
   externalUrl?: string | null;
   media?: MediaView[];
 }
+
+type Platform = "x" | "linkedin";
+type MediaReadiness = { canPostMedia: boolean; warning: string | null };
 
 const statusOf = (p: Post): PostStatus => p.status ?? "pending";
 
@@ -76,9 +79,9 @@ export function ScheduledCalendar({
 }: {
   posts: Post[];
   /** This month's scheduling usage — cap null = unlimited (Scale). */
-  usage: { used: number; cap: number | null; reauthRequired?: boolean };
+  usage: { used: number; cap: number | null; reauthRequiredPlatforms?: Platform[] };
   /** Whether media will actually publish, and the reason when it won't. */
-  media: { canPostMedia: boolean; warning: string | null };
+  media: Record<Platform, MediaReadiness>;
 }) {
   const [posts, setPosts] = useState<Post[]>(initial);
   const now = new Date();
@@ -150,15 +153,18 @@ export function ScheduledCalendar({
 
         {/* A dead posting credential fails every future post silently, so it's
          *  said once, loudly, above everything else. */}
-        {usage.reauthRequired && (
+        {(usage.reauthRequiredPlatforms?.length ?? 0) > 0 && (
           <div className={styles.authBanner}>
             <HugeiconsIcon icon={Alert02Icon} size={16} strokeWidth={1.8} />
             <span>
-              Your X connection expired, so scheduled posts can&apos;t publish. Reconnect and they&apos;ll start
-              going out again.
+              {usage.reauthRequiredPlatforms!.map((p) => (p === "x" ? "X" : "LinkedIn")).join(" and ")} connection
+              expired, so its scheduled posts can&apos;t publish. Reconnect it and they&apos;ll start going out again.
             </span>
-            <a href="/api/auth/x/start" className={styles.authBtn}>
-              Reconnect X
+            <a
+              href={usage.reauthRequiredPlatforms![0] === "linkedin" ? "/api/auth/linkedin/start" : "/api/auth/x/start"}
+              className={styles.authBtn}
+            >
+              Reconnect
             </a>
           </div>
         )}
@@ -254,6 +260,7 @@ export function ScheduledCalendar({
                       <span className={styles.chipTime}>
                         {new Date(p.scheduledFor).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
                       </span>{" "}
+                      <span className={styles.chipTag}>{p.platform === "x" ? "X" : "LinkedIn"}</span>{" "}
                       {p.media && p.media.length > 0 && (
                         <HugeiconsIcon
                           icon={p.media[0]!.kind === "video" ? Video01Icon : Image01Icon}
@@ -328,11 +335,12 @@ function AddPostModal({
   day: Date;
   /** Starting text — set when re-queueing a post that failed. */
   prefill?: string;
-  mediaReady: { canPostMedia: boolean; warning: string | null };
+  mediaReady: Record<Platform, MediaReadiness>;
   onClose: () => void;
   onScheduled: (p: Post) => void;
 }) {
   const [content, setContent] = useState(prefill ?? "");
+  const [platform, setPlatform] = useState<Platform>("x");
   const [time, setTime] = useState(() => defaultTimeFor(day));
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -395,7 +403,7 @@ function AddPostModal({
       return;
     }
     if (linkFound) {
-      setErr("links tank reach on X, so scheduled posts can't contain one. drop it and post it as the first reply instead.");
+      setErr("links usually reduce native-feed reach, so scheduled posts can't contain one. Add it separately after publishing.");
       return;
     }
     const [hh, mm] = time.split(":").map(Number);
@@ -419,6 +427,7 @@ function AddPostModal({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           content: text,
+          platform,
           scheduledFor: when.toISOString(),
           mediaIds: attachments.map((a) => a.id),
         }),
@@ -438,7 +447,7 @@ function AddPostModal({
       }
       onScheduled({
         id: data.id,
-        platform: "x",
+        platform,
         content: text,
         scheduledFor: when.toISOString(),
         status: "pending",
@@ -470,8 +479,8 @@ function AddPostModal({
         {/* The link rule, stated before it's broken and again the moment it is. */}
         <div className={linkFound ? styles.linkWarn : styles.linkHint}>
           {linkFound
-            ? "That's a link — X suppresses reach on posts that send people off-platform, so this won't schedule. Post the link as the first reply instead."
-            : "No links: they tank reach on X. Put yours in the first reply once this is live."}
+            ? `That's an external link — this ${platform === "x" ? "X" : "LinkedIn"} post won't schedule with it. Add it separately after publishing.`
+            : `Native ${platform === "x" ? "X" : "LinkedIn"} posts only. Add external links separately after publishing.`}
         </div>
 
         {attachments.length > 0 && (
@@ -524,13 +533,23 @@ function AddPostModal({
             hidden
             onChange={(e) => void addFiles(e.target.files)}
           />
-          <span className={styles.platformTag}>Posts to X</span>
+          <label className={styles.timeLabel}>
+            Platform
+            <select
+              className={styles.timeInput}
+              value={platform}
+              onChange={(e) => setPlatform(e.target.value as Platform)}
+            >
+              <option value="x">X</option>
+              <option value="linkedin">LinkedIn</option>
+            </select>
+          </label>
         </div>
 
         {/* Media only publishes if the stored X token carries media.write. Said
          *  here, at attach time, rather than discovered when the post fires. */}
-        {attachments.length > 0 && !mediaReady.canPostMedia && mediaReady.warning && (
-          <div className={styles.linkWarn}>{mediaReady.warning}</div>
+        {attachments.length > 0 && !mediaReady[platform].canPostMedia && mediaReady[platform].warning && (
+          <div className={styles.linkWarn}>{mediaReady[platform].warning}</div>
         )}
 
         {err && <div className={styles.modalErr}>{err}</div>}

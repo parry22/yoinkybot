@@ -66,6 +66,8 @@ describe("parseLinkedInItems", () => {
       text: "My actual original take on distribution.",
       url: "https://www.linkedin.com/posts/someone_take",
       post_type: "post",
+      stats: { total_reactions: 42, comments: 7, reposts: 3 },
+      media: { type: "image", images: ["https://media.licdn.com/chart.jpg"] },
     },
   ];
 
@@ -74,5 +76,9 @@ describe("parseLinkedInItems", () => {
     expect(posts).toHaveLength(1);
     expect(posts[0]!.text).toBe("My actual original take on distribution.");
     expect(posts[0]!.postedAt.getTime()).toBe(1783031565912);
+    expect(posts[0]!.engagement).toMatchObject({ likeCount: 42, replyCount: 7, retweetCount: 3 });
+    expect(posts[0]!.media).toEqual([
+      { kind: "image", url: "https://media.licdn.com/chart.jpg", mimeType: "image/jpeg" },
+    ]);
   });
 });

@@ -35,6 +35,7 @@ import { handleMonthlyRecalibration } from "../memory/corrections.js";
 import { handleScheduledPost, reapStuckPublishing } from "./scheduled-post.js";
 import { handleAutomationTick } from "../automations/tick.js";
 import { handleXRefresh, nudgeStaleXRefresh } from "./x-refresh.js";
+import { handleLinkedInRefresh } from "./linkedin-refresh.js";
 import { handleRetention, logStorageFootprint } from "./retention.js";
 import type {
   IngestProfileJob,
@@ -169,6 +170,7 @@ export async function registerWorkers(boss: PgBoss): Promise<void> {
 
   // Keep every connected X account fresh without the user lifting a finger.
   await boss.work(QUEUES.xRefresh, logged(QUEUES.xRefresh, () => handleXRefresh()));
+  await boss.work(QUEUES.linkedinRefresh, logged(QUEUES.linkedinRefresh, () => handleLinkedInRefresh()));
 
   // Proactive engine tick: hourly; cadence/quiet-hour gates live in the handler.
   // This single tick now also offers to turn the resurfaced idea into angles
@@ -222,6 +224,7 @@ export async function registerWorkers(boss: PgBoss): Promise<void> {
   // fetch is on the 8-hour boundary — 01:00 and 13:00 UTC are clear of all three,
   // so the sequential twitterapi.io throttle isn't fighting another sweep.
   await boss.schedule(QUEUES.xRefresh, "0 1,13 * * *"); // 06:30 / 18:30 IST
+  await boss.schedule(QUEUES.linkedinRefresh, "30 2 * * *"); // daily; paid public-profile pull
   // Stranded-publish sweep. Every 15 minutes — was every 5, which was 288 wake-ups
   // a day for a sweep whose own threshold is 30 minutes, so four out of every five
   // runs could not possibly have found anything. The handler only touches rows

@@ -34,7 +34,7 @@ export async function GET(req: Request) {
     response_type: "code",
     client_id: clientId,
     redirect_uri: redirectUri,
-    scope: "tweet.read tweet.write users.read offline.access",
+    scope: "tweet.read tweet.write users.read media.write offline.access",
     state,
     code_challenge: challenge,
     code_challenge_method: "S256",

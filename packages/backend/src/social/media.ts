@@ -12,7 +12,8 @@
  * from the UI: up to 4 images, OR exactly 1 video, OR 1 GIF — never mixed.
  */
 import { config } from "../config.js";
-import { query } from "../db/pool.js";
+import { query, queryOne } from "../db/pool.js";
+import type { ImportedMedia } from "../capture/imports/x.js";
 import type { Platform } from "../lib/types.js";
 import type { WriteAuth } from "./publish.js";
 
@@ -133,6 +134,58 @@ export async function attachMediaToPost(
   return rows.length;
 }
 
+function allowedSourceMediaUrl(raw: string): URL | null {
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:") return null;
+    const host = url.hostname.toLowerCase();
+    return host === "x.com" || host.endsWith(".x.com") || host === "twitter.com" || host.endsWith(".twitter.com") || host.endsWith(".twimg.com")
+      ? url
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+async function remoteSize(url: URL): Promise<{ bytes: number; mime: string | null }> {
+  let res = await fetch(url, { method: "HEAD", signal: AbortSignal.timeout(15_000) });
+  if (!res.ok || !res.headers.get("content-length")) {
+    res = await fetch(url, {
+      headers: { Range: "bytes=0-0" },
+      signal: AbortSignal.timeout(15_000),
+    });
+  }
+  if (!res.ok) throw new Error(`couldn't read source media (${res.status})`);
+  const rangeTotal = res.headers.get("content-range")?.match(/\/(\d+)$/)?.[1];
+  const bytes = Number(rangeTotal ?? res.headers.get("content-length"));
+  if (!Number.isFinite(bytes) || bytes <= 0) throw new Error("source media didn't report a usable size");
+  // Cancel the ranged response body; staging stores the URL, not the bytes.
+  await res.body?.cancel().catch(() => {});
+  return { bytes, mime: res.headers.get("content-type")?.split(";")[0] ?? null };
+}
+
+/** Stage media discovered on an owned X post so the ordinary scheduler can
+ * bind and publish it. Host allowlisting prevents scraper metadata becoming an
+ * arbitrary server-side fetch primitive. */
+export async function stageRemoteMedia(userId: string, items: ImportedMedia[]): Promise<string[]> {
+  const ids: string[] = [];
+  for (const item of items.slice(0, MEDIA_LIMITS.maxImages)) {
+    const url = allowedSourceMediaUrl(item.url);
+    if (!url) continue;
+    const info = await remoteSize(url);
+    const kind = item.kind;
+    if (info.bytes > maxBytesFor(kind)) continue;
+    const row = await queryOne<{ id: string }>(
+      `INSERT INTO scheduled_post_media
+         (scheduled_post_id, user_id, kind, url, blob_path, mime_type, byte_size, alt_text)
+       VALUES (NULL, $1, $2, $3, NULL, $4, $5, $6) RETURNING id`,
+      [userId, kind, url.toString(), info.mime ?? item.mimeType, info.bytes, item.altText?.slice(0, 1000) ?? null],
+    );
+    if (row) ids.push(row.id);
+  }
+  return ids;
+}
+
 /** Remember the platform's media id so a retry doesn't re-upload the bytes. */
 async function rememberExternalId(mediaId: string, externalId: string): Promise<void> {
   await query(`UPDATE scheduled_post_media SET external_media_id = $2 WHERE id = $1`, [mediaId, externalId]);
@@ -154,13 +207,13 @@ export interface MediaUploadResult {
  * the status the only signal would be substring-matching the message, which
  * would misfire on a "401" that happens to appear in a filename or error body.
  */
-class XMediaError extends Error {
+class PlatformMediaError extends Error {
   constructor(
     message: string,
     readonly status: number,
   ) {
     super(message);
-    this.name = "XMediaError";
+    this.name = "PlatformMediaError";
   }
 }
 
@@ -219,7 +272,7 @@ async function uploadToX(auth: WriteAuth, item: ScheduledMedia): Promise<string>
     };
     const id = body.data?.id ?? body.data?.media_key;
     if (!res.ok || !id) {
-      throw new XMediaError(`X media upload ${res.status}: ${body.detail ?? body.title ?? "rejected"}`, res.status);
+      throw new PlatformMediaError(`X media upload ${res.status}: ${body.detail ?? body.title ?? "rejected"}`, res.status);
     }
     return id;
   }
@@ -242,7 +295,7 @@ async function uploadToX(auth: WriteAuth, item: ScheduledMedia): Promise<string>
   };
   const mediaId = initBody.data?.id;
   if (!initRes.ok || !mediaId) {
-    throw new XMediaError(
+    throw new PlatformMediaError(
       `X media init ${initRes.status}: ${initBody.detail ?? initBody.title ?? "rejected"}`,
       initRes.status,
     );
@@ -262,7 +315,7 @@ async function uploadToX(auth: WriteAuth, item: ScheduledMedia): Promise<string>
     });
     if (!res.ok) {
       const detail = await res.text().catch(() => "");
-      throw new XMediaError(`X media append ${res.status} (segment ${segment}): ${detail.slice(0, 200)}`, res.status);
+      throw new PlatformMediaError(`X media append ${res.status} (segment ${segment}): ${detail.slice(0, 200)}`, res.status);
     }
     segment++;
   }
@@ -277,7 +330,7 @@ async function uploadToX(auth: WriteAuth, item: ScheduledMedia): Promise<string>
     detail?: string;
   };
   if (!finRes.ok) {
-    throw new XMediaError(`X media finalize ${finRes.status}: ${finBody.detail ?? "rejected"}`, finRes.status);
+    throw new PlatformMediaError(`X media finalize ${finRes.status}: ${finBody.detail ?? "rejected"}`, finRes.status);
   }
 
   // Video and GIF transcode asynchronously. Posting before it finishes fails, so
@@ -304,13 +357,119 @@ async function uploadToX(auth: WriteAuth, item: ScheduledMedia): Promise<string>
   return mediaId;
 }
 
+function linkedInHeaders(auth: WriteAuth, json = true): Record<string, string> {
+  return {
+    Authorization: `Bearer ${auth.accessToken}`,
+    "Linkedin-Version": config.LINKEDIN_API_VERSION,
+    "X-Restli-Protocol-Version": "2.0.0",
+    ...(json ? { "Content-Type": "application/json" } : {}),
+  };
+}
+
+async function uploadLinkedInImage(auth: WriteAuth, item: ScheduledMedia): Promise<string> {
+  if (!auth.authorUrn) throw new Error("LinkedIn author URN missing — reconnect the account for posting");
+  const init = await fetch("https://api.linkedin.com/rest/images?action=initializeUpload", {
+    method: "POST",
+    headers: linkedInHeaders(auth),
+    body: JSON.stringify({ initializeUploadRequest: { owner: auth.authorUrn } }),
+    signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
+  });
+  const body = (await init.json().catch(() => ({}))) as {
+    value?: { uploadUrl?: string; image?: string };
+    message?: string;
+  };
+  const uploadUrl = body.value?.uploadUrl;
+  const image = body.value?.image;
+  if (!init.ok || !uploadUrl || !image) {
+    throw new PlatformMediaError(`LinkedIn image init ${init.status}: ${body.message ?? "rejected"}`, init.status);
+  }
+  const bytes = await fetchMediaBytes(item.url);
+  const uploaded = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${auth.accessToken}`, "Content-Type": item.mimeType },
+    body: bytes,
+    signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
+  });
+  if (!uploaded.ok) {
+    throw new PlatformMediaError(`LinkedIn image upload ${uploaded.status}: rejected`, uploaded.status);
+  }
+  return image;
+}
+
+async function uploadLinkedInVideo(auth: WriteAuth, item: ScheduledMedia): Promise<string> {
+  if (!auth.authorUrn) throw new Error("LinkedIn author URN missing — reconnect the account for posting");
+  const bytes = await fetchMediaBytes(item.url);
+  const init = await fetch("https://api.linkedin.com/rest/videos?action=initializeUpload", {
+    method: "POST",
+    headers: linkedInHeaders(auth),
+    body: JSON.stringify({
+      initializeUploadRequest: {
+        owner: auth.authorUrn,
+        fileSizeBytes: bytes.byteLength,
+        uploadCaptions: false,
+        uploadThumbnail: false,
+      },
+    }),
+    signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
+  });
+  const body = (await init.json().catch(() => ({}))) as {
+    value?: {
+      video?: string;
+      uploadToken?: string;
+      uploadInstructions?: Array<{ uploadUrl?: string; firstByte?: number; lastByte?: number }>;
+    };
+    message?: string;
+  };
+  const value = body.value;
+  if (!init.ok || !value?.video || !value.uploadToken || !value.uploadInstructions?.length) {
+    throw new PlatformMediaError(`LinkedIn video init ${init.status}: ${body.message ?? "rejected"}`, init.status);
+  }
+  const uploadedPartIds: string[] = [];
+  for (const instruction of value.uploadInstructions) {
+    if (!instruction.uploadUrl || instruction.firstByte === undefined || instruction.lastByte === undefined) {
+      throw new Error("LinkedIn returned an incomplete video upload instruction");
+    }
+    const part = bytes.slice(instruction.firstByte, instruction.lastByte + 1);
+    const uploaded = await fetch(instruction.uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: part,
+      signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
+    });
+    const etag = uploaded.headers.get("etag")?.replace(/^\"|\"$/g, "");
+    if (!uploaded.ok || !etag) {
+      throw new PlatformMediaError(`LinkedIn video upload ${uploaded.status}: rejected`, uploaded.status);
+    }
+    uploadedPartIds.push(etag);
+  }
+  const finalized = await fetch("https://api.linkedin.com/rest/videos?action=finalizeUpload", {
+    method: "POST",
+    headers: linkedInHeaders(auth),
+    body: JSON.stringify({
+      finalizeUploadRequest: {
+        video: value.video,
+        uploadToken: value.uploadToken,
+        uploadedPartIds,
+      },
+    }),
+    signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
+  });
+  if (!finalized.ok) {
+    const detail = await finalized.text().catch(() => "");
+    throw new PlatformMediaError(`LinkedIn video finalize ${finalized.status}: ${detail.slice(0, 200)}`, finalized.status);
+  }
+  return value.video;
+}
+
+async function uploadToLinkedIn(auth: WriteAuth, item: ScheduledMedia): Promise<string> {
+  return item.kind === "video" ? uploadLinkedInVideo(auth, item) : uploadLinkedInImage(auth, item);
+}
+
 /**
  * Upload every attachment for a post and return the platform media ids, in order.
  *
- * LinkedIn is deliberately not implemented: its media flow is a different
- * (versioned REST) API from the `/v2/ugcPosts` call publish.ts makes, and the web
- * scheduler only queues X posts today. Rather than half-build it, a LinkedIn post
- * with media fails with a plain reason.
+ * X and LinkedIn use different upload protocols but share this all-or-nothing
+ * contract, so every caller (web, automations, Telegram) gets identical behavior.
  */
 export async function uploadMediaFor(
   auth: WriteAuth,
@@ -318,9 +477,6 @@ export async function uploadMediaFor(
   items: ScheduledMedia[],
 ): Promise<MediaUploadResult> {
   if (items.length === 0) return { ok: true, mediaIds: [] };
-  if (platform !== "x") {
-    return { ok: false, mediaIds: [], error: "attaching media to LinkedIn posts isn't supported yet" };
-  }
   const problem = validateMediaSet(items);
   if (problem) return { ok: false, mediaIds: [], error: problem.reason };
 
@@ -332,7 +488,7 @@ export async function uploadMediaFor(
       continue;
     }
     try {
-      const id = await uploadToX(auth, item);
+      const id = platform === "x" ? await uploadToX(auth, item) : await uploadToLinkedIn(auth, item);
       await rememberExternalId(item.id, id).catch(() => {});
       mediaIds.push(id);
     } catch (err) {
@@ -343,7 +499,7 @@ export async function uploadMediaFor(
         ok: false,
         mediaIds: [],
         error: reason,
-        authExpired: err instanceof XMediaError && err.status === 401,
+        authExpired: err instanceof PlatformMediaError && err.status === 401,
       };
     }
   }
@@ -352,7 +508,9 @@ export async function uploadMediaFor(
 
 /** Whether this instance can post media at all (same app credentials as posting). */
 export function mediaUploadConfigured(platform: Platform): boolean {
-  return platform === "x" && !!(config.X_CLIENT_ID && config.X_CLIENT_SECRET);
+  return platform === "x"
+    ? !!(config.X_CLIENT_ID && config.X_CLIENT_SECRET)
+    : !!(config.LINKEDIN_CLIENT_ID && config.LINKEDIN_CLIENT_SECRET);
 }
 
 /**
@@ -364,14 +522,16 @@ export function mediaUploadConfigured(platform: Platform): boolean {
  * only then find out. Checked at SCHEDULE time so they're told immediately.
  */
 export async function hasMediaScope(userId: string, platform: Platform): Promise<boolean> {
-  if (platform !== "x") return false;
-  const rows = await query<{ post_scopes: string | null; post_access_token: string | null }>(
-    `SELECT post_scopes, post_access_token FROM connected_accounts
+  const rows = await query<{ post_scopes: string | null; post_access_token: string | null; post_author_urn: string | null }>(
+    `SELECT post_scopes, post_access_token, post_author_urn FROM connected_accounts
      WHERE user_id = $1 AND platform = $2 LIMIT 1`,
     [userId, platform],
   );
   const row = rows[0];
   if (!row?.post_access_token) return false;
+  // LinkedIn's w_member_social grant covers both post creation and member media
+  // upload. Unlike X there is no separate media scope to inspect.
+  if (platform === "linkedin") return !!row.post_author_urn;
   // X returns the granted scopes space-separated on the token response.
   return (row.post_scopes ?? "").split(/\s+/).includes("media.write");
 }

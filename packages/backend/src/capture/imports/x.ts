@@ -18,6 +18,15 @@ export interface ImportedPost {
     isReply?: boolean;
     conversationId?: string;
   };
+  /** Public source media that can be retained when the post is repurposed. */
+  media?: ImportedMedia[];
+}
+
+export interface ImportedMedia {
+  kind: "image" | "gif" | "video";
+  url: string;
+  mimeType: string;
+  altText?: string;
 }
 
 export interface RecencyWindowOpts {

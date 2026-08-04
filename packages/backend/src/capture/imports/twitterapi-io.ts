@@ -1,7 +1,7 @@
 import { config } from "../../config.js";
 import { currentUserId } from "../../byok/context.js";
 import { scraperKeyForUser } from "../../byok/keys.js";
-import type { ImportedPost } from "./x.js";
+import type { ImportedMedia, ImportedPost } from "./x.js";
 import type { ProfilePull } from "./apify-profile.js";
 
 const MAX_PAGES = 30; // hard safety cap regardless of maxPosts (API returns 20/page)
@@ -24,6 +24,35 @@ interface RawTweet {
   conversationId?: string;
   retweeted_tweet?: unknown;
   author?: { followers?: number; description?: string };
+  extendedEntities?: { media?: RawTweetMedia[] };
+  entities?: { media?: RawTweetMedia[] };
+}
+
+interface RawTweetMedia {
+  type?: string;
+  media_url_https?: string;
+  media_url?: string;
+  url?: string;
+  ext_alt_text?: string;
+  variants?: Array<{ url?: string; content_type?: string; bitrate?: number }>;
+}
+
+function tweetMedia(t: RawTweet): ImportedPost["media"] {
+  const raw = t.extendedEntities?.media ?? t.entities?.media ?? [];
+  return raw.flatMap<ImportedMedia>((m) => {
+    const type = m.type ?? "photo";
+    if (type === "photo") {
+      const url = m.media_url_https ?? m.media_url ?? m.url;
+      return url ? [{ kind: "image" as const, url, mimeType: "image/jpeg", altText: m.ext_alt_text }] : [];
+    }
+    const variant = [...(m.variants ?? [])]
+      .filter((v) => v.url && (v.content_type ?? "").includes("mp4"))
+      .sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0))[0];
+    const url = variant?.url ?? m.media_url_https ?? m.media_url;
+    return url
+      ? [{ kind: "video" as const, url, mimeType: "video/mp4", altText: m.ext_alt_text }]
+      : [];
+  });
 }
 
 // Verified against a live call to /twitter/user/last_tweets on 2026-07-05: the
@@ -82,6 +111,7 @@ export function parseTwitterApiIoTweets(
         isReply: t.isReply ?? false,
         conversationId: t.conversationId,
       },
+      media: tweetMedia(t),
     });
   }
   return { posts, bio, followers };

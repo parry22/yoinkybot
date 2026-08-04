@@ -196,20 +196,28 @@ export interface ScheduledStatus {
   /** The stored X posting credential died and only a reconnect fixes it. Shown
    *  as a banner, because otherwise the first sign is posts quietly failing. */
   reauthRequired: boolean;
+  /** Every platform whose stored credential is known dead. */
+  reauthRequiredPlatforms: Platform[];
 }
 
 /** Monthly scheduling usage for the current plan — for the Scheduled screen. */
 export async function scheduledStatus(userId: string): Promise<ScheduledStatus> {
   const ent = await entitlementsFor(userId);
   const used = await monthlyScheduledCount(userId);
-  // Web scheduling posts to X only (web/scheduled.ts), so that's the connection
-  // worth warning about here.
-  const auth = await writeAuthState(userId, "x").catch(() => ({ connected: false, needsReauth: false }));
+  const [xAuth, linkedInAuth] = await Promise.all([
+    writeAuthState(userId, "x").catch(() => ({ connected: false, needsReauth: false })),
+    writeAuthState(userId, "linkedin").catch(() => ({ connected: false, needsReauth: false })),
+  ]);
+  const reauthRequiredPlatforms: Platform[] = [
+    ...(xAuth.needsReauth ? (["x"] as const) : []),
+    ...(linkedInAuth.needsReauth ? (["linkedin"] as const) : []),
+  ];
   return {
     used,
     cap: ent.scheduledPostsPerMonth,
     remaining: remainingFor(used, ent.scheduledPostsPerMonth),
-    reauthRequired: auth.needsReauth,
+    reauthRequired: reauthRequiredPlatforms.length > 0,
+    reauthRequiredPlatforms,
   };
 }
 

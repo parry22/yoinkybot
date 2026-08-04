@@ -9,6 +9,7 @@ const full = (): AgentSpec =>
     postTypes: ["hot take", "teardown"],
     angles: ["saas pricing", "positioning"],
     hooks: ["blunt claim", "a number"],
+    platform: "linkedin",
     source: "trend_ride",
     cadence: "daily",
     delivery: "approval",
@@ -26,7 +27,8 @@ describe("nextSlot (code owns the interview order, not the model)", () => {
     expect(nextSlot(spec({ purpose: "x" }))?.key).toBe("postTypes");
     expect(nextSlot(spec({ purpose: "x", postTypes: ["hot take"] }))?.key).toBe("angles");
     expect(nextSlot(spec({ purpose: "x", postTypes: ["a"], angles: ["b"] }))?.key).toBe("hooks");
-    expect(nextSlot(spec({ purpose: "x", postTypes: ["a"], angles: ["b"], hooks: ["c"] }))?.key).toBe("source");
+    expect(nextSlot(spec({ purpose: "x", postTypes: ["a"], angles: ["b"], hooks: ["c"] }))?.key).toBe("platform");
+    expect(nextSlot(spec({ purpose: "x", postTypes: ["a"], angles: ["b"], hooks: ["c"], platform: "x" }))?.key).toBe("source");
   });
 
   it("treats an empty list as unanswered", () => {
@@ -69,6 +71,7 @@ describe("specToAutomationInput", () => {
     expect(input.sourceType).toBe("trend_ride");
     expect(input.cadenceKind).toBe("daily");
     expect(input.deliveryMode).toBe("approval");
+    expect(input.platform).toBe("linkedin");
     expect(input.name).toBe("Pricing takes");
   });
 
@@ -81,6 +84,7 @@ describe("specToAutomationInput", () => {
     expect(input.sourceType).toBe("custom");
     expect(input.deliveryMode).toBe("approval");
     expect(input.cadenceKind).toBe("daily");
+    expect(input.platform).toBe("x");
     expect(input.name).toBe("Auto agent");
     expect(input.pillarScope).toBeNull();
   });
@@ -109,6 +113,7 @@ describe("describeSpec", () => {
     expect(text).toContain("saas pricing");
     expect(text).toContain("checks daily");
     expect(text).toContain("asks you first");
+    expect(text).toContain("LinkedIn");
   });
 
   it("says so when the agent posts unattended", () => {

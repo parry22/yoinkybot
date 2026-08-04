@@ -4,7 +4,7 @@ import { getSessionUser } from "@/lib/session";
 import { listConnectedAccounts, billingOverview, byokStatus, config } from "@yoink/backend/web";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { TelegramConnectButton } from "@/components/telegram-connect";
-import { XConnectRow } from "@/components/connect-accounts";
+import { LinkedInConnectRow, XConnectRow } from "@/components/connect-accounts";
 import { ManageAccountButton } from "@/components/account-manage";
 import { PlanPicker } from "@/components/plan-picker";
 import { ByokSettings } from "@/components/byok-settings";
@@ -48,6 +48,7 @@ export default async function SettingsPage({
     searchParams,
   ]);
   const x = accounts.find((a) => a.platform === "x") ?? null;
+  const linkedIn = accounts.find((a) => a.platform === "linkedin") ?? null;
 
   const t = billing?.trial;
   const planLabel = t?.plan && t.plan !== "trialing" && t.plan !== "free" ? ` (${t.plan})` : "";
@@ -150,6 +151,15 @@ export default async function SettingsPage({
             Reconnecting is only for switching accounts or restoring posting access.
           </div>
           <XConnectRow account={x ? { handle: x.handle, status: x.status } : null} />
+        </div>
+
+        <div className={styles.section}>
+          <div className={styles.sectionLabel}>Connected LinkedIn</div>
+          <div className={styles.sectionBody} style={{ marginBottom: 12 }}>
+            OAuth lets Yoinky publish and schedule for you through LinkedIn&apos;s official API. Your public profile URL
+            lets the ghostwriter learn your LinkedIn voice, reactions, comments, reposts, media, and best posting windows.
+          </div>
+          <LinkedInConnectRow account={linkedIn ? { handle: linkedIn.handle, status: linkedIn.status } : null} />
         </div>
 
         <div className={styles.section}>

@@ -4,7 +4,8 @@ import { query, queryOne } from "../db/pool.js";
 import type { User } from "../lib/auth.js";
 import { entitlementsFor } from "../billing/entitlements.js";
 import { generateDraft, type DraftStage } from "../drafting/draft.js";
-import { repurposeContent, parseRepurposeCommand } from "../drafting/repurpose.js";
+import { repurposeContent, parseRepurposeCommand, repurposedForSchedule } from "../drafting/repurpose.js";
+import { repurposeXPostToLinkedIn } from "../drafting/repurpose-x.js";
 import { anglesForTopic, formatAngles } from "../drafting/angles.js";
 import { researchTopic, renderResearch } from "../trends/research.js";
 import { searchAndSynthesize, hybridSearch } from "../memory/search.js";
@@ -69,9 +70,10 @@ export async function runSchedulePost(
   content: string,
   when: string,
   channel: Channel,
+  mediaIds: string[] = [],
 ): Promise<string> {
   const scheduledFor = new Date(when);
-  const res = await schedulePost(user.id, { platform, content, scheduledFor });
+  const res = await schedulePost(user.id, { platform, content, scheduledFor, mediaIds });
   if (!res.ok) {
     // "give me a clear time" only makes sense for a time-parse failure — a link
     // rejection or empty-content reason already says exactly what's wrong.
@@ -85,7 +87,7 @@ export async function runSchedulePost(
   const warn = canPost
     ? ""
     : `\n\nheads up: your ${label} isn't connected for posting yet, so connect it before then or this won't actually go out.`;
-  const timing = await bestTimeAdvisory(user.id, user.settings as UserSettings, scheduledFor.getTime()).catch(
+  const timing = await bestTimeAdvisory(user.id, user.settings as UserSettings, scheduledFor.getTime(), platform).catch(
     () => "",
   );
   const msg =
@@ -315,6 +317,14 @@ export async function executeChatTool(
       return deliverRepurposed(channel, result);
     }
 
+    case "repurpose_x_post": {
+      const result = await repurposeXPostToLinkedIn(user.id, tool.url);
+      const delivered = await deliverRepurposed(channel, result);
+      return result.ok && result.id
+        ? `${delivered}\n[internal: repurposed_content_id=${result.id}; target=linkedin; source media is staged]`
+        : delivered;
+    }
+
     case "search_memory": {
       const { answer } = await searchAndSynthesize(user.id, tool.question);
       await channel.say(answer);
@@ -402,8 +412,18 @@ export async function executeChatTool(
     case "connect_account":
       return connectAccount(user, tool.platform, tool.handle, channel);
 
-    case "schedule_post":
+    case "schedule_post": {
+      if (tool.repurposedContentId) {
+        const saved = await repurposedForSchedule(user.id, tool.repurposedContentId);
+        if (!saved) {
+          const msg = "couldn't find that reshaped post anymore.";
+          await channel.say(msg);
+          return msg;
+        }
+        return runSchedulePost(user, saved.platform, saved.content, tool.when, channel, saved.mediaIds);
+      }
       return runSchedulePost(user, tool.platform, tool.content, tool.when, channel);
+    }
 
     case "forget": {
       const matches = await hybridSearch(user.id, tool.query, 3);

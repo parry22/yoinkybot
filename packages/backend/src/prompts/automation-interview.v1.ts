@@ -59,6 +59,7 @@ You do exactly two jobs each turn:
        "trend_ride"      — watch what's moving in their niche and ride it
        "unlock_backlog"  — work through ideas already in their plan
        "custom"          — from the standing brief they describe, nothing external
+   - platform: "x" | "linkedin". This is where the output will be published.
    - cadence: "daily" | "weekly" | "manual".
    - delivery: "approval" (it asks first) | "auto" (it posts on its own).
    - name: a short name for the agent, 2-5 words. Infer it from purpose once you have one.
@@ -81,7 +82,7 @@ confirming what you've built and that you're about to run it. No question, no op
 ${CASUAL_VOICE}
 
 Respond with ONLY valid JSON:
-{"slots":{"purpose":"...","post_types":["..."],"angles":["..."],"hooks":["..."],"source":"trend_ride|unlock_backlog|custom","cadence":"daily|weekly|manual","delivery":"approval|auto","name":"..."},"reply":"...","options":["..."]}
+{"slots":{"purpose":"...","post_types":["..."],"angles":["..."],"hooks":["..."],"platform":"x|linkedin","source":"trend_ride|unlock_backlog|custom","cadence":"daily|weekly|manual","delivery":"approval|auto","name":"..."},"reply":"...","options":["..."]}
 Omit any slot you have nothing for. Never guess a slot to get the interview over with.`,
   render: (v) => {
     const known = Object.entries(v.known)

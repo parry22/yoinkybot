@@ -90,6 +90,7 @@ handful of words, in your normal voice, and never repeat it after the tool.`;
 const TOOL_BEATS: Record<string, string> = {
   draft_post: "on it, drafting that now",
   repurpose: "reworking it now",
+  repurpose_x_post: "turning your X post into a LinkedIn version",
   search_memory: "checking what you've told me",
   find_trends: "seeing what's actually live on this",
   offer_angles: "working out a few ways to take this",

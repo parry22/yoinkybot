@@ -181,7 +181,7 @@ export function renderPerformance(d: PerformanceData): string {
   const lines: string[] = [`COMPUTED PERFORMANCE (period: last ${a.periodDays} days — every number below is measured, use them verbatim)`];
 
   if (d.xConfidence === "unavailable") {
-    lines.push(`X engagement: unavailable this period (${d.xConfidenceReason}).`);
+    lines.push(`Social engagement: unavailable this period (${d.xConfidenceReason}).`);
   } else {
     // `baseline.median` is null whenever NO prior post carried metrics (freshly
     // connected account, or a source that gave us none). It used to be
@@ -191,16 +191,13 @@ export function renderPerformance(d: PerformanceData): string {
     // period median on the same line was already guarded; this matches it.
     const baselineMedian = a.baseline.median === null ? "n/a (no prior post carries metrics)" : String(a.baseline.median);
     lines.push(
-      `X: baseline median engagement ${baselineMedian} per post (measured over ${a.baseline.posts} prior posts) · ` +
+      `Connected social history: baseline median engagement ${baselineMedian} per post (measured over ${a.baseline.posts} prior posts) · ` +
         `this period ${a.period.posts} posts, ${a.period.withEngagement} with metrics, median ${a.period.median ?? "n/a"}` +
         (a.baseline.median && a.period.median !== null
           ? ` (${Math.round((a.period.median / a.baseline.median) * 100)}% of baseline)`
           : ""),
     );
-    lines.push(`X data confidence: ${d.xConfidence}${d.xConfidence !== "full" ? ` (${d.xConfidenceReason})` : ""}.`);
-  }
-  if (d.linkedinConnected) {
-    lines.push("LinkedIn: engagement metrics are not available from the data source. Post counts only.");
+    lines.push(`Social data confidence: ${d.xConfidence}${d.xConfidence !== "full" ? ` (${d.xConfidenceReason})` : ""}.`);
   }
 
   // Both splits carry their bucket sizes AND, when a bucket is small, an explicit
@@ -279,7 +276,7 @@ export interface RefreshOpts {
  * read, re-pull the user's recent X history: refresh metrics on posts we
  * already hold (matched by client_id) and ingest genuinely new ones through
  * the normal extract pipeline (oldest first, so belief reconciliation stays
- * chronological). LinkedIn has no engagement source; nothing to refresh.
+ * chronological). LinkedIn's Apify profile pull is refreshed by its own job.
  */
 export async function refreshXEngagement(userId: string, maxPosts = 100, opts: RefreshOpts = {}): Promise<RefreshResult> {
   const ingestNew = opts.ingestNew !== false;
@@ -302,9 +299,13 @@ export async function refreshXEngagement(userId: string, maxPosts = 100, opts: R
     for (const post of posts) {
       const clientId = `x:${post.url}`;
       const row = await queryOne<{ id: string }>(
-        `UPDATE captures SET metadata = jsonb_set(metadata, '{engagement}', $3::jsonb, true)
+        `UPDATE captures SET metadata = metadata || $3::jsonb
          WHERE user_id = $1 AND client_id = $2 RETURNING id`,
-        [userId, clientId, JSON.stringify(post.engagement ?? {})],
+        [
+          userId,
+          clientId,
+          JSON.stringify({ engagement: post.engagement ?? {}, ...(post.media?.length ? { media: post.media } : {}) }),
+        ],
       );
       if (row) {
         updated++;
@@ -323,7 +324,12 @@ export async function refreshXEngagement(userId: string, maxPosts = 100, opts: R
         rawText: post.text,
         capturedAt: post.postedAt,
         clientId,
-        metadata: { published: true, url: post.url ?? null, engagement: post.engagement ?? {} },
+        metadata: {
+          published: true,
+          url: post.url ?? null,
+          engagement: post.engagement ?? {},
+          ...(post.media?.length ? { media: post.media } : {}),
+        },
         enqueue: false,
       });
       if (created) {
@@ -411,8 +417,7 @@ export async function computePerformance(
     const platform = r.source === "linkedin_import" ? ("linkedin" as const) : ("x" as const);
     return {
       platform,
-      // LinkedIn's data source provides no engagement metrics — always null there.
-      engagement: platform === "linkedin" ? null : engagementTotal(r.eng),
+      engagement: engagementTotal(r.eng),
       capturedAt: new Date(r.captured_at).getTime(),
       alignedDistance: r.dist,
       orientation: r.orientation,

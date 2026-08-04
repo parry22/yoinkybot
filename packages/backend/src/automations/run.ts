@@ -12,6 +12,7 @@ import { markUnlockDeveloped } from "../strategist/plan.js";
 import { moderateText } from "../moderation/filter.js";
 import { dmChannel } from "../telegram/bot.js";
 import { schedulePost } from "../scheduling/service.js";
+import { nextBestScheduleTime } from "../scheduling/best-time.js";
 import { ensureBoss } from "../jobs/boss.js";
 import { approvalMessage, approvalKeyboard } from "./approval.js";
 import { SOURCES } from "./sources/index.js";
@@ -186,7 +187,8 @@ async function runAutomationOnceInner(
   const claimed = await claimRun(run.id, "drafting", "approved");
   if (!claimed) return { status: "skipped", runId: run.id, reason: "already handled" };
   await ensureBoss();
-  const when = new Date(Date.now() + config.AUTOMATION_AUTO_DELAY_MIN * 60_000);
+  const earliest = Date.now() + config.AUTOMATION_AUTO_DELAY_MIN * 60_000;
+  const when = await nextBestScheduleTime(userId, automation.platform, earliest).catch(() => new Date(earliest));
   const res = await schedulePost(userId, { platform: automation.platform, content: draft.draft, scheduledFor: when });
   if (!res.ok || !res.id) {
     await setRunStatus(run.id, "failed", res.reason ?? "schedule failed");

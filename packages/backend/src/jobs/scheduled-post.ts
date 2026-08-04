@@ -106,7 +106,7 @@ export async function handleScheduledPost(job: ScheduledPostJob): Promise<void> 
     mediaIds = uploaded.mediaIds;
   }
 
-  const result = await publish(auth, platform, post.content, mediaIds);
+  const result = await publish(auth, platform, post.content, mediaIds, media);
   if (!result.ok) {
     if (result.authExpired) await markWriteAuthDead(job.userId, platform);
     const reason = result.authExpired

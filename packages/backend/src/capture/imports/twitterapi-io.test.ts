@@ -18,6 +18,9 @@ describe("parseTwitterApiIoTweets", () => {
       bookmarkCount: 300,
       conversationId: "2073267613380259840",
       author: { followers: 3567042, description: "Naval" },
+      extendedEntities: {
+        media: [{ type: "photo", media_url_https: "https://pbs.twimg.com/media/chart.jpg", ext_alt_text: "A chart" }],
+      },
     },
     { id: "2", text: "a reply", isReply: true, createdAt: "Sat Jul 04 04:48:13 +0000 2026" },
     { id: "3", text: "RT text", retweeted_tweet: { id: "999" }, createdAt: "Sat Jul 04 04:48:13 +0000 2026" },
@@ -43,6 +46,9 @@ describe("parseTwitterApiIoTweets", () => {
     });
     expect(bio).toBe("Naval");
     expect(followers).toBe(3567042);
+    expect(p.media).toEqual([
+      { kind: "image", url: "https://pbs.twimg.com/media/chart.jpg", mimeType: "image/jpeg", altText: "A chart" },
+    ]);
   });
 
   it("excludes replies and pure retweets", () => {

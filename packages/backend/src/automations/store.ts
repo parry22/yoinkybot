@@ -24,6 +24,7 @@ export interface AutomationInput {
   name: string;
   source_type: Automation["source_type"];
   delivery_mode: Automation["delivery_mode"];
+  platform: Automation["platform"];
   cadence_kind: Automation["cadence_kind"];
   cadence_meta?: Automation["cadence_meta"];
   respect_quiet_hours?: boolean;
@@ -35,14 +36,15 @@ export interface AutomationInput {
 export async function createAutomation(userId: string, input: AutomationInput, defaultMonthlyCap: number): Promise<Automation> {
   const row = await queryOne<Automation>(
     `INSERT INTO automations
-       (user_id, profile_id, name, source_type, delivery_mode, cadence_kind, cadence_meta,
+       (user_id, profile_id, name, source_type, delivery_mode, platform, cadence_kind, cadence_meta,
         respect_quiet_hours, monthly_cap, pillar_scope, brief)
-     VALUES ($1,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+     VALUES ($1,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
     [
       userId,
       input.name,
       input.source_type,
       input.delivery_mode,
+      input.platform,
       input.cadence_kind,
       JSON.stringify(input.cadence_meta ?? {}),
       input.respect_quiet_hours ?? true,
@@ -57,8 +59,8 @@ export async function createAutomation(userId: string, input: AutomationInput, d
 export async function updateAutomation(id: string, userId: string, input: AutomationInput): Promise<Automation | null> {
   return (
     (await queryOne<Automation>(
-      `UPDATE automations SET name=$3, source_type=$4, delivery_mode=$5, cadence_kind=$6,
-         cadence_meta=$7, respect_quiet_hours=$8, monthly_cap=$9, pillar_scope=$10, brief=$11, updated_at=now()
+      `UPDATE automations SET name=$3, source_type=$4, delivery_mode=$5, platform=$6, cadence_kind=$7,
+         cadence_meta=$8, respect_quiet_hours=$9, monthly_cap=$10, pillar_scope=$11, brief=$12, updated_at=now()
        WHERE id=$1 AND user_id=$2 RETURNING *`,
       [
         id,
@@ -66,6 +68,7 @@ export async function updateAutomation(id: string, userId: string, input: Automa
         input.name,
         input.source_type,
         input.delivery_mode,
+        input.platform,
         input.cadence_kind,
         JSON.stringify(input.cadence_meta ?? {}),
         input.respect_quiet_hours ?? true,
@@ -173,6 +176,16 @@ export async function getRun(runId: string, userId: string): Promise<AutomationR
   return (
     (await queryOne<AutomationRun>(`SELECT * FROM automation_runs WHERE id=$1 AND user_id=$2`, [runId, userId])) ?? null
   );
+}
+
+export async function platformForRun(runId: string, userId: string): Promise<Automation["platform"] | null> {
+  const row = await queryOne<{ platform: Automation["platform"] }>(
+    `SELECT a.platform FROM automation_runs r
+     JOIN automations a ON a.id = r.automation_id
+     WHERE r.id = $1 AND r.user_id = $2`,
+    [runId, userId],
+  );
+  return row?.platform ?? null;
 }
 
 export async function updateRunDraft(runId: string, draftBody: string): Promise<void> {

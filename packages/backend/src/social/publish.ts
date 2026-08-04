@@ -306,28 +306,51 @@ async function publishToX(auth: WriteAuth, content: string, mediaIds: string[] =
   }
 }
 
-async function publishToLinkedIn(auth: WriteAuth, content: string): Promise<PublishResult> {
+export interface PublishMedia {
+  kind: "image" | "gif" | "video";
+  altText: string | null;
+}
+
+async function publishToLinkedIn(
+  auth: WriteAuth,
+  content: string,
+  mediaIds: string[],
+  media: PublishMedia[],
+): Promise<PublishResult> {
   if (!auth.authorUrn) {
     return { ok: false, error: "LinkedIn author URN missing — reconnect the account for posting." };
   }
   try {
-    const res = await fetch("https://api.linkedin.com/v2/ugcPosts", {
+    const postContent =
+      mediaIds.length === 0
+        ? undefined
+        : mediaIds.length === 1
+          ? { media: { id: mediaIds[0], altText: media[0]?.altText ?? "" } }
+          : {
+              multiImage: {
+                images: mediaIds.map((id, index) => ({ id, altText: media[index]?.altText ?? "" })),
+              },
+            };
+    const res = await fetch("https://api.linkedin.com/rest/posts", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${auth.accessToken}`,
         "Content-Type": "application/json",
         "X-Restli-Protocol-Version": "2.0.0",
+        "Linkedin-Version": config.LINKEDIN_API_VERSION,
       },
       body: JSON.stringify({
         author: auth.authorUrn,
         lifecycleState: "PUBLISHED",
-        specificContent: {
-          "com.linkedin.ugc.ShareContent": {
-            shareCommentary: { text: content },
-            shareMediaCategory: "NONE",
-          },
+        commentary: content,
+        visibility: "PUBLIC",
+        distribution: {
+          feedDistribution: "MAIN_FEED",
+          targetEntities: [],
+          thirdPartyDistributionChannels: [],
         },
-        visibility: { "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC" },
+        ...(postContent ? { content: postContent } : {}),
+        isReshareDisabledByAuthor: false,
       }),
       signal: AbortSignal.timeout(PUBLISH_TIMEOUT_MS),
     });
@@ -348,14 +371,16 @@ async function publishToLinkedIn(auth: WriteAuth, content: string): Promise<Publ
 
 /**
  * Publish `content` to `platform` using the account's stored write auth.
- * `mediaIds` are platform media ids already uploaded by social/media.ts — X only;
- * LinkedIn ignores them (its media flow is a different API, see media.ts).
+ * `mediaIds` are platform media ids already uploaded by social/media.ts.
  */
 export async function publish(
   auth: WriteAuth,
   platform: Platform,
   content: string,
   mediaIds: string[] = [],
+  media: PublishMedia[] = [],
 ): Promise<PublishResult> {
-  return platform === "x" ? publishToX(auth, content, mediaIds) : publishToLinkedIn(auth, content);
+  return platform === "x"
+    ? publishToX(auth, content, mediaIds)
+    : publishToLinkedIn(auth, content, mediaIds, media);
 }
