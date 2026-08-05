@@ -82,7 +82,7 @@ export function PlanPicker({
       // automation caps") had no relationship to what the code allowed.
       features: [
         "Unlimited voice-matched drafts",
-        "Auto Agent: 5 posts / month (you approve each)",
+        "Auto Agent: 30 posts per platform / month (you approve each)",
         "Buyer radar: 25 leads / month",
         "30 scheduled posts / month, with media",
         "Telegram agent",
@@ -97,7 +97,7 @@ export function PlanPicker({
       blurb: "For accounts shipping every day and running more agents.",
       features: [
         "Everything in Growth",
-        "Auto Agent: 90 posts / month, hands-off",
+        "Auto Agent: 90 posts per platform / month, hands-off",
         "Buyer radar: 300 leads / month",
         "Unlimited scheduled posts, with media",
         "Proactive resurfacing, 5 a week",

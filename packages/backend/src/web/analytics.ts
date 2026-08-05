@@ -71,6 +71,7 @@ export interface AgentScorecard {
 }
 
 export interface AnalyticsData {
+  platform: "x" | "linkedin";
   connected: boolean;
   handle: string | null;
   followers: number | null;
@@ -159,10 +160,14 @@ function weeklyMomentum(posts: AnalyticsPost[]): WeeklyPoint[] {
 
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-const UNAVAILABLE = [
+const X_UNAVAILABLE = [
   "Profile clicks & link clicks - X does not expose these through any public or scrape API.",
   "Per-post / per-reply follower attribution - X never says which post produced a follow.",
   "Estimated revenue / RPM by content - not in the public API.",
+];
+const LINKEDIN_UNAVAILABLE = [
+  "Impressions and profile clicks are not available from the LinkedIn public profile source.",
+  "Per-post follower attribution and revenue are not available from LinkedIn's public API.",
 ];
 
 function num(v: unknown): number {
@@ -219,10 +224,10 @@ function localCell(iso: string, tz: string): { day: number; hour: number } | nul
   }
 }
 
-async function xAccount(userId: string): Promise<{ handle: string; followers: number | null } | null> {
+async function socialAccount(userId: string, platform: "x" | "linkedin"): Promise<{ handle: string; followers: number | null } | null> {
   const row = await queryOne<{ handle: string; meta: Record<string, unknown> | null }>(
-    `SELECT handle, meta FROM connected_accounts WHERE user_id = $1 AND platform = 'x' ORDER BY created_at DESC LIMIT 1`,
-    [userId],
+    `SELECT handle, meta FROM connected_accounts WHERE user_id = $1 AND platform = $2 ORDER BY created_at DESC LIMIT 1`,
+    [userId, platform],
   );
   if (!row) return null;
   const followers = typeof row.meta?.followers === "number" ? row.meta.followers : null;
@@ -238,15 +243,17 @@ async function userTimezone(userId: string): Promise<string> {
 }
 
 /** Fast, no-API analytics from stored post engagement. */
-export async function getAnalytics(userId: string): Promise<AnalyticsData> {
-  const [acct, tz] = await Promise.all([xAccount(userId), userTimezone(userId)]);
+export async function getAnalytics(userId: string, platform: "x" | "linkedin" = "x"): Promise<AnalyticsData> {
+  const [acct, tz] = await Promise.all([socialAccount(userId, platform), userTimezone(userId)]);
   if (!acct) {
     return {
+      platform,
       connected: false, handle: null, followers: null, timezone: tz, postsAnalyzed: 0, hasMetrics: false,
       totals: { impressions: 0, engagements: 0, likes: 0, replies: 0, retweets: 0, bookmarks: 0 },
       medians: { impressions: null, engagements: null, engagementRate: null },
       topPosts: [], recentPosts: [], heatmap: [], bestWindow: null,
-      formats: [], weekly: [], impact: EMPTY_IMPACT, agent: EMPTY_AGENT, unavailable: UNAVAILABLE,
+      formats: [], weekly: [], impact: EMPTY_IMPACT, agent: EMPTY_AGENT,
+      unavailable: platform === "x" ? X_UNAVAILABLE : LINKEDIN_UNAVAILABLE,
     };
   }
 
@@ -254,9 +261,9 @@ export async function getAnalytics(userId: string): Promise<AnalyticsData> {
     `SELECT c.captured_at::text AS created_at, c.raw_text,
             c.metadata->>'url' AS url, c.metadata->'engagement' AS eng
      FROM captures c
-     WHERE c.user_id = $1 AND c.source = 'x_import' AND c.metadata->'engagement' IS NOT NULL
+     WHERE c.user_id = $1 AND c.source = $2 AND c.metadata->'engagement' IS NOT NULL
      ORDER BY c.captured_at DESC`,
-    [userId],
+    [userId, platform === "x" ? "x_import" : "linkedin_import"],
   );
 
   const posts: AnalyticsPost[] = [];
@@ -305,10 +312,12 @@ export async function getAnalytics(userId: string): Promise<AnalyticsData> {
   // ── Yoinky's own-data cuts ─────────────────────────────────────────────
   // 1) Posts shipped THROUGH Yoinky (published scheduler) → match back to their
   //    captured metrics by tweet id, so we can show assisted-vs-baseline lift.
-  const shipped = await query<{ external_url: string | null }>(
-    `SELECT external_url FROM scheduled_posts WHERE user_id = $1 AND status = 'published' AND external_url IS NOT NULL`,
-    [userId],
-  );
+  const shipped = platform === "x"
+    ? await query<{ external_url: string | null }>(
+        `SELECT external_url FROM scheduled_posts WHERE user_id = $1 AND platform = 'x' AND status = 'published' AND external_url IS NOT NULL`,
+        [userId],
+      )
+    : [];
   const shippedIds = new Set(shipped.map((r) => tweetId(r.external_url)).filter((x): x is string => !!x));
   const isAssisted = (p: AnalyticsPost) => {
     const id = tweetId(p.url);
@@ -339,8 +348,9 @@ export async function getAnalytics(userId: string): Promise<AnalyticsData> {
        count(*) FILTER (WHERE status = 'awaiting_approval')::text AS awaiting,
        count(*) FILTER (WHERE status = 'rejected')::text AS rejected,
        COALESCE(round(avg(edit_count) FILTER (WHERE draft_body IS NOT NULL), 2), 0)::text AS avg_edits
-     FROM automation_runs WHERE user_id = $1`,
-    [userId],
+     FROM automation_runs ar JOIN automations a ON a.id = ar.automation_id
+     WHERE ar.user_id = $1 AND a.platform = $2`,
+    [userId, platform],
   );
   const agent: AgentScorecard = {
     drafted: Number(agentRow?.drafted ?? 0),
@@ -351,6 +361,7 @@ export async function getAnalytics(userId: string): Promise<AnalyticsData> {
   };
 
   return {
+    platform,
     connected: true,
     handle: acct.handle,
     followers: acct.followers,
@@ -371,7 +382,7 @@ export async function getAnalytics(userId: string): Promise<AnalyticsData> {
     weekly: weeklyMomentum(posts),
     impact,
     agent,
-    unavailable: UNAVAILABLE,
+    unavailable: platform === "x" ? X_UNAVAILABLE : LINKEDIN_UNAVAILABLE,
   };
 }
 
@@ -391,7 +402,7 @@ export async function getReplyAnalytics(userId: string, max = 40): Promise<Reply
     available: false, reason, count: 0, medianImpressions: null, medianEngagementRate: null, totalImpressions: 0, sample: [],
   });
   if (!config.TWITTERAPI_IO_KEY) return empty("Reply metrics need the twitterapi.io source (not configured).");
-  const acct = await xAccount(userId);
+  const acct = await socialAccount(userId, "x");
   if (!acct) return empty("Connect your X account first.");
 
   let pull: Awaited<ReturnType<typeof pullXTimelineWithMetrics>>;

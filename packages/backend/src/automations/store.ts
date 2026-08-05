@@ -107,20 +107,21 @@ export async function monthlyRunCount(automationId: string): Promise<number> {
   const row = await queryOne<{ n: string }>(
     `SELECT count(*)::text AS n FROM automation_runs
      WHERE automation_id = $1 AND status IN ${DELIVERED_STATUSES}
-       AND created_at >= date_trunc('month', now())`,
+       AND ar.created_at >= date_trunc('month', now())`,
     [automationId],
   );
   return Number(row?.n ?? 0);
 }
 
-/** Posts across ALL a user's automations this calendar month - the PLAN-level Auto
- *  Agent ceiling (`entitlements.automationPostsPerMonth`: Growth 5, Scale 90). */
-export async function userMonthlyRunCount(userId: string): Promise<number> {
+/** Posts across a user's automations on one platform this calendar month. The
+ * plan ceiling is per platform, so X activity cannot consume LinkedIn's quota. */
+export async function userMonthlyRunCount(userId: string, platform: "x" | "linkedin"): Promise<number> {
   const row = await queryOne<{ n: string }>(
-    `SELECT count(*)::text AS n FROM automation_runs
-     WHERE user_id = $1 AND status IN ${DELIVERED_STATUSES}
+    `SELECT count(*)::text AS n FROM automation_runs ar
+     JOIN automations a ON a.id = ar.automation_id
+     WHERE ar.user_id = $1 AND a.platform = $2 AND ar.status IN ${DELIVERED_STATUSES}
        AND created_at >= date_trunc('month', now())`,
-    [userId],
+    [userId, platform],
   );
   return Number(row?.n ?? 0);
 }

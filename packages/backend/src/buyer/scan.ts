@@ -21,7 +21,7 @@ import { config } from "../config.js";
 import { query, queryOne } from "../db/pool.js";
 import { entitlementsFor } from "../billing/entitlements.js";
 import { getIcp, icpComplete } from "./icp.js";
-import { discoverCandidates, type DiscoveryTrace } from "./discovery.js";
+import { discoverCandidates, discoverLinkedInCandidates, type DiscoveryTrace } from "./discovery.js";
 import { intentScore, type IntentComponents } from "./scoring.js";
 import { applyNicheGate } from "./niche-gate.js";
 import { readIntents } from "./intent-read.js";
@@ -134,7 +134,7 @@ const EMPTY_DISCOVERY: DiscoveryTrace = { vocabulary: [], queriesRun: 0, rungs: 
  * Run one full scan for a user. Safe to call on-demand (web "Scan now") or from
  * the recurring job. Returns a status the caller turns into UI/messaging.
  */
-export async function scanForUser(userId: string): Promise<ScanResult> {
+export async function scanForUser(userId: string, platform: "x" | "linkedin" = "x"): Promise<ScanResult> {
   const stages: ScanStages = {
     candidates: 0,
     intentPassed: 0,
@@ -152,7 +152,7 @@ export async function scanForUser(userId: string): Promise<ScanResult> {
     stages,
   });
 
-  if (!config.BUYER_RADAR_ENABLED || !config.TWITTERAPI_IO_KEY) return empty("unavailable");
+  if (!config.BUYER_RADAR_ENABLED || (platform === "x" ? !config.TWITTERAPI_IO_KEY : !config.APIFY_TOKEN)) return empty("unavailable");
 
   const icp = await getIcp(userId);
   if (!icpComplete(icp) || !icp) return empty("no_icp");
@@ -171,7 +171,9 @@ export async function scanForUser(userId: string): Promise<ScanResult> {
   // from the user's verdicts (buyer/calibration.ts).
   const thresholds = await effectiveThresholds(userId);
 
-  const discovery = await discoverCandidates(userId, icp, CANDIDATE_TARGET);
+  const discovery = platform === "x"
+    ? await discoverCandidates(userId, icp, CANDIDATE_TARGET)
+    : await discoverLinkedInCandidates(userId, icp, CANDIDATE_TARGET);
   stages.discovery = discovery.trace;
   stages.candidates = discovery.candidates.length;
   if (discovery.candidates.length === 0) {

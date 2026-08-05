@@ -13,6 +13,7 @@ import { recalibrateUser } from "../buyer/calibration.js";
 import { assertClean } from "../moderation/filter.js";
 
 export interface BuyerSignalView {
+  platform: "x" | "linkedin";
   id: string;
   handle: string;
   name: string | null;
@@ -29,6 +30,7 @@ export interface BuyerSignalView {
 
 export interface BuyerRadarStatus {
   enabled: boolean;
+  platforms: { x: boolean; linkedin: boolean };
   hasIcp: boolean;
   used: number;
   /** null = unlimited (Scale). */
@@ -63,7 +65,7 @@ function matchPct(nicheSimilarity: number | null, score: number): number {
 }
 
 /** The current radar: surfaced signals awaiting the user's action, strongest first. */
-export async function listBuyerSignals(userId: string, limit = 30): Promise<BuyerSignalView[]> {
+export async function listBuyerSignals(userId: string, platform: "x" | "linkedin" = "x", limit = 30): Promise<BuyerSignalView[]> {
   const rows = await query<{
     id: string;
     author_handle: string;
@@ -81,11 +83,13 @@ export async function listBuyerSignals(userId: string, limit = 30): Promise<Buye
             why, intent_type, verdict, posted_at::text
      FROM buyer_signals
      WHERE user_id = $1 AND verdict IN ('surfaced','replied')
+       AND ${platform === "linkedin" ? "tweet_id LIKE 'linkedin:%'" : "tweet_id NOT LIKE 'linkedin:%'"}
      ORDER BY (verdict = 'surfaced') DESC, score DESC, surfaced_at DESC
      LIMIT $2`,
     [userId, limit],
   );
   return rows.map((r) => ({
+    platform,
     id: r.id,
     handle: r.author_handle,
     name: r.author_name,
@@ -105,7 +109,8 @@ export async function buyerRadarStatus(userId: string): Promise<BuyerRadarStatus
   const used = await monthlySurfacedCount(userId);
   const cap = (await entitlementsFor(userId)).buyerIntentsPerMonth; // number | null (Scale = null)
   return {
-    enabled: config.BUYER_RADAR_ENABLED && Boolean(config.TWITTERAPI_IO_KEY),
+    enabled: config.BUYER_RADAR_ENABLED && Boolean(config.TWITTERAPI_IO_KEY || config.APIFY_TOKEN),
+    platforms: { x: Boolean(config.TWITTERAPI_IO_KEY), linkedin: Boolean(config.APIFY_TOKEN) },
     hasIcp: icpComplete(icp),
     used,
     cap,
@@ -228,9 +233,9 @@ function stretchNote(result: ScanResult): string | null {
  * The scan itself. Called by the pg-boss worker on the BACKEND, never from a
  * Vercel route - see `enqueueBuyerScan` for why.
  */
-export async function scanBuyerSignals(userId: string): Promise<ScanResponse> {
-  const result = await scanForUser(userId);
-  const signals = await listBuyerSignals(userId);
+export async function scanBuyerSignals(userId: string, platform: "x" | "linkedin" = "x"): Promise<ScanResponse> {
+  const result = await scanForUser(userId, platform);
+  const signals = await listBuyerSignals(userId, platform);
   // The funnel counts are the thing you need when a user says "it found nobody".
   console.log(`buyer scan user=${userId} status=${result.status} surfaced=${result.surfaced}`, result.stages);
   return {
@@ -270,7 +275,7 @@ export interface BuyerScanProgress {
  * `ensureBoss()` lazily starts the engine in enqueue-only mode (it registers no
  * workers - the backend still consumes).
  */
-export async function enqueueBuyerScan(userId: string): Promise<BuyerScanTicket> {
+export async function enqueueBuyerScan(userId: string, platform: "x" | "linkedin" = "x"): Promise<BuyerScanTicket> {
   const { ensureBoss, QUEUES } = await import("../jobs/boss.js");
   const boss = await ensureBoss();
 
@@ -280,21 +285,21 @@ export async function enqueueBuyerScan(userId: string): Promise<BuyerScanTicket>
   // click must not buy a second scan. It also covers the case pg-boss cannot -
   // `short` policy's unique index only applies while a job is still `created`,
   // so once the first scan goes `active` only this check stops a duplicate.
-  const inFlight = await findActiveBuyerScan(userId);
+  const inFlight = await findActiveBuyerScan(userId, platform);
   if (inFlight) return { jobId: inFlight };
 
   const jobId = await boss.send(
     QUEUES.buyerScanNow,
-    { userId },
+    { userId, platform },
     // Dedupes concurrent clicks atomically, which the check above cannot: two
     // simultaneous requests can both pass it, but only one row survives the
     // unique index. Requires the `short` queue policy set in boss.ts - on the
     // default `standard` policy pg-boss ignores singletonKey entirely.
-    { singletonKey: `buyer-scan:${userId}`, retryLimit: 0 },
+    { singletonKey: `buyer-scan:${userId}:${platform}`, retryLimit: 0 },
   );
   if (!jobId) {
     // Lost the race on the unique index - the winner is the scan to report.
-    const existing = await findActiveBuyerScan(userId);
+    const existing = await findActiveBuyerScan(userId, platform);
     if (existing) return { jobId: existing };
     throw new Error("could not enqueue buyer scan");
   }
@@ -302,13 +307,13 @@ export async function enqueueBuyerScan(userId: string): Promise<BuyerScanTicket>
 }
 
 /** The in-flight scan for this user, if any - used to recover a dropped ticket. */
-async function findActiveBuyerScan(userId: string): Promise<string | null> {
+async function findActiveBuyerScan(userId: string, platform: "x" | "linkedin"): Promise<string | null> {
   const row = await queryOne<{ id: string }>(
     `SELECT id::text FROM pgboss.job
      WHERE name = 'buyer.scan-now' AND state IN ('created','active','retry')
-       AND data->>'userId' = $1
+       AND data->>'userId' = $1 AND COALESCE(data->>'platform', 'x') = $2
      ORDER BY created_on DESC LIMIT 1`,
-    [userId],
+    [userId, platform],
   );
   return row?.id ?? null;
 }
@@ -348,6 +353,7 @@ export async function buyerScanProgress(userId: string, jobId: string): Promise<
 
 interface BuyerScanNowPayload {
   userId: string;
+  platform?: "x" | "linkedin";
 }
 
 /** pg-boss stores a thrown error as `{ message, stack, ... }` on output. */

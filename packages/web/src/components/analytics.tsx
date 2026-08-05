@@ -34,6 +34,7 @@ type YoinkImpact = {
 };
 type AgentScorecard = { drafted: number; shipped: number; awaiting: number; rejected: number; avgEdits: number };
 type Data = {
+  platform: "x" | "linkedin";
   connected: boolean;
   handle: string | null;
   followers: number | null;
@@ -82,8 +83,27 @@ function liftColor(r: number | null): string | undefined {
 }
 
 export function Analytics({ data }: { data: Data }) {
+  const [selectedPlatform, setSelectedPlatform] = useState<Data["platform"]>(data.platform);
+  const [activeData, setActiveData] = useState(data);
+  const [loadingPlatform, setLoadingPlatform] = useState(false);
   const [replies, setReplies] = useState<Replies | null>(null);
   const [loadingReplies, setLoadingReplies] = useState(false);
+
+  async function changePlatform(platform: Data["platform"]) {
+    if (platform === selectedPlatform || loadingPlatform) return;
+    setSelectedPlatform(platform);
+    setReplies(null);
+    setLoadingPlatform(true);
+    try {
+      const res = await fetch(`/api/analytics?platform=${platform}`);
+      if (!res.ok) throw new Error("analytics unavailable");
+      setActiveData((await res.json()) as Data);
+    } finally {
+      setLoadingPlatform(false);
+    }
+  }
+
+  data = activeData;
 
   async function loadReplies() {
     setLoadingReplies(true);
@@ -120,12 +140,22 @@ export function Analytics({ data }: { data: Data }) {
           <div className={panel.head}>
             <div>
               <div className={panel.title}>Analytics</div>
-              <div className={panel.subtitle}>Your X performance, beyond what native analytics shows.</div>
+              <div className={panel.subtitle}>Your {data.platform === "x" ? "X" : "LinkedIn"} performance from the posts Yoinky has read.</div>
             </div>
+            <select
+              aria-label="Analytics platform"
+              value={selectedPlatform}
+              onChange={(e) => void changePlatform(e.target.value as Data["platform"])}
+              disabled={loadingPlatform}
+              style={{ marginLeft: "auto" }}
+            >
+              <option value="x">X</option>
+              <option value="linkedin">LinkedIn</option>
+            </select>
           </div>
           <div className={panel.empty}>
-            <div className={panel.emptyTitle}>Connect your X account first.</div>
-            <p>Add it in Settings - Yoinky reads your posts and their metrics.</p>
+            <div className={panel.emptyTitle}>Connect your {data.platform === "x" ? "X" : "LinkedIn"} account first.</div>
+            <p>Add it in Settings, then Yoinky can read your posts and available engagement data.</p>
           </div>
         </div>
       </div>
@@ -142,12 +172,22 @@ export function Analytics({ data }: { data: Data }) {
             <div className={panel.title}>Analytics</div>
             <div className={panel.subtitle}>{data.handle}</div>
           </div>
+          <select
+            aria-label="Analytics platform"
+            value={selectedPlatform}
+            onChange={(e) => void changePlatform(e.target.value as Data["platform"])}
+            disabled={loadingPlatform}
+            style={{ marginLeft: "auto" }}
+          >
+            <option value="x">X</option>
+            <option value="linkedin">LinkedIn</option>
+          </select>
         </div>
 
         {!data.hasMetrics ? (
           <div className={panel.empty}>
             <div className={panel.emptyTitle}>No post metrics yet.</div>
-            <p>Reconnect your X in Settings to pull in fresh numbers.</p>
+            <p>Reconnect {data.platform === "x" ? "X" : "LinkedIn"} in Settings to pull in fresh numbers.</p>
           </div>
         ) : (
           <>
@@ -247,13 +287,13 @@ export function Analytics({ data }: { data: Data }) {
             <TimingSection heatmap={data.heatmap} bestWindow={data.bestWindow} timezone={data.timezone} />
 
             <div className={panel.section}>
-              <div className={panel.sectionLabel}>Top posts by impressions</div>
+              <div className={panel.sectionLabel}>Top posts by {data.platform === "x" ? "impressions" : "engagement"}</div>
               {data.topPosts.map((p, i) => (
                 <div key={i} className={styles.postRow}>
                   <div className={styles.postText}>
                     {p.text}
                     <div className={styles.postMetrics}>
-                      <span><b>{fmt(p.impressions)}</b> impressions</span>
+                      {data.platform === "x" ? <span><b>{fmt(p.impressions)}</b> impressions</span> : <span><b>{fmt(p.engagements)}</b> engagements</span>}
                       <span><b>{pct(p.engagementRate)}</b> eng rate</span>
                       <span><b>{fmt(p.likes)}</b> likes</span>
                       <span><b>{fmt(p.bookmarks)}</b> bookmarks</span>
@@ -323,8 +363,8 @@ export function Analytics({ data }: { data: Data }) {
           )}
         </div>
 
-        {/* Reply-level performance - on-demand (live pull). */}
-        <div className={panel.section}>
+        {/* Reply-level performance is currently available from the X source only. */}
+        {data.platform === "x" && <div className={panel.section}>
           <div className={panel.sectionLabel}>Reply-level performance</div>
           {!replies ? (
             <>
@@ -371,7 +411,7 @@ export function Analytics({ data }: { data: Data }) {
               ))}
             </>
           )}
-        </div>
+        </div>}
       </div>
     </div>
   );

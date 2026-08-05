@@ -7,6 +7,7 @@ import panel from "./panel.module.css";
 import { useAgentStream } from "./use-agent-stream";
 import { UpgradeCTA } from "./upgrade-cta";
 import { AgentShimmer } from "./agent-shimmer";
+import { Modal } from "./modal";
 import styles from "./automations.module.css";
 
 type SourceType = "trend_ride" | "unlock_backlog" | "custom";
@@ -52,6 +53,7 @@ const CADENCE_LABEL: Record<AutomationView["cadenceKind"], string> = {
 
 /** One line of the setup conversation. */
 type Turn = { role: "user" | "assistant"; content: string };
+const SESSION_KEY = "yoinky:auto-agent-conversation:v1";
 
 /**
  * Auto Agent is a conversation, not a form.
@@ -80,7 +82,7 @@ export function Automations({
   initialApprovals: ApprovalView[];
   /** Scale-only: whether the user's plan allows hands-off AUTO delivery. */
   canAutoAgent: boolean;
-  /** Auto Agent posts/month the plan allows (Growth 5 / Scale 90). */
+  /** Auto Agent posts per platform/month (Growth 30 / Scale 90). */
   planCap: number | null;
 }) {
   const [automations, setAutomations] = useState(initialAutomations);
@@ -88,6 +90,7 @@ export function Automations({
   const [turns, setTurns] = useState<Turn[]>([]);
   /** Suggestions for the question just asked. Server-authored, per question. */
   const [options, setOptions] = useState<string[]>([]);
+  const [questionOpen, setQuestionOpen] = useState(false);
   const [input, setInput] = useState("");
   const [err, setErr] = useState("");
   /** A 402 is a wall, not an error: it gets the upgrade link rather than a line
@@ -97,6 +100,31 @@ export function Automations({
   const { run, activity, busy } = useAgentStream();
   const taRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Keep an unfinished interview when the user opens another part of the app.
+  // This stays in the current browser session only: no chat content is copied
+  // into another device or account, and a completed interview clears itself.
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(SESSION_KEY) ?? "null") as { turns?: Turn[]; options?: string[] } | null;
+      if (saved && Array.isArray(saved.turns) && Array.isArray(saved.options)) {
+        setTurns(saved.turns.filter((t) => (t.role === "user" || t.role === "assistant") && typeof t.content === "string"));
+        setOptions(saved.options.filter((o) => typeof o === "string"));
+      }
+    } catch {
+      sessionStorage.removeItem(SESSION_KEY);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (busy) return;
+    try {
+      if (turns.length === 0) sessionStorage.removeItem(SESSION_KEY);
+      else sessionStorage.setItem(SESSION_KEY, JSON.stringify({ turns, options }));
+    } catch {
+      // Storage can be disabled or full. The live interview still works.
+    }
+  }, [turns, options, busy]);
 
   // Follow the conversation as it grows.
   useEffect(() => {
@@ -129,6 +157,7 @@ export function Automations({
     setPaywall(null);
     setInput("");
     setOptions([]);
+    setQuestionOpen(false);
     const next: Turn[] = [...turns, { role: "user", content: t }];
     setTurns(next);
 
@@ -149,9 +178,12 @@ export function Automations({
             // Interview over: clear the thread so the box is ready for the next
             // agent rather than continuing to append to a finished setup.
             setOptions([]);
+            setQuestionOpen(false);
+            sessionStorage.removeItem(SESSION_KEY);
             void refreshApprovals();
           } else {
             setOptions(d.options ?? []);
+            setQuestionOpen((d.options ?? []).length > 0);
           }
         },
         onError: (message, status) => {
@@ -205,7 +237,7 @@ export function Automations({
                 {/* A cap of 0 is the free plan, not an allowance: "Your plan covers
                  *  0 agent posts a month" read like a broken counter, so the zero
                  *  case drops the sentence and shows the wall below instead. */}
-                {planCap !== null && planCap > 0 && ` Your plan covers ${planCap} agent posts a month.`}
+                {planCap !== null && planCap > 0 && ` Your plan covers ${planCap} agent posts per platform each month.`}
               </div>
             </div>
           </div>
@@ -297,18 +329,6 @@ export function Automations({
             </div>
           )}
 
-          {/* Suggestions belong to the question that was just asked, so they only
-           *  exist after Yoinky asks something - never as standing UI furniture. */}
-          {options.length > 0 && !busy && (
-            <div className={styles.chips}>
-              {options.map((o) => (
-                <button key={o} className={styles.chip} onClick={() => void send(o)}>
-                  {o}
-                </button>
-              ))}
-            </div>
-          )}
-
           <div className={styles.briefBox}>
             <textarea
               ref={taRef}
@@ -340,6 +360,17 @@ export function Automations({
           </div>
         </div>
       </div>
+      <Modal open={questionOpen && options.length > 0 && !busy} onClose={() => setQuestionOpen(false)}>
+        <div className={styles.questionTitle}>Choose an answer</div>
+        <div className={styles.questionBody}>Yoinky&apos;s latest question is in the chat. Pick one option or type your own answer.</div>
+        <div className={styles.questionOptions}>
+          {options.map((o) => (
+            <button key={o} className={styles.questionOption} onClick={() => void send(o)}>
+              {o}
+            </button>
+          ))}
+        </div>
+      </Modal>
     </div>
   );
 }

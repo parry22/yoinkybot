@@ -14,6 +14,7 @@ type Entry =
   | { kind: "user"; id: string; text: string }
   | { kind: "agent"; id: string; text: string }
   | { kind: "draft"; id: string; content: string; platform: string };
+const SESSION_KEY = "yoinky:compose-conversation:v1";
 
 const SUGGESTIONS = [
   { title: "Write from what I've been thinking", sub: "Turns your captures into a post in your voice" },
@@ -53,6 +54,27 @@ export function Compose({ initialDrafts }: { initialDrafts: Draft[] }) {
   const { run, activity, busy } = useAgentStream();
   const scrollRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
+
+  // Navigation should not erase an in-progress conversation. Session storage is
+  // deliberately scoped to this browser tab and is replaced by fresh drafts on
+  // a new session, avoiding cross-device or cross-account transcript leakage.
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(SESSION_KEY) ?? "null") as { entries?: Entry[] } | null;
+      if (saved && Array.isArray(saved.entries) && saved.entries.length) setEntries(saved.entries);
+    } catch {
+      sessionStorage.removeItem(SESSION_KEY);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (busy) return;
+    try {
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify({ entries }));
+    } catch {
+      // The current chat remains usable when browser storage is unavailable.
+    }
+  }, [entries, busy]);
 
   const add = (e: Entry) => setEntries((prev) => [...prev, e]);
   const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;

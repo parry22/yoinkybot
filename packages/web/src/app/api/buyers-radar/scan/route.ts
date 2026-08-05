@@ -20,7 +20,7 @@ export const dynamic = "force-dynamic";
  * POST → { jobId }              start (or re-attach to) a scan
  * GET  ?jobId=… → { state, … }  poll it
  */
-export async function POST() {
+export async function POST(req: Request) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   // Paid-only - a scan spends real twitterapi.io + LLM budget. The per-plan
@@ -34,7 +34,9 @@ export async function POST() {
   const limited = await rateLimited(user.id, "buyer_scan");
   if (limited) return limited;
   try {
-    const ticket = await enqueueBuyerScan(user.id);
+    const body = (await req.json().catch(() => ({}))) as { platform?: unknown };
+    const platform = body.platform === "linkedin" ? "linkedin" : "x";
+    const ticket = await enqueueBuyerScan(user.id, platform);
     // 202: accepted, not finished. The client polls GET for the outcome.
     return NextResponse.json({ jobId: ticket.jobId, state: "queued" }, { status: 202 });
   } catch (err) {

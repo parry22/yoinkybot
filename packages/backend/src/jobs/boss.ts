@@ -89,6 +89,7 @@ export interface ScheduledPostJob {
 }
 export interface BuyerScanNowJob {
   userId: string;
+  platform?: "x" | "linkedin";
 }
 
 let boss: PgBoss | undefined;

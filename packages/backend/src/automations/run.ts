@@ -80,18 +80,18 @@ async function runAutomationOnceInner(
 
   stage("caps");
   // Caps BEFORE any paid/model work (buyer-radar doctrine).
-  // PLAN ceiling first - it's the one the user is actually paying for (Growth 5 /
-  // Scale 90 Auto Agent posts a month) and it bounds every automation at once, so
-  // a user can't route around it by creating more automations.
+  // PLAN ceiling first. It applies across a user's automations for THIS platform
+  // (Growth 30 / Scale 90 posts per platform a month), so extra agents cannot
+  // route around it while X and LinkedIn retain independent allowances.
   const planCap = (await entitlementsFor(userId)).automationPostsPerMonth;
-  if (planCap !== null && (await userMonthlyRunCount(userId)) >= planCap) {
+  if (planCap !== null && (await userMonthlyRunCount(userId, automation.platform)) >= planCap) {
     const run = await createRun(automation.id, userId, "skipped", {
-      verdict_reason: `plan cap reached (${planCap} Auto Agent posts this month)`,
+      verdict_reason: `plan cap reached (${planCap} ${automation.platform === "x" ? "X" : "LinkedIn"} Auto Agent posts this month)`,
     });
     return {
       status: "skipped",
       runId: run.id,
-      reason: `you've used all ${planCap} Auto Agent posts this month - upgrade for a higher cap`,
+      reason: `you've used all ${planCap} ${automation.platform === "x" ? "X" : "LinkedIn"} Auto Agent posts this month - upgrade for a higher cap`,
     };
   }
   if ((await monthlyRunCount(automation.id)) >= automation.monthly_cap) {

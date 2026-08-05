@@ -8,6 +8,7 @@ import panel from "./panel.module.css";
 import styles from "./buyers-radar.module.css";
 
 interface SignalView {
+  platform: "x" | "linkedin";
   id: string;
   handle: string;
   name: string | null;
@@ -30,6 +31,7 @@ const INTENT_LABEL: Record<string, string> = {
 };
 interface Status {
   enabled: boolean;
+  platforms: { x: boolean; linkedin: boolean };
   hasIcp: boolean;
   used: number;
   cap: number | null;
@@ -69,6 +71,7 @@ export function BuyersRadar({
   prefill: Prefill;
 }) {
   const [signals, setSignals] = useState<SignalView[]>(initialSignals);
+  const [platform, setPlatform] = useState<"x" | "linkedin">("x");
   const [used, setUsed] = useState(status.used);
   const [hasIcp, setHasIcp] = useState(status.hasIcp);
   const [editing, setEditing] = useState(!status.hasIcp);
@@ -95,7 +98,11 @@ export function BuyersRadar({
     setScanning(true);
     setScanMsg(null);
     try {
-      const res = await fetch("/api/buyers-radar/scan", { method: "POST" });
+      const res = await fetch("/api/buyers-radar/scan", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ platform }),
+      });
       const data = await res.json();
       // 402 and 429 are NOT the same answer and must not share a branch. 402 is
       // "you need to pay" → show the upgrade CTA. 429 is the burst limiter
@@ -116,7 +123,7 @@ export function BuyersRadar({
         setScanMsg(data.error ?? "scan failed");
         return;
       }
-      setScanMsg("Scanning X for buyer signals…");
+      setScanMsg(`Scanning ${platform === "x" ? "X" : "LinkedIn"} for buyer signals…`);
       const result = await pollScan(data.jobId);
       if (!result) {
         // Still running when we stopped polling. The job keeps going and its
@@ -147,6 +154,19 @@ export function BuyersRadar({
       setScanMsg("scan failed");
     } finally {
       setScanning(false);
+    }
+  }
+
+  async function changePlatform(next: "x" | "linkedin") {
+    if (next === platform || scanning) return;
+    setPlatform(next);
+    setScanMsg(null);
+    try {
+      const res = await fetch(`/api/buyers-radar?platform=${next}`);
+      const data = await res.json();
+      if (res.ok) setSignals(data.signals ?? []);
+    } catch {
+      setScanMsg("Could not load leads for that platform.");
     }
   }
 
@@ -228,9 +248,13 @@ export function BuyersRadar({
         <Head />
 
         <div className={styles.controlRow}>
+          <select aria-label="Buyer Radar platform" value={platform} onChange={(e) => void changePlatform(e.target.value as "x" | "linkedin")}>
+            <option value="x" disabled={!status.platforms.x}>X</option>
+            <option value="linkedin" disabled={!status.platforms.linkedin}>LinkedIn</option>
+          </select>
           <button className={styles.scanBtn} onClick={runScan} disabled={scanning}>
             <HugeiconsIcon icon={Search01Icon} size={16} strokeWidth={1.8} />
-            {scanning ? "Scanning X…" : "Scan now"}
+            {scanning ? `Scanning ${platform === "x" ? "X" : "LinkedIn"}…` : "Scan now"}
           </button>
           <span className={styles.quota}>
             {used}/{status.cap === null ? "∞" : status.cap} leads this month
@@ -250,11 +274,11 @@ export function BuyersRadar({
          *  animation used to replace the whole list, so every existing lead
          *  vanished the moment you hit "Scan now" and only came back when the job
          *  landed. It sits above the list instead, and new results merge in. */}
-        {scanning && <ScanningRadar />}
+        {scanning && <ScanningRadar platform={platform} />}
 
         {!scanning && signals.length === 0 ? (
           <div className={styles.empty}>
-            No leads yet. Run a scan and Yoinky will surface people on X who are asking for what you offer, with a read
+            No leads yet. Run a scan and Yoinky will surface people on {platform === "x" ? "X" : "LinkedIn"} who are asking for what you offer, with a read
             on what each one actually wants.
           </div>
         ) : (
@@ -283,7 +307,7 @@ export function BuyersRadar({
                 <div className={styles.cardActions}>
                   {r.url && (
                     <a className={styles.actionBtn} href={r.url} target="_blank" rel="noreferrer">
-                      Reply on X
+                      Reply on {r.platform === "x" ? "X" : "LinkedIn"}
                     </a>
                   )}
                   <button className={styles.actionBtn} onClick={() => act(r.id, "replied")}>
@@ -321,7 +345,7 @@ const SCAN_STAGES = [
   { at: 110, label: "Reading what they actually asked for" },
 ];
 
-function ScanningRadar() {
+function ScanningRadar({ platform }: { platform: "x" | "linkedin" }) {
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
@@ -352,7 +376,7 @@ function ScanningRadar() {
         </span>
       </div>
       <div className={styles.scanStageHint}>
-        This takes a minute or two - Yoinky keeps widening the search until it has six people worth your time.
+        This takes a minute or two. Yoinky searches {platform === "x" ? "X" : "LinkedIn"} until it has six people worth your time.
       </div>
     </div>
   );
@@ -364,7 +388,7 @@ function Head() {
       <div>
         <div className={panel.title}>Buyers Radar</div>
         <div className={panel.subtitle}>
-          People on X publicly asking for what you offer, with a read on what each one actually wants. Six a scan.
+          People on X and LinkedIn publicly asking for what you offer, with a read on what each one actually wants. Six a scan.
         </div>
       </div>
     </div>

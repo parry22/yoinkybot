@@ -144,8 +144,8 @@ export async function getGrowthState(userId: string): Promise<GrowthState> {
       automations: string;
     }>(
       `SELECT
-         (SELECT count(*) FROM captures WHERE user_id = $1 AND source = 'x_import')::text AS posts_shipped,
-         (SELECT count(*) FROM captures WHERE user_id = $1 AND source = 'x_import' AND captured_at >= now() - interval '28 days')::text AS posts_4w,
+         (SELECT count(*) FROM captures WHERE user_id = $1 AND source IN ('x_import','linkedin_import'))::text AS posts_shipped,
+         (SELECT count(*) FROM captures WHERE user_id = $1 AND source IN ('x_import','linkedin_import') AND captured_at >= now() - interval '28 days')::text AS posts_4w,
          (SELECT count(*) FROM unlock_items WHERE user_id = $1 AND status = 'developed')::text AS ideas_developed,
          (SELECT count(*) FROM unlock_items ui JOIN brand_plans bp ON bp.id = ui.plan_id AND bp.status = 'active'
             WHERE ui.user_id = $1 AND ui.status = 'pending')::text AS ideas_pending,
@@ -155,7 +155,7 @@ export async function getGrowthState(userId: string): Promise<GrowthState> {
       [userId],
     ).catch(() => null),
     query<{ captured_at: string }>(
-      `SELECT captured_at::text FROM captures WHERE user_id = $1 AND source = 'x_import' ORDER BY captured_at DESC LIMIT 600`,
+      `SELECT captured_at::text FROM captures WHERE user_id = $1 AND source IN ('x_import','linkedin_import') ORDER BY captured_at DESC LIMIT 600`,
       [userId],
     ).catch(() => []),
   ]);

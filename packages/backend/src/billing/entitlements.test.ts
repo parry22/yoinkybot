@@ -20,13 +20,13 @@ describe("entitlementsForPlan (Growth vs Scale differentiation)", () => {
     expect(e.maxResurfacePerWeek).toBe(1);
   });
 
-  it("Growth ('paid') has real caps and NO auto-agent", () => {
+  it("Growth ('paid') has real caps and NO hands-off auto-agent", () => {
     const e = entitlementsForPlan("paid");
     expect(e.plan).toBe("paid");
     expect(e.scheduledPostsPerMonth).toBe(30);
     expect(e.buyerIntentsPerMonth).toBe(25);
     expect(e.viralPerDay).toBe(1);
-    expect(e.automationPostsPerMonth).toBe(5);
+    expect(e.automationPostsPerMonth).toBe(30);
     expect(e.autoAgent).toBe(false);
     expect(e.maxResurfacePerWeek).toBe(3);
     expect(e.drafting).toBe(true);
@@ -67,7 +67,7 @@ describe("entitlementsForPlan (Growth vs Scale differentiation)", () => {
     expect(e.autoAgent).toBe(false);
     expect(e.scheduledPostsPerMonth).toBe(30);
     expect(e.buyerIntentsPerMonth).toBe(25);
-    expect(e.automationPostsPerMonth).toBe(5);
+    expect(e.automationPostsPerMonth).toBe(30);
     expect(e.viralPerDay).toBe(1);
   });
 });

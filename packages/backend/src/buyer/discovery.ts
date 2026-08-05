@@ -22,6 +22,7 @@ import { query } from "../db/pool.js";
 import { llmCall } from "../llm/gateway.js";
 import { buyerQueriesV2 } from "../prompts/buyer-queries.v2.js";
 import { searchTweets, type XTweet } from "../capture/imports/twitterapi-io.js";
+import { runApifyActor, str, num } from "../lib/apify.js";
 import type { IcpProfile } from "./icp.js";
 import type { IntentType } from "./scoring.js";
 
@@ -389,4 +390,69 @@ export async function discoverCandidates(
   }
 
   return { candidates: [...byId.values()], trace };
+}
+
+/** LinkedIn counterpart to X discovery. The same Apify actor already powers
+ * LinkedIn trend research; normalize its public-post result into the shared
+ * candidate shape so scoring, niche gating, and intent reading stay identical. */
+export async function discoverLinkedInCandidates(
+  userId: string,
+  icp: IcpProfile,
+  minCandidates = 24,
+): Promise<DiscoveryResult> {
+  if (!config.APIFY_TOKEN) throw new Error("APIFY_TOKEN not configured");
+  const derived = await deriveIntentQueries(userId, icp);
+  const trace: DiscoveryTrace = {
+    vocabulary: derived.vocabulary,
+    queriesRun: 0,
+    rungs: ["linkedin-public-post-search"],
+    llmQueries: derived.fromLlm,
+  };
+  const queries = derived.queries.map((q) => q.q).filter(Boolean).slice(0, 5);
+  if (!queries.length) return { candidates: [], trace };
+  trace.queriesRun = queries.length;
+  const items = await runApifyActor(config.APIFY_LINKEDIN_ACTOR, {
+    searchQueries: queries,
+    maxPosts: Math.max(minCandidates * 2, 40),
+    sortBy: "date",
+  });
+  const seen = await seenState(userId);
+  const candidates: BuyerCandidate[] = [];
+  for (const raw of items) {
+    const item = raw as Record<string, unknown>;
+    const id = str(item.id);
+    const text = str(item.content);
+    if (!id || !text || seen.tweetIds.has(`linkedin:${id}`)) continue;
+    const engagement = (item.engagement ?? {}) as Record<string, unknown>;
+    const author = (item.author ?? item.authorDetails ?? {}) as Record<string, unknown>;
+    const handle = str(author.publicIdentifier ?? author.username ?? author.name).replace(/^@/, "").toLowerCase();
+    if (handle && seen.cooledAuthors.has(handle)) continue;
+    const rawDate = str(item.postedAt ?? item.posted_at ?? item.createdAt);
+    const createdAt = rawDate ? new Date(rawDate) : new Date();
+    const provenance = derived.queries.find((q) => text.toLowerCase().includes(q.q.split(" ")[0]!.replaceAll('"', "").toLowerCase()))?.bucket ?? "pain";
+    candidates.push({
+      tweet: {
+        id: `linkedin:${id}`,
+        text,
+        url: str(item.linkedinUrl ?? item.url) || null,
+        authorHandle: handle || "linkedin-member",
+        authorName: str(author.name) || handle || "LinkedIn member",
+        authorFollowers: num(author.followers),
+        authorVerified: false,
+        likeCount: num(engagement.likes),
+        retweetCount: num(engagement.reposts),
+        replyCount: num(engagement.comments),
+        quoteCount: 0,
+        viewCount: 0,
+        bookmarkCount: 0,
+        hasMedia: Boolean(item.media),
+        isReply: false,
+        conversationId: null,
+        createdAt: Number.isNaN(createdAt.getTime()) ? new Date() : createdAt,
+      },
+      provenance,
+    });
+    if (candidates.length >= minCandidates) break;
+  }
+  return { candidates, trace };
 }

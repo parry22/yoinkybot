@@ -49,5 +49,5 @@ export async function handleBuyerRadar(): Promise<void> {
 export async function handleBuyerScanNow(data: BuyerScanNowJob): Promise<ScanResponse> {
   // Jobs do not inherit the web request's AsyncLocalStorage context. Restore it
   // here so a Lifetime scan uses that customer's scraper key.
-  return runAsUser(data.userId, () => scanBuyerSignals(data.userId));
+  return runAsUser(data.userId, () => scanBuyerSignals(data.userId, data.platform ?? "x"));
 }

@@ -423,6 +423,43 @@
   color: var(--ink-900);
 }
 
+.questionTitle {
+  color: var(--ink-900);
+  font-size: 17px;
+  font-weight: 650;
+  padding-right: 28px;
+}
+
+.questionBody {
+  margin-top: 8px;
+  color: var(--ink-600);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.questionOptions {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.questionOption {
+  width: 100%;
+  padding: 12px 14px;
+  border: 0.5px solid var(--stroke);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink-900);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.questionOption:hover {
+  border-color: var(--accent);
+  background: var(--hover);
+}
+
 /* activity feed for a save/run, same language as Compose */
 .agentActivity {
   display: flex;
