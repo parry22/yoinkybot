@@ -106,6 +106,37 @@ export async function discardStagedMedia(userId: string, mediaId: string): Promi
   return { ok: Boolean(row) };
 }
 
+export interface BlobCleanupCandidate {
+  id: string;
+  url: string;
+}
+
+/**
+ * Public Blob has no automatic lifecycle policy. Return a small, safe batch for
+ * the Vercel-side cleanup route: abandoned uploads after a day, and media from
+ * terminal posts after a day (long enough for publish recovery and support).
+ */
+export async function mediaBlobCleanupCandidates(limit = 100): Promise<BlobCleanupCandidate[]> {
+  return query<BlobCleanupCandidate>(
+    `SELECT m.id, m.url
+       FROM scheduled_post_media m
+       LEFT JOIN scheduled_posts p ON p.id = m.scheduled_post_id
+      WHERE m.blob_path IS NOT NULL
+        AND (
+          (m.scheduled_post_id IS NULL AND m.created_at < now() - interval '1 day')
+          OR (p.status IN ('published','failed','canceled') AND p.updated_at < now() - interval '1 day')
+        )
+      ORDER BY m.created_at ASC
+      LIMIT $1`,
+    [Math.min(Math.max(limit, 1), 500)],
+  );
+}
+
+/** Remove the row only after Vercel Blob confirmed that the bytes are gone. */
+export async function deleteCleanedMediaRecord(id: string): Promise<void> {
+  await query(`DELETE FROM scheduled_post_media WHERE id = $1`, [id]);
+}
+
 export interface MediaReadiness {
   /** True when this user can actually publish media (token has media.write). */
   canPostMedia: boolean;

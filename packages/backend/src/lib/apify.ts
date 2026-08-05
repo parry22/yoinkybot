@@ -1,6 +1,6 @@
 import { config } from "../config.js";
 import { currentUserId } from "../byok/context.js";
-import { scraperKeyForUser } from "../byok/keys.js";
+import { scraperKeysForUser } from "../byok/keys.js";
 
 /**
  * Run an Apify actor synchronously and return its dataset items in one request.
@@ -18,8 +18,12 @@ export async function runApifyActor(
   // byok/context.ts). Falls back to ours for every other plan and for any path
   // that hasn't set the ambient user - that fallback is intentional, so a missed
   // entry point costs us money rather than breaking the user's run.
-  const byok = await scraperKeyForUser(currentUserId());
-  const token = byok?.provider === "apify" ? byok.key : config.APIFY_TOKEN;
+  const byok = await scraperKeysForUser(currentUserId());
+  // A lifetime customer must never silently consume the shared Apify balance.
+  // Apify is required for LinkedIn history, so tell them exactly what key is
+  // missing instead of falling through to the owner's token.
+  if (byok.byok && !byok.apify) throw new Error("Your Lifetime plan needs an Apify token for this LinkedIn or X research task.");
+  const token = byok.apify ?? config.APIFY_TOKEN;
   if (!token) throw new Error("APIFY_TOKEN not configured");
   const id = actorId.replace("/", "~"); // API path form: user~actor-name
   const url = `https://api.apify.com/v2/acts/${id}/run-sync-get-dataset-items?timeout=${timeoutSecs}&memory=1024&format=json`;

@@ -92,7 +92,7 @@
   flex: 0 0 auto;
 }
 .toggle.on {
-  background: var(--ink-900);
+  background: linear-gradient(180deg, var(--accent) 0%, var(--accent-2) 100%);
 }
 .knob {
   position: absolute;

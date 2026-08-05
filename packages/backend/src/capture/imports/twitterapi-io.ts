@@ -1,6 +1,6 @@
 import { config } from "../../config.js";
 import { currentUserId } from "../../byok/context.js";
-import { scraperKeyForUser } from "../../byok/keys.js";
+import { scraperKeysForUser } from "../../byok/keys.js";
 import type { ImportedMedia, ImportedPost } from "./x.js";
 import type { ProfilePull } from "./apify-profile.js";
 
@@ -121,9 +121,11 @@ export function parseTwitterApiIoTweets(
  *  The old guard checked only the global key, which would have refused a BYOK
  *  user on an instance that has no key of its own. */
 async function assertTwitterApiUsable(): Promise<void> {
-  if (config.TWITTERAPI_IO_KEY) return;
-  const byok = await scraperKeyForUser(currentUserId());
-  if (byok?.provider === "twitterapi") return;
+  const byok = await scraperKeysForUser(currentUserId());
+  if (byok.byok && !byok.twitterapi) {
+    throw new Error("Your Lifetime plan needs a twitterapi.io key for this X research task.");
+  }
+  if (byok.twitterapi || config.TWITTERAPI_IO_KEY) return;
   throw new Error("TWITTERAPI_IO_KEY not configured");
 }
 
@@ -140,8 +142,11 @@ async function fetchPage(url: URL): Promise<LastTweetsResponse> {
   // A lifetime user's own twitterapi.io key when we're inside their work
   // (byok/context.ts); ours otherwise. See lib/apify.ts for why the fallback
   // is deliberate rather than a failure.
-  const byok = await scraperKeyForUser(currentUserId());
-  const apiKey = byok?.provider === "twitterapi" ? byok.key : config.TWITTERAPI_IO_KEY;
+  const byok = await scraperKeysForUser(currentUserId());
+  if (byok.byok && !byok.twitterapi) {
+    throw new Error("Your Lifetime plan needs a twitterapi.io key for this X research task.");
+  }
+  const apiKey = byok.twitterapi ?? config.TWITTERAPI_IO_KEY;
   for (let attempt = 0; attempt < 2; attempt++) {
     const res = await fetch(url, {
       headers: { "X-API-Key": apiKey! },

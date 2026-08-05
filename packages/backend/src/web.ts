@@ -43,6 +43,7 @@ export {
   byokStatus,
   saveKey,
   deleteKey,
+  xDeveloperCredentialsForUser,
   KEY_PROVIDERS,
   type KeyProvider,
   type ByokStatus,
@@ -50,6 +51,7 @@ export {
 } from "./byok/keys.js";
 // Read model for the Settings/Scheduled cap display.
 export { scheduledStatus, type ScheduledStatus } from "./scheduling/service.js";
+export { mediaBlobCleanupCandidates, deleteCleanedMediaRecord } from "./web/media.js";
 
 // "Sign in with X" / "Connect X" finalizer + status (web runs the OAuth itself)
 export {

@@ -72,16 +72,15 @@ describe("entitlementsForPlan (Growth vs Scale differentiation)", () => {
   });
 });
 
-describe("lifetime (BYOK)", () => {
-  it("has no caps at all — they fund their own spend", () => {
+describe("retired lifetime compatibility", () => {
+  it("maps old rows to Scale caps until migration 0041 runs", () => {
     const e = entitlementsForPlan("lifetime");
     expect(e.scheduledPostsPerMonth).toBeNull();
-    expect(e.buyerIntentsPerMonth).toBeNull();
+    expect(e.buyerIntentsPerMonth).toBe(300);
     expect(e.viralPerDay).toBeNull();
-    expect(e.automationPostsPerMonth).toBeNull();
+    expect(e.automationPostsPerMonth).toBe(90);
     expect(e.autoAgent).toBe(true);
-    // Politeness, not cost: this bounds unprompted messages, which BYOK doesn't change.
-    expect(e.maxResurfacePerWeek).toBe(7);
+    expect(e.maxResurfacePerWeek).toBe(5);
   });
 
   /**

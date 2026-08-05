@@ -5,6 +5,8 @@ import type { User } from "../lib/auth.js";
 import { converseWithUser } from "../telegram/conversation.js";
 import { deliverTurnOutput, chatToolExecutor } from "../telegram/actions.js";
 import { dmChannel, withTyping } from "../telegram/bot.js";
+import { runAsUser } from "../byok/context.js";
+import { isByokUser } from "../byok/keys.js";
 
 /**
  * Voice captures store a Telegram file URL in audio_url. This job downloads the
@@ -25,6 +27,11 @@ export async function handleTranscribe(job: TranscribeJob): Promise<void> {
 
   let text: string;
   try {
+    // Lifetime BYOK covers model and scraper traffic, not speech vendors. Do
+    // not quietly make an unlimited voice feature an owner-paid liability.
+    if (await isByokUser(job.userId)) {
+      throw new Error("Voice transcription is not available on Lifetime BYOK yet. Send this thought as text instead.");
+    }
     // SSRF guard + defensive depth: audio_url is always server-built to
     // api.telegram.org today, but this fetch is one code change away from
     // pulling an attacker-controlled URL into the server's network. Pin the host
@@ -61,7 +68,11 @@ export async function handleTranscribe(job: TranscribeJob): Promise<void> {
       if (!user) return;
       const channel = dmChannel(job.userId);
       await withTyping(channel, async () => {
-        const result = await converseWithUser(job.userId, text, { executeTool: chatToolExecutor(user, channel) });
+        // Tool calls triggered by a voice reply can search or scrape. Re-enter
+        // the owner context just like typed Telegram turns do.
+        const result = await runAsUser(job.userId, () =>
+          converseWithUser(job.userId, text, { executeTool: chatToolExecutor(user, channel) }),
+        );
         // The voice note is already a capture; suppress the brain's capture flag
         // so the thought isn't filed twice.
         await deliverTurnOutput(user, text, result, channel, { alreadyCaptured: true });

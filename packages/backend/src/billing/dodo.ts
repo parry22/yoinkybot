@@ -12,8 +12,8 @@ function apiBase(): string {
   return config.DODO_ENV === "live_mode" ? "https://live.dodopayments.com" : "https://test.dodopayments.com";
 }
 
-/** Plans that can be bought. "lifetime" is a ONE-TIME product, the rest are subscriptions. */
-export type BuyablePlan = "paid" | "scale" | "founding" | "lifetime";
+/** Hosted plans that can be bought. Open Source is self-hosted and free. */
+export type BuyablePlan = "paid" | "scale" | "founding";
 
 /** Plan → the configured Dodo product id for it (undefined when unconfigured). */
 function productIdFor(plan: BuyablePlan): string | undefined {
@@ -21,15 +21,7 @@ function productIdFor(plan: BuyablePlan): string | undefined {
     ? config.DODO_PRODUCT_FOUNDING
     : plan === "scale"
       ? config.DODO_PRODUCT_SCALE
-      : plan === "lifetime"
-        ? config.DODO_PRODUCT_LIFETIME
-        : config.DODO_PRODUCT_PAID;
-}
-
-/** Lifetime is billed once, so it must never carry subscription_data at checkout
- *  and never gets a trial - there is no recurring charge to defer. */
-export function isOneTimePlan(plan: BuyablePlan): boolean {
-  return plan === "lifetime";
+      : config.DODO_PRODUCT_PAID;
 }
 
 /**
@@ -49,7 +41,7 @@ function checkProductConfig(): void {
   productConfigChecked = true;
 
   const configured: Array<[Plan, string]> = [];
-  for (const plan of ["founding", "scale", "lifetime", "paid"] as const) {
+  for (const plan of ["founding", "scale", "paid"] as const) {
     const id = productIdFor(plan)?.trim();
     if (id) configured.push([plan, id]);
   }
@@ -77,7 +69,6 @@ export function planForProduct(productId: string): Plan | undefined {
   // Precedence on a duplicate id is founding → scale → paid, same as before, but
   // checkProductConfig() has already screamed about the duplicate by this point
   // instead of letting it mis-map in silence.
-  if (productId === config.DODO_PRODUCT_LIFETIME) return "lifetime";
   if (productId === config.DODO_PRODUCT_FOUNDING) return "founding";
   if (productId === config.DODO_PRODUCT_SCALE) return "scale";
   if (productId === config.DODO_PRODUCT_PAID) return "paid";
@@ -149,10 +140,8 @@ export async function createCheckout(
   // set up at all. There is nothing left to degrade to, so this one still throws.
   if (!productId) throw new Error(`Dodo product id for plan "${resolvedPlan}" not configured`);
 
-  // A one-time product must not be sent subscription_data - Dodo would either
-  // reject it or mint a recurring charge for something sold as "pay once".
   const trial =
-    !isOneTimePlan(resolvedPlan) && opts.trialDays && opts.trialDays > 0
+    opts.trialDays && opts.trialDays > 0
       ? { trial_period_days: opts.trialDays }
       : undefined;
 
@@ -257,15 +246,13 @@ function eventAtFor(ctx: DodoEventContext): Date {
   return new Date(Number.isFinite(tsSeconds) && tsSeconds > 0 ? tsSeconds * 1000 : Date.now());
 }
 
-/** Is this payment the lifetime product? Product id OR our own checkout metadata -
- *  the payment payload doesn't always echo the cart back. */
-function isLifetimePayment(d: DodoSubscriptionEvent["data"]): boolean {
-  const byProduct = Boolean(config.DODO_PRODUCT_LIFETIME) && d.product_id === config.DODO_PRODUCT_LIFETIME;
-  return byProduct || d.metadata?.["plan"] === "lifetime";
+/** Honor a checkout created before the retired plan was removed. */
+function isRetiredLifetimePayment(d: DodoSubscriptionEvent["data"]): boolean {
+  return d.metadata?.["plan"] === "lifetime";
 }
 
 /**
- * Provision a lifetime purchase.
+ * Honor an already-created Lifetime checkout as permanent Scale access.
  *
  * Deliberately NOT routed through the subscription upsert below: that path
  * writes `dodo_subscription_id` and `current_period_end` and is guarded by the
@@ -278,7 +265,7 @@ function isLifetimePayment(d: DodoSubscriptionEvent["data"]): boolean {
  * Shares the same webhook-id idempotency claim as everything else, so a retried
  * delivery can't double-provision.
  */
-async function provisionLifetime(
+async function provisionRetiredLifetime(
   d: DodoSubscriptionEvent["data"],
   ctx: DodoEventContext,
   eventAt: Date,
@@ -288,7 +275,7 @@ async function provisionLifetime(
     const msg =
       `Dodo payment.succeeded for the LIFETIME product carried no user_id in metadata ` +
       `(customer ${d.customer?.customer_id ?? "unknown"}). The customer has PAID and is unprovisioned - ` +
-      `grant them lifetime by hand.`;
+      `grant them Scale access by hand.`;
     console.error(msg);
     void alertAdmin("dodo-lifetime-no-user", msg);
     return;
@@ -308,18 +295,18 @@ async function provisionLifetime(
     }
     await client.query(
       `INSERT INTO subscriptions (user_id, provider, dodo_customer_id, plan, status, last_event_at, updated_at)
-       VALUES ($1, 'dodo', $2, 'lifetime', 'active', $3, now())
+       VALUES ($1, 'dodo', $2, 'scale', 'active', $3, now())
        ON CONFLICT (user_id) DO UPDATE SET
          dodo_customer_id = COALESCE(EXCLUDED.dodo_customer_id, subscriptions.dodo_customer_id),
-         plan = 'lifetime',
+         plan = 'scale',
          status = 'active',
          last_event_at = EXCLUDED.last_event_at,
          updated_at = now()`,
       [userId, d.customer?.customer_id ?? null, eventAt],
     );
   });
-  track(userId, "plan_purchased", { plan: "lifetime" });
-  console.log(`lifetime provisioned for user ${userId}`);
+  track(userId, "plan_purchased", { plan: "scale", source: "retired_lifetime_checkout" });
+  console.log(`retired lifetime checkout honored as Scale for user ${userId}`);
 }
 
 /**
@@ -353,8 +340,8 @@ export async function handleDodoEvent(event: DodoSubscriptionEvent, ctx: DodoEve
    * either alone is enough, because the payment payload shape varies by whether
    * the cart or the metadata is echoed back.
    */
-  if (event.type === "payment.succeeded" && isLifetimePayment(d)) {
-    await provisionLifetime(d, ctx, eventAtFor(ctx));
+  if (event.type === "payment.succeeded" && isRetiredLifetimePayment(d)) {
+    await provisionRetiredLifetime(d, ctx, eventAtFor(ctx));
     return;
   }
 

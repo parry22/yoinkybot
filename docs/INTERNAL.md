@@ -4,9 +4,17 @@ Everything a teammate needs to work in this codebase that doesn't belong in the
 public README. Read the [README](../README.md) first for the product pitch and
 setup; this doc is the how-it-actually-works.
 
+> **2026-08-05 plan change:** Lifetime is retired. The public plans are Open
+> Source, Growth, and Scale. Open Source uses `SELF_HOSTED=true`, keeps
+> `PAYWALL_ENABLED=false`, and reads the operator's API keys from environment
+> variables. Dodo checkout accepts only Growth, Scale, and the legacy Founding
+> cohort. Migration `0041` preserves any old Lifetime buyer's access as Scale.
+> The old per-user encrypted BYOK table remains only for schema compatibility
+> and is no longer exposed in the web app.
+
 > **Keep this current.** When you change how a subsystem works, add/remove an env
 > var, or ship a user-visible behavior change, update the relevant section here
-> and the README's "Latest updates". Treat stale docs as a bug.
+> and the public README. Treat stale docs as a bug.
 
 ---
 
@@ -2106,11 +2114,12 @@ widen the gap to the lifetime deal and push traffic at it), and the landing
 page's "Enterprise / Custom" card was replaced by Lifetime, which is now the
 featured card instead of Scale.
 
-**The plan.** `$99` once, `plan='lifetime'`, **no caps at all** —
-`scheduledPostsPerMonth`, `buyerIntentsPerMonth`, `viralPerDay` and
-`automationPostsPerMonth` are all `null`, `autoAgent` on. Every other plan's caps
-exist to bound what WE spend; with BYOK that spend lands on the user's account,
-so a cap would only throttle a product they already bought outright.
+**The plan.** `$99` once, `plan='lifetime'`, customer-funded generation and
+research, plus a **90-post/month native publishing fair-use cap**. X charges the
+application owner per write even when a member OAuth token publishes it, so that
+one owner-paid component cannot safely be unlimited. Buyer research and virals
+remain customer-funded through the matching provider keys; `autoAgent` is on and
+shares the same publishing ceiling.
 `maxResurfacePerWeek` stays at 7 because it's a *politeness* limit (how often we
 message them unprompted), not a cost one.
 
@@ -2153,18 +2162,15 @@ hence storing it.
   removed from whoever triggered it; threading an id through all of it would
   touch dozens of signatures. `runAsUser` is set at each entry point (telegram
   turn, web chat/draft, automation run, profile ingest, and the per-user job
-  loops for radar/viral/trend-match/mentions). **The fallback is deliberately
-  safe**: miss an entry point and it falls back to OUR key — the work still
-  succeeds, we just don't save the money. Degrading toward "works, costs us"
-  beats "broken for a paying user".
+  loops for radar/viral/trend-match/mentions/X refresh/peer ingestion). Lifetime
+  work is strict and provider-aware: a missing TwitterAPI or Apify key produces
+  an actionable error instead of falling back to Yoinky's account.
 * Resolution points: `llm/gateway.ts` (a BYOK key is an OpenRouter key, so it
   also forces the OpenRouter transport — handing it to api.x.ai would 401),
   `lib/apify.ts`, and `capture/imports/twitterapi-io.ts` (one place: every
   request in that file funnels through `fetchPage`).
-* **Embeddings are deliberately NOT BYOK.** They run on OpenAI/Qwen and
-  OpenRouter has no embeddings endpoint, so there is nothing to route to.
-  Demanding a fourth key for a line item measured at ~$0.00001/call (§3s) isn't a
-  trade worth making.
+* **Embeddings use the Lifetime customer's OpenRouter key.** The endpoint is
+  OpenAI-compatible; non-BYOK customers continue to use OpenAI/Qwen.
 
 **The gate.** `/setup-keys` lives **outside `/app`** — nested under it, the page
 would inherit the very redirect that sends people to it and bounce forever. The

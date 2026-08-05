@@ -33,8 +33,8 @@ const PLATFORM_ORDER: Platform[] = ["x", "linkedin"];
 const label = (p: Platform) => (p === "x" ? "X" : "LinkedIn");
 
 /** Auth-connect is possible only when this platform's app credentials exist. */
-export function authConnectAvailable(platform: Platform): boolean {
-  return publishConfigured(platform);
+export async function authConnectAvailable(userId: string, platform: Platform): Promise<boolean> {
+  return publishConfigured(platform, userId);
 }
 
 /** Whether ingestion (the history pull) is wired for this platform. */
@@ -148,7 +148,9 @@ export async function offerAuthConnect(userId: string, platform: Platform, opts:
  * configured, unconditionally; returns false only when none are configured.
  */
 export async function offerReconnect(userId: string): Promise<boolean> {
-  const platforms = PLATFORM_ORDER.filter(authConnectAvailable);
+  const platforms = (await Promise.all(PLATFORM_ORDER.map(async (p) => ((await authConnectAvailable(userId, p)) ? p : null)))).filter(
+    (p): p is Platform => p !== null,
+  );
   if (platforms.length === 0) return false;
   const kb = new InlineKeyboard();
   for (const p of platforms) kb.url(`🔗 connect ${label(p)}`, authUrl(userId, p)).row();
@@ -189,7 +191,7 @@ async function nextAuthPlatform(userId: string, opts: { ignoreSkips?: boolean } 
   const st = await getState(userId);
   const skipped = opts.ignoreSkips ? [] : (st.connectFlow?.skipped ?? []);
   for (const p of PLATFORM_ORDER) {
-    if (!authConnectAvailable(p)) continue;
+    if (!(await authConnectAvailable(userId, p))) continue;
     if (skipped.includes(p)) continue;
     if (await isConnected(userId, p)) continue;
     return p;
@@ -228,7 +230,9 @@ export async function handleAuthSkip(userId: string, platform: Platform): Promis
   // the skips, and put the buttons back. At least one account is non-negotiable.
   const st2 = await getState(userId);
   await setState(userId, { ...st2, awaitingConnect: true, connectFlow: { ...(st2.connectFlow ?? {}), skipped: [] } });
-  const platforms = PLATFORM_ORDER.filter(authConnectAvailable);
+  const platforms = (await Promise.all(PLATFORM_ORDER.map(async (p) => ((await authConnectAvailable(userId, p)) ? p : null)))).filter(
+    (p): p is Platform => p !== null,
+  );
   const kb = new InlineKeyboard();
   for (const p of platforms) kb.url(`🔗 connect ${label(p)}`, authUrl(userId, p)).row();
   // Name only the platform(s) that actually have a button - a single-platform
@@ -255,7 +259,7 @@ export async function handleAuthSkip(userId: string, platform: Platform): Promis
  */
 export async function nudgeOtherPlatformTyped(userId: string, justConnected: Platform): Promise<void> {
   const other: Platform = justConnected === "x" ? "linkedin" : "x";
-  if (authConnectAvailable(other)) return; // that platform's button flow owns the ask
+  if (await authConnectAvailable(userId, other)) return; // that platform's button flow owns the ask
   const st = await getState(userId);
   if (st.phase !== "profiling" && st.phase !== "connect_transition") return;
   const flow = st.connectFlow ?? {};

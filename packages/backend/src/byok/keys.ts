@@ -19,10 +19,11 @@
  */
 import { query, queryOne } from "../db/pool.js";
 import { seal, open, last4, type Sealed } from "../lib/crypto.js";
-import { entitlementsFor } from "../billing/entitlements.js";
 
-export type KeyProvider = "openrouter" | "twitterapi" | "apify";
-export const KEY_PROVIDERS: KeyProvider[] = ["openrouter", "twitterapi", "apify"];
+export type KeyProvider = "openrouter" | "twitterapi" | "apify" | "x_client_id" | "x_client_secret";
+// twitterapi remains readable for legacy rows but is intentionally absent from
+// the customer-facing Lifetime setup: it is Yoinky's internal provider.
+export const KEY_PROVIDERS: KeyProvider[] = ["openrouter", "twitterapi", "apify", "x_client_id", "x_client_secret"];
 
 interface KeyRow {
   provider: KeyProvider;
@@ -74,10 +75,15 @@ async function loadKeys(userId: string): Promise<Partial<Record<KeyProvider, str
   return keys;
 }
 
-/** Is this user on the BYOK (lifetime) plan? Cheap enough to call per request. */
+/**
+ * Per-user BYOK was part of the retired hosted Lifetime offer. The Open Source
+ * edition reads deployment-owned keys directly from the environment, so no
+ * hosted account should enter this override path anymore. Kept as a stable
+ * function while the legacy storage code is removed incrementally.
+ */
 export async function isByokUser(userId: string): Promise<boolean> {
-  const ent = await entitlementsFor(userId);
-  return ent.plan === "lifetime";
+  void userId;
+  return false;
 }
 
 /**
@@ -106,6 +112,30 @@ export async function scraperKeyForUser(
   return null;
 }
 
+/**
+ * Provider-specific scraper keys for the active lifetime customer.
+ *
+ * `scraperKeyForUser` is kept for the setup UI's broad “do they have a
+ * scraper?” question. Runtime callers must use this shape instead: Apify and
+ * twitterapi.io are not interchangeable for LinkedIn and X respectively.
+ */
+export async function scraperKeysForUser(userId: string | null): Promise<{
+  byok: boolean;
+  twitterapi: string | null;
+  apify: string | null;
+}> {
+  if (!userId || !(await isByokUser(userId))) return { byok: false, twitterapi: null, apify: null };
+  const keys = await loadKeys(userId);
+  return { byok: true, twitterapi: keys.twitterapi ?? null, apify: keys.apify ?? null };
+}
+
+/** Customer-owned X developer app for Lifetime OAuth and token refresh. */
+export async function xDeveloperCredentialsForUser(userId: string | null): Promise<{ clientId: string; clientSecret: string } | null> {
+  if (!userId || !(await isByokUser(userId))) return null;
+  const keys = await loadKeys(userId);
+  return keys.x_client_id && keys.x_client_secret ? { clientId: keys.x_client_id, clientSecret: keys.x_client_secret } : null;
+}
+
 export interface ByokKeyView {
   provider: KeyProvider;
   last4: string;
@@ -119,6 +149,7 @@ export interface ByokStatus {
   complete: boolean;
   hasLlm: boolean;
   hasScraper: boolean;
+  hasXPublishing: boolean;
   keys: ByokKeyView[];
 }
 
@@ -138,8 +169,9 @@ export async function byokStatus(userId: string): Promise<ByokStatus> {
   // use would otherwise unlock the app into a product that fails on every call.
   const validated = new Set(keys.filter((k) => k.validatedAt).map((k) => k.provider));
   const hasLlm = validated.has("openrouter");
-  const hasScraper = validated.has("twitterapi") || validated.has("apify");
-  return { required, complete: !required || (hasLlm && hasScraper), hasLlm, hasScraper, keys };
+  const hasScraper = validated.has("apify");
+  const hasXPublishing = validated.has("x_client_id") && validated.has("x_client_secret");
+  return { required, complete: !required || (hasLlm && hasScraper && hasXPublishing), hasLlm, hasScraper, hasXPublishing, keys };
 }
 
 /**
@@ -170,6 +202,10 @@ export async function validateKey(provider: KeyProvider, key: string): Promise<{
       if (!res.ok) return { ok: false, reason: `twitterapi.io returned ${res.status}.` };
       return { ok: true };
     }
+    // X client credentials cannot be authenticated independently: the OAuth
+    // authorization code is bound to the app, so validation happens during the
+    // customer's own X consent step. Store the non-empty encrypted value now.
+    if (provider === "x_client_id" || provider === "x_client_secret") return { ok: true };
     const res = await fetch(`https://api.apify.com/v2/users/me?token=${encodeURIComponent(key)}`, { signal: timeout });
     if (res.status === 401 || res.status === 403) return { ok: false, reason: "Apify rejected that token." };
     if (!res.ok) return { ok: false, reason: `Apify returned ${res.status}.` };

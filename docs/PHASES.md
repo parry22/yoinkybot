@@ -1,4 +1,4 @@
-# Yoink — Build Phases
+# Yoinky - Build Phases
 
 Build order mirrors the PRD (§6). Each phase leaves the repo compiling, unit-tested, and runnable.
 One deviation from PRD v1.0: **DodoPayments replaces Razorpay + Stripe** as the single payment
@@ -39,8 +39,9 @@ provider (merchant of record, covers India + international in one integration).
   semantic gate against positions. Fires rarely; weak matches never fire.
 - Distinct delivery treatment from regular resurfacing.
 
-## Phase 6 — Billing (DodoPayments)
-- Tiers: free (capture + capped resurfacing) / paid (everything) / founding (paid price locked, first 500).
+## Phase 6 - Billing (DodoPayments)
+- Public plans: Open Source (free, self-hosted BYOK), Growth, and Scale.
+- Hosted checkout exists only for Growth and Scale. The older Founding label is retained for existing cohort compatibility.
 - Dodo checkout sessions + Standard-Webhooks-verified webhook → `subscriptions` table → entitlements.
 - Per-user usage metering (tokens, model, cost) via the LLM gateway from day one.
 

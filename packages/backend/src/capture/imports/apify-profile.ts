@@ -2,6 +2,8 @@ import { config } from "../../config.js";
 import { runApifyActor, str, num } from "../../lib/apify.js";
 import type { ImportedPost } from "./x.js";
 import { pullXProfileViaTwitterApiIo, MAX_OWN_TWEETS } from "./twitterapi-io.js";
+import { currentUserId } from "../../byok/context.js";
+import { scraperKeysForUser } from "../../byok/keys.js";
 
 export interface ProfilePull {
   posts: ImportedPost[];
@@ -85,6 +87,15 @@ export async function pullXProfile(
   window?: { sinceDays: number; minPosts: number },
 ): Promise<ProfilePull> {
   maxPosts = Math.min(maxPosts, MAX_OWN_TWEETS);
+  const byok = await scraperKeysForUser(currentUserId());
+  // Pick the customer's actual provider first. The old global preference for
+  // twitterapi.io quietly charged us whenever an Apify-only lifetime customer
+  // connected X.
+  if (byok.byok) {
+    if (byok.twitterapi) return pullXProfileViaTwitterApiIo(normalizeXHandle(handle), maxPosts, window);
+    if (byok.apify) return pullXProfileViaApify(handle, maxPosts);
+    throw new Error("Your Lifetime plan needs a twitterapi.io or Apify key to read X.");
+  }
   if (config.TWITTERAPI_IO_KEY) return pullXProfileViaTwitterApiIo(normalizeXHandle(handle), maxPosts, window);
   return pullXProfileViaApify(handle, maxPosts);
 }

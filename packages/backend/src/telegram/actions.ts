@@ -83,7 +83,7 @@ export async function runSchedulePost(
     return msg;
   }
   const label = platform === "x" ? "X" : "LinkedIn";
-  const canPost = publishConfigured(platform) && (await resolveWriteAuth(user.id, platform));
+  const canPost = (await publishConfigured(platform, user.id)) && (await resolveWriteAuth(user.id, platform));
   const warn = canPost
     ? ""
     : `\n\nheads up: your ${label} isn't connected for posting yet, so connect it before then or this won't actually go out.`;

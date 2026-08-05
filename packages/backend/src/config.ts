@@ -13,6 +13,12 @@ const schema = z.object({
   // user lands back in Settings instead of the Telegram-flavored static page.
   // Only a `redirect` starting with this exact origin is ever honored.
   WEB_APP_URL: z.string().default("http://localhost:3002"),
+  // Public forks set this to true. It disables hosted billing warnings and lets
+  // the UI identify the installation as the free Open Source plan.
+  SELF_HOSTED: z
+    .string()
+    .default("false")
+    .transform((v) => ["true", "1", "yes", "on"].includes(v.trim().toLowerCase())),
 
   // In-app feedback delivery (sidebar Feature Request / Bug Report). Sent by
   // email via Resend's HTTP API - no SDK, just a fetch behind an API key. When
@@ -323,12 +329,8 @@ const schema = z.object({
   POSTHOG_PERSONAL_API_KEY: z.string().optional(),
   POSTHOG_PROJECT_ID: z.string().optional(),
 
-  // ── BYOK (lifetime plan) ─────────────────────────────────────────────────
-  // 32-byte master key for AES-256-GCM encryption of user-supplied provider API
-  // keys (lib/crypto.ts). Deploy env ONLY - never the database, so a dump of
-  // `user_api_keys` is inert without it. Generate: openssl rand -base64 32
-  // Unset → saving a BYOK key throws rather than storing it in the clear, and a
-  // boot warning fires.
+  // Legacy per-user key storage from the retired hosted BYOK experiment. The
+  // Open Source edition uses deployment environment variables instead.
   BYOK_ENCRYPTION_KEY: z.string().optional(),
 
   DODO_API_KEY: z.string().optional(),
@@ -340,31 +342,18 @@ const schema = z.object({
   // can tell Growth from Scale.
   DODO_PRODUCT_SCALE: z.string().optional(),
   DODO_PRODUCT_FOUNDING: z.string().optional(),
-  // "Lifetime" - a ONE-TIME product, not a subscription. Dodo fires
-  // `payment.succeeded` for it rather than `subscription.*`, which the webhook
-  // now handles separately (billing/dodo.ts). Unset → the lifetime card is
-  // hidden everywhere rather than offering a checkout that can't complete.
-  DODO_PRODUCT_LIFETIME: z.string().optional(),
   // Human-readable prices shown in /upgrade copy, the checkout button and the
   // Settings plan picker. Keep in sync with the actual Dodo product prices AND
   // with the landing page (separate repo) - nothing derives these from Dodo, so
   // a price change is a three-place edit.
   //
-  // Today (2026-07-28): Growth $15/mo and Scale $49/mo, anchored against the
-  // standard $29 / $79. Growth moved $9 → $15 deliberately, to widen the gap to
-  // the lifetime deal and push traffic at it.
+  // Growth and Scale are the only hosted plans. The third plan is the free
+  // self-hosted codebase and has no Dodo product.
   // The *_WAS_LABEL values are display-only strikethroughs.
   PAID_PRICE_LABEL: z.string().default("$15/mo"),
   PAID_PRICE_WAS_LABEL: z.string().default("$29"),
   SCALE_PRICE_LABEL: z.string().default("$49/mo"),
   SCALE_PRICE_WAS_LABEL: z.string().default("$79"),
-  // Lifetime: one payment, BYOK, no caps. No "/mo" - splitPrice keys off the
-  // slash to decide whether to render a unit, so this stays a bare amount.
-  LIFETIME_PRICE_LABEL: z.string().default("$99"),
-  // Shown on the lifetime card. It's a deliberately time-boxed offer, so the
-  // copy has to say so - and being a string, the wording can change without a
-  // deploy when the window actually closes.
-  LIFETIME_NOTE: z.string().default("Limited time only - this deal goes away soon."),
   // Off during testing → everyone gets full features. Set true to enforce plans.
   // NOTE: a boot warning fires (index.ts) if this is false in production, so a
   // deploy that forgets the flag can't silently give everyone the paid tier.
@@ -412,7 +401,7 @@ function warnOnDangerousConfig(): void {
   if (config.NODE_ENV !== "production") return;
   const warn = (msg: string) => console.warn(`⚠️  config: ${msg}`);
 
-  if (!config.PAYWALL_ENABLED) {
+  if (!config.SELF_HOSTED && !config.PAYWALL_ENABLED) {
     warn(
       "PAYWALL_ENABLED is not true in production - every user currently gets the full paid tier for free. " +
         'Accepted truthy values: "true", "1", "yes", "on".',
@@ -423,20 +412,22 @@ function warnOnDangerousConfig(): void {
   // FOUNDING → SCALE → PAID in order, so reusing (say) the Growth id for
   // Founding records every Growth buyer as founding - full Scale entitlements
   // for $9, and a burnt founding seat.
-  const products = {
-    DODO_PRODUCT_PAID: config.DODO_PRODUCT_PAID,
-    DODO_PRODUCT_SCALE: config.DODO_PRODUCT_SCALE,
-    DODO_PRODUCT_FOUNDING: config.DODO_PRODUCT_FOUNDING,
-  };
-  const set = Object.entries(products).filter(([, v]) => v);
-  const seen = new Map<string, string>();
-  for (const [name, id] of set) {
-    const prior = seen.get(id!);
-    if (prior) warn(`${name} and ${prior} share the same Dodo product id - plan mapping will be wrong.`);
-    else seen.set(id!, name);
+  if (!config.SELF_HOSTED) {
+    const products = {
+      DODO_PRODUCT_PAID: config.DODO_PRODUCT_PAID,
+      DODO_PRODUCT_SCALE: config.DODO_PRODUCT_SCALE,
+      DODO_PRODUCT_FOUNDING: config.DODO_PRODUCT_FOUNDING,
+    };
+    const set = Object.entries(products).filter(([, v]) => v);
+    const seen = new Map<string, string>();
+    for (const [name, id] of set) {
+      const prior = seen.get(id!);
+      if (prior) warn(`${name} and ${prior} share the same Dodo product id - plan mapping will be wrong.`);
+      else seen.set(id!, name);
+    }
+    if (!config.DODO_PRODUCT_PAID) warn("DODO_PRODUCT_PAID is unset - Growth checkout will fail.");
+    if (!config.DODO_PRODUCT_SCALE) warn("DODO_PRODUCT_SCALE is unset - Scale purchases will be recorded as Growth.");
   }
-  if (!config.DODO_PRODUCT_PAID) warn("DODO_PRODUCT_PAID is unset - Growth checkout will fail.");
-  if (!config.DODO_PRODUCT_SCALE) warn("DODO_PRODUCT_SCALE is unset - Scale purchases will be recorded as Growth.");
 
   // WEB_APP_URL is the allowlist the OAuth connect flow checks a `redirect`
   // against (routes/oauth.ts). Left at its localhost default in production, no

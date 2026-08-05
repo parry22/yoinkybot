@@ -9,6 +9,7 @@ import { classifyPeerThemes } from "../prompts/classify-peer-themes.v1.js";
 import { ALL_TONE_KEYS } from "../strategist/profile.js";
 import { median, engagementTotal } from "../strategist/performance.js";
 import { cosineDistance } from "../drafting/repurpose.js";
+import { runAsUser } from "../byok/context.js";
 
 /**
  * Peer benchmarking: a small, explicitly user-chosen set of peers, compared on
@@ -180,7 +181,9 @@ export async function handlePeerIngest(): Promise<void> {
   );
   for (const peer of peers) {
     try {
-      await ingestPeer(peer);
+      // A weekly job starts outside the interactive request context. Keep peer
+      // research on the owner's chosen BYOK provider for Lifetime users.
+      await runAsUser(peer.user_id, () => ingestPeer(peer));
     } catch (err) {
       console.error(`peer ingest failed for @${peer.peer_handle}`, err);
     }
@@ -193,7 +196,6 @@ export async function ingestPeer(peer: {
   peer_handle: string;
   platform: "x" | "linkedin";
 }): Promise<number> {
-  if (peer.platform === "x" && !config.TWITTERAPI_IO_KEY && !config.APIFY_TOKEN) return 0;
   const pull =
     peer.platform === "x"
       ? await pullXProfile(peer.peer_handle, PEER_PULL_POSTS, { sinceDays: PEER_WINDOW_DAYS, minPosts: 20 })

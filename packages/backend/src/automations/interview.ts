@@ -61,51 +61,23 @@ export const EMPTY_SPEC: AgentSpec = {
  * (post types, angles, hooks), then the operational two. `name` is never asked -
  * it's inferred, because being interviewed about a label is a waste of a turn.
  */
-const SLOTS: Array<{ key: keyof AgentSpec; brief: string }> = [
+const SLOTS: Array<{ key: keyof AgentSpec; keys: Array<keyof AgentSpec>; brief: string }> = [
   {
     key: "purpose",
+    keys: ["purpose"],
     brief:
       "what this agent is FOR - the job it does for them. Open with something better than " +
       "'what should it do?': propose a couple of jobs that fit their niche.",
   },
   {
-    key: "postTypes",
+    key: "postTypes", keys: ["postTypes", "angles", "hooks"],
     brief:
-      "what SHAPE of post it should write - hot takes, teardowns, personal stories, how-tos, " +
-      "threads, one-liners. Suggest the ones that fit their pillars.",
+      "their CONTENT PACKAGE in one compact answer: post shapes, 2-3 topic lanes, and hook styles. Give an example format: 'teardowns + founder stories; pricing and positioning; blunt claims and story opens'.",
   },
   {
-    key: "angles",
+    key: "platform", keys: ["platform", "source", "cadence", "delivery"],
     brief:
-      "which ANGLES/topics it may take, i.e. its lanes. Propose specific ones from their pillars " +
-      "and niche, and confirm what's off-limits if that's easier for them to answer.",
-  },
-  {
-    key: "hooks",
-    brief:
-      "which HOOK styles suit them - blunt claim, a number, a question, a story open, a " +
-      "'nobody tells you' reveal. Name real examples in their voice.",
-  },
-  {
-    key: "platform",
-    brief: "where it should publish - X or LinkedIn. Explain that the writing will be shaped for that feed.",
-  },
-  {
-    key: "source",
-    brief:
-      "where its raw material comes from: riding what's trending in their niche (trend_ride), " +
-      "working the idea backlog already in their plan (unlock_backlog), or purely from the brief " +
-      "they've just described (custom). Describe the choice in plain terms, never with those keys.",
-  },
-  {
-    key: "cadence",
-    brief: "how often it runs - daily, weekly, or only when they hit run.",
-  },
-  {
-    key: "delivery",
-    brief:
-      "whether it asks them before anything goes out, or posts on its own. If their plan is " +
-      "approval-only, state that as a fact and confirm.",
+      "their RUN SETTINGS in one compact answer: X or LinkedIn, trend/backlog/custom source, daily/weekly/manual cadence, and approval or auto delivery. Give a fill-in example.",
   },
 ];
 
@@ -158,7 +130,7 @@ function isFilled(spec: AgentSpec, key: keyof AgentSpec): boolean {
 
 /** The next thing to ask about, or null when the spec is complete. */
 export function nextSlot(spec: AgentSpec): (typeof SLOTS)[number] | null {
-  return SLOTS.find((s) => !isFilled(spec, s.key)) ?? null;
+  return SLOTS.find((s) => s.keys.some((key) => !isFilled(spec, key))) ?? null;
 }
 
 export interface InterviewTurn {

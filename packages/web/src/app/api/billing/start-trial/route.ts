@@ -25,20 +25,20 @@ export const maxDuration = 60;
  */
 export async function GET(req: Request) {
   const origin = new URL(req.url).origin;
+  const planParam = new URL(req.url).searchParams.get("plan");
+  if (config.SELF_HOSTED) {
+    const managedPlan = planParam === "scale" ? "scale" : "growth";
+    return NextResponse.redirect(`https://app.meetyoinky.com/sign-up?plan=${managedPlan}`);
+  }
   const user = await getSessionUser();
   if (!user) return NextResponse.redirect(new URL("/sign-in", origin));
 
-  const planParam = new URL(req.url).searchParams.get("plan");
-  const plan: "paid" | "scale" | "founding" | "lifetime" =
+  const plan: "paid" | "scale" | "founding" =
     planParam === "founding"
       ? "founding"
       : planParam === "scale"
         ? "scale"
-        // Lifetime is a ONE-TIME product - createCheckout omits subscription_data
-        // for it, so it never carries a trial and never renews.
-        : planParam === "lifetime"
-          ? "lifetime"
-          : "paid";
+        : "paid";
   if (planParam) await setIntendedPlan(user.id, planParam).catch(() => {});
 
   try {

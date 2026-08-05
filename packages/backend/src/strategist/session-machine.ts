@@ -479,7 +479,7 @@ async function runProfilingTurn(userId: string, message: string, state: Strategi
   // the intake - the machine already knows the next field, so just ask it.
   // OAuth-first when configured: the connect button (sent by the bot right
   // after this reply) is the primary action; the typed handle stays the out.
-  const authConnect = publishConfigured("x") || publishConfigured("linkedin");
+  const authConnect = (await publishConfigured("x", userId)) || (await publishConfigured("linkedin", userId));
   const fallbackReply =
     phase === "profiling" && field
       ? FALLBACK_QUESTION[field]

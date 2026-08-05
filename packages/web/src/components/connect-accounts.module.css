@@ -45,6 +45,36 @@
   margin-top: 14px;
 }
 
+.historyConnect {
+  margin-top: 14px;
+}
+
+.historyConnect p {
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-600);
+}
+
+.historyForm {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.historyForm input {
+  flex: 1 1 280px;
+  min-width: 0;
+  border: 0.5px solid var(--stroke);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--ink-900);
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 13px;
+}
+
 .msg {
   margin-top: 10px;
   font-size: 13px;

@@ -100,33 +100,6 @@ const SCALE: Omit<Entitlements, "plan"> = {
 };
 
 /**
- * Lifetime (BYOK): one payment, no caps.
- *
- * Every other plan's caps exist to bound what WE spend on a user - each buyer
- * lead is a paid twitterapi.io search we pay for, each agent post is model spend
- * we pay for. A lifetime user brings their own LLM and scraper keys, so that
- * spend lands on their account, not ours (llm/gateway.ts and the scrapers
- * resolve their key - see byok/keys.ts). With the cost reason gone, a cap would
- * only be throttling a product they have already bought outright.
- *
- * `maxResurfacePerWeek` is 7 rather than `null` on purpose: it's a PROACTIVE
- * cadence - how often we message them unprompted - so it's a politeness limit,
- * not a cost one. Once a day is already the ceiling of what anyone wants.
- */
-const LIFETIME: Omit<Entitlements, "plan"> = {
-  scheduledPostsPerMonth: null,
-  buyerIntentsPerMonth: null,
-  viralPerDay: null,
-  automationPostsPerMonth: null,
-  maxResurfacePerWeek: 7,
-  autoAgent: true,
-  consistencyChecks: true,
-  voiceProfile: true,
-  drafting: true,
-  macroMatching: true,
-};
-
-/**
  * Telegram ids that bypass the paywall: PAYWALL_WHITELIST (comma-separated) plus
  * ADMIN_TELEGRAM_ID, which is always exempt so the operator never has to upgrade
  * their own account to use the product.
@@ -170,10 +143,11 @@ export async function isPaidOrExempt(user: { id: string; telegram_id: string | n
  */
 export function entitlementsForPlan(plan: Plan): Entitlements {
   switch (plan) {
-    // BYOK - they fund their own model + scraper spend, so there is nothing for
-    // a cap to protect. See LIFETIME.
+    // Compatibility only. Migration 0041 converts retired Lifetime rows to
+    // Scale, but mapping it here prevents a web/backend deploy race from
+    // temporarily taking access away.
     case "lifetime":
-      return { plan, ...LIFETIME };
+      return { plan, ...SCALE };
     case "scale":
     case "founding":
       return { plan, ...SCALE };
@@ -398,7 +372,7 @@ export async function startTrial(userId: string, intendedPlan?: string | null): 
 }
 
 /** The only values the landing CTAs ever send, and the only ones we'll store. */
-const INTENDED_PLANS = new Set(["growth", "scale", "founding", "lifetime"]);
+const INTENDED_PLANS = new Set(["growth", "scale", "founding"]);
 
 /**
  * Record the plan the user picked on the landing page (growth/scale/founding),

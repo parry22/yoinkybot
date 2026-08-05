@@ -1,27 +1,25 @@
 import { redirect } from "next/navigation";
 import { SignOutButton } from "@clerk/nextjs";
 import { getSessionUser } from "@/lib/session";
-import { listConnectedAccounts, billingOverview, byokStatus, config } from "@yoink/backend/web";
+import { listConnectedAccounts, billingOverview, config } from "@yoink/backend/web";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { TelegramConnectButton } from "@/components/telegram-connect";
 import { LinkedInConnectRow, XConnectRow } from "@/components/connect-accounts";
 import { ManageAccountButton } from "@/components/account-manage";
 import { PlanPicker } from "@/components/plan-picker";
-import { ByokSettings } from "@/components/byok-settings";
 import styles from "@/components/panel.module.css";
 
-type PlanKey = "growth" | "scale" | "founding" | "lifetime";
+type PlanKey = "open_source" | "growth" | "scale" | "founding";
 
 /** Resolve which plan card to highlight: the active plan, else the one picked at signup. */
 function currentPlanKey(activePlan: string | null, intended: string | null): PlanKey {
-  // Lifetime first: it's the strictly-highest tier, so once someone holds it no
-  // other card should ever read as "current".
-  if (activePlan === "lifetime") return "lifetime";
+  if (config.SELF_HOSTED) return "open_source";
+  // Legacy Lifetime rows receive Scale access after the offering is retired.
+  if (activePlan === "lifetime") return "scale";
   if (activePlan === "scale") return "scale";
   if (activePlan === "founding") return "founding";
   if (activePlan === "paid") return "growth";
   const i = (intended ?? "").toLowerCase();
-  if (i === "lifetime") return "lifetime";
   if (i === "scale") return "scale";
   if (i === "founding") return "founding";
   return "growth";
@@ -39,19 +37,17 @@ export default async function SettingsPage({
   const user = await getSessionUser();
   if (!user) redirect("/sign-in");
 
-  const [accounts, billing, byok, sp] = await Promise.all([
+  const [accounts, billing, sp] = await Promise.all([
     listConnectedAccounts(user.id).catch(() => []),
     billingOverview(user.id).catch(() => null),
-    // Degrade to "not a BYOK user" on error: the panel simply doesn't render,
-    // which is the right failure for a settings page.
-    byokStatus(user.id).catch(() => ({ required: false, complete: true, hasLlm: false, hasScraper: false, keys: [] })),
     searchParams,
   ]);
   const x = accounts.find((a) => a.platform === "x") ?? null;
   const linkedIn = accounts.find((a) => a.platform === "linkedin") ?? null;
 
   const t = billing?.trial;
-  const planLabel = t?.plan && t.plan !== "trialing" && t.plan !== "free" ? ` (${t.plan})` : "";
+  const planName = t?.plan === "paid" ? "Growth" : t?.plan === "scale" || t?.plan === "lifetime" ? "Scale" : t?.plan;
+  const planLabel = planName && planName !== "trialing" && planName !== "free" ? ` (${planName})` : "";
   const accessDay = t?.accessUntil
     ? new Date(t.accessUntil).toLocaleDateString(undefined, { day: "numeric", month: "long" })
     : null;
@@ -63,9 +59,11 @@ export default async function SettingsPage({
    * cancelled plan says how long the access they already paid for lasts.
    */
   const billingStatus = ((): string => {
+    if (config.SELF_HOSTED) return "Open Source - self-hosted with your own infrastructure and API keys.";
     if (!t || t.status === "none") return "No active plan yet.";
     switch (t.status) {
       case "active":
+        if (t.plan === "lifetime") return "Scale access - active.";
         return `Paid plan${planLabel} - active. Auto-renews; manage or cancel anytime.`;
       case "trialing":
         return `Free trial - ${t.daysLeft} day${t.daysLeft === 1 ? "" : "s"} left. Add a card to auto-continue after it ends.`;
@@ -99,15 +97,15 @@ export default async function SettingsPage({
         </div>
 
         <div className={styles.section}>
-          <div className={styles.sectionLabel}>Plan &amp; billing</div>
+          <div className={styles.sectionLabel}>{config.SELF_HOSTED ? "Plan" : "Plan & billing"}</div>
           <div className={styles.sectionBody} style={{ marginBottom: 12 }}>{billingStatus}</div>
-          {sp?.billing_error && (
+          {!config.SELF_HOSTED && sp?.billing_error && (
             <div className={styles.sectionBody} style={{ color: "#e5484d", marginBottom: 12 }}>
               Something went wrong opening billing. Please try again.
             </div>
           )}
 
-          {t?.plan === "founding" ? (
+          {!config.SELF_HOSTED && t?.plan === "founding" ? (
             <div className={styles.sectionBody}>You're on the Founding plan - thank you for being early.</div>
           ) : (
             <PlanPicker
@@ -118,15 +116,11 @@ export default async function SettingsPage({
               growthWas={config.PAID_PRICE_WAS_LABEL}
               scalePrice={config.SCALE_PRICE_LABEL}
               scaleWas={config.SCALE_PRICE_WAS_LABEL}
-              lifetimePrice={config.LIFETIME_PRICE_LABEL}
-              lifetimeNote={config.LIFETIME_NOTE}
-              // Hidden when the Dodo product isn't configured - better no card
-              // than a card whose checkout can't complete.
-              lifetimeAvailable={Boolean(config.DODO_PRODUCT_LIFETIME)}
+              selfHosted={config.SELF_HOSTED}
             />
           )}
 
-          {billing?.hasDodoSubscription && (
+          {!config.SELF_HOSTED && billing?.hasDodoSubscription && (
             <div style={{ marginTop: 14 }}>
               <a href="/api/billing/portal" className="btnGhost" style={linkBtn}>
                 Manage plan - update card, switch, or cancel
@@ -134,15 +128,6 @@ export default async function SettingsPage({
             </div>
           )}
         </div>
-
-        {/* Only for the plan that uses them - every other plan runs on our keys
-          * and would just be confused by a credentials panel. */}
-        {byok.required && (
-          <div className={styles.section}>
-            <div className={styles.sectionLabel}>Your API keys</div>
-            <ByokSettings initial={byok} />
-          </div>
-        )}
 
         <div className={styles.section}>
           <div className={styles.sectionLabel}>Connected X</div>

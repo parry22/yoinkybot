@@ -14,6 +14,7 @@ export const maxDuration = 60;
  */
 export async function GET(req: Request) {
   const origin = new URL(req.url).origin;
+  if (config.SELF_HOSTED) return NextResponse.redirect("https://app.meetyoinky.com/sign-up");
   const user = await getSessionUser();
   if (!user) return NextResponse.redirect(new URL("/sign-in", origin));
 

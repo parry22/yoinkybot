@@ -90,10 +90,11 @@ export async function schedulePost(
   // web boundary map this to a 429 + upgrade CTA (other reasons stay 400).
   const ent = await entitlementsFor(userId);
   if (!withinCap(await monthlyScheduledCount(userId), ent.scheduledPostsPerMonth)) {
+    const upgradeHint = ent.plan === "lifetime" ? "you've reached the Lifetime plan's fair-use publishing limit for this month." : `you've used all ${ent.scheduledPostsPerMonth} scheduled posts this month - upgrade to Scale for unlimited.`;
     return {
       ok: false,
       capReached: true,
-      reason: `you've used all ${ent.scheduledPostsPerMonth} scheduled posts this month - upgrade to Scale for unlimited.`,
+      reason: upgradeHint,
     };
   }
 

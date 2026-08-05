@@ -51,7 +51,7 @@ export async function handleScheduledPost(job: ScheduledPostJob): Promise<void> 
     ]);
   };
 
-  if (!publishConfigured(platform)) {
+  if (!(await publishConfigured(platform, job.userId))) {
     await fail(`${label} posting isn't configured on this instance`);
     await channel.say(`couldn't post your scheduled ${label} update - posting isn't set up on my end yet.`);
     return;

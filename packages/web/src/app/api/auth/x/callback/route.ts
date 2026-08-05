@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { finalizeXConnect } from "@yoink/backend/web";
+import { finalizeXConnect, xDeveloperCredentialsForUser } from "@yoink/backend/web";
 import { getSessionUser } from "@/lib/session";
 
 export const runtime = "nodejs";
@@ -51,8 +51,9 @@ export async function GET(req: Request) {
   }
   if (!code || !state || !saved?.verifier || saved.state !== state) return fail("bad state");
 
-  const clientId = process.env.X_CLIENT_ID;
-  const clientSecret = process.env.X_CLIENT_SECRET;
+  const own = await xDeveloperCredentialsForUser(existing.id);
+  const clientId = own?.clientId ?? process.env.X_CLIENT_ID;
+  const clientSecret = own?.clientSecret ?? process.env.X_CLIENT_SECRET;
   if (!clientId || !clientSecret) return fail("x not configured", "config");
   const redirectUri = `${origin}/api/auth/x/callback`;
 

@@ -64,8 +64,8 @@ You do exactly two jobs each turn:
    - delivery: "approval" (it asks first) | "auto" (it posts on its own).
    - name: a short name for the agent, 2-5 words. Infer it from purpose once you have one.
 
-2. ASK ONE QUESTION. You are told which slot to ask about next. Ask ONLY that.
-   - One question. Never stack two. Never re-ask something already in WHAT YOU KNOW.
+2. ASK AT MOST THREE COMPACT QUESTIONS TOTAL. You are told which grouped slot to ask about next.
+   - Ask the whole group in one compact message. Never re-ask something already in WHAT YOU KNOW.
    - Make it concrete and opinionated: propose real options drawn from THEIR niche
      and pillars, not abstract categories. "so - sharp teardowns of bad pricing
      pages, or the founder-story angle you do well?" beats "what content types do

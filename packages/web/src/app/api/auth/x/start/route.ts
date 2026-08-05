@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { randomBytes, createHash } from "node:crypto";
+import { xDeveloperCredentialsForUser } from "@yoink/backend/web";
+import { getSessionUser } from "@/lib/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,7 +20,10 @@ function b64url(buf: Buffer): string {
  */
 export async function GET(req: Request) {
   const origin = new URL(req.url).origin;
-  const clientId = process.env.X_CLIENT_ID;
+  const user = await getSessionUser();
+  if (!user) return NextResponse.redirect(new URL("/sign-in", origin));
+  const own = await xDeveloperCredentialsForUser(user.id);
+  const clientId = own?.clientId ?? process.env.X_CLIENT_ID;
   // No client id is a deployment problem, not a transient one - send the kind that
   // tells the user retrying won't help (see the callback route's `fail`).
   if (!clientId) {

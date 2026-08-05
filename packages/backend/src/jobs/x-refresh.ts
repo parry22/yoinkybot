@@ -1,9 +1,9 @@
 import type PgBoss from "pg-boss";
 import { query, queryOne } from "../db/pool.js";
-import { config } from "../config.js";
-import { entitlementsFor } from "../billing/entitlements.js";
+import { isPaidOrExempt } from "../billing/entitlements.js";
 import { QUEUES } from "./boss.js";
 import { refreshXEngagement } from "../strategist/performance.js";
+import { runAsUser } from "../byok/context.js";
 
 /**
  * Twice-daily automatic X refresh for every connected account.
@@ -61,9 +61,9 @@ import { refreshXEngagement } from "../strategist/performance.js";
  */
 
 /** Guard 3: does this user get the LLM-backed half of the refresh, or metrics only? */
-async function mayIngestNewPosts(userId: string): Promise<boolean> {
+async function mayIngestNewPosts(userId: string, telegramId: string | null): Promise<boolean> {
   try {
-    return (await entitlementsFor(userId)).plan !== "free";
+    return isPaidOrExempt({ id: userId, telegram_id: telegramId });
   } catch (err) {
     // Fail CLOSED. A billing lookup that errors must not become a free pass to
     // unmetered extraction; metrics still refresh, which is the job's core value.
@@ -92,19 +92,16 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 interface RefreshTarget {
   user_id: string;
   handle: string;
+  telegram_id: string | null;
 }
 
 export async function handleXRefresh(): Promise<void> {
-  if (!config.TWITTERAPI_IO_KEY) {
-    console.log("[x.refresh] no TWITTERAPI_IO_KEY - skipping");
-    return;
-  }
-
   // Every ingested X account, oldest refresh first. Deliberately NOT filtered by
   // telegram_id or plan: the whole point is that web-only users get fresh data.
   const targets = await query<RefreshTarget>(
-    `SELECT ca.user_id, ca.handle
+    `SELECT ca.user_id, ca.handle, u.telegram_id
        FROM connected_accounts ca
+       JOIN users u ON u.id = ca.user_id
       WHERE ca.platform = 'x'
         AND ca.status = 'ingested'
         AND (ca.last_refresh_attempt_at IS NULL
@@ -139,9 +136,11 @@ export async function handleXRefresh(): Promise<void> {
     if (done > 0) await sleep(PAUSE_BETWEEN_USERS_MS);
     done++;
     try {
-      const ingestNew = await mayIngestNewPosts(t.user_id);
+      const ingestNew = await mayIngestNewPosts(t.user_id, t.telegram_id);
       if (!ingestNew) metricsOnly++;
-      const res = await refreshXEngagement(t.user_id, REFRESH_POSTS, { ingestNew });
+      // The refresh is per user, so it must resolve that user's BYOK key rather
+      // than use the fleet key merely because this is a cron job.
+      const res = await runAsUser(t.user_id, () => refreshXEngagement(t.user_id, REFRESH_POSTS, { ingestNew }));
       if (res.status === "ok") ok++;
       else if (res.status === "failed") failed++;
     } catch (err) {

@@ -9,9 +9,7 @@ name: Database backup
 #
 # Managed-Postgres free tiers generally include no point-in-time recovery and a
 # thin (or absent) backup story, so on a free plan the hosted copy is effectively
-# the ONLY copy. That is an unacceptable position for data users are paying for —
-# and it gets worse the moment lifetime licences are sold, because those are
-# permanent obligations against permanent data.
+# the only copy. That is an unacceptable position for user data.
 #
 # Runs in GitHub Actions rather than as an in-app job on purpose: `pg_dump` is the
 # right tool and it produces a restorable artifact, whereas a hand-rolled

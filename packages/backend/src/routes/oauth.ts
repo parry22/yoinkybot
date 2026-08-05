@@ -3,6 +3,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { config } from "../config.js";
 import { query } from "../db/pool.js";
 import { publishConfigured } from "../social/publish.js";
+import { xDeveloperCredentialsForUser } from "../byok/keys.js";
 import { afterOAuthConnected } from "../telegram/connect-auth.js";
 import { readConnectTicket } from "../lib/connect-tickets.js";
 import type { Platform } from "../lib/types.js";
@@ -84,8 +85,8 @@ const REDIRECT = (platform: Platform) => `${config.PUBLIC_URL}/oauth/${platform}
  * the PKCE verifier under an opaque state. Returns null when this platform's
  * app credentials aren't configured. Called by the bot to hand the user a link.
  */
-export function buildAuthUrl(userId: string, platform: Platform, returnTo?: string): string | null {
-  if (!publishConfigured(platform)) return null;
+export async function buildAuthUrl(userId: string, platform: Platform, returnTo?: string): Promise<string | null> {
+  if (!(await publishConfigured(platform, userId))) return null;
   sweepExpired();
   const state = b64url(randomBytes(16));
   const verifier = b64url(randomBytes(32));
@@ -95,7 +96,7 @@ export function buildAuthUrl(userId: string, platform: Platform, returnTo?: stri
     const challenge = b64url(createHash("sha256").update(verifier).digest());
     const params = new URLSearchParams({
       response_type: "code",
-      client_id: config.X_CLIENT_ID!,
+      client_id: (await xDeveloperCredentialsForUser(userId))?.clientId ?? config.X_CLIENT_ID!,
       redirect_uri: REDIRECT("x"),
       // media.write is what lets a scheduled post carry an image or video
       // (social/media.ts). Tokens minted BEFORE this scope was added don't have
@@ -151,15 +152,19 @@ async function storeToken(
   );
 }
 
-async function exchangeX(code: string, verifier: string): Promise<{ accessToken: string; refreshToken?: string; expiresIn?: number; scope?: string }> {
+async function exchangeX(userId: string, code: string, verifier: string): Promise<{ accessToken: string; refreshToken?: string; expiresIn?: number; scope?: string }> {
+  const own = await xDeveloperCredentialsForUser(userId);
+  const clientId = own?.clientId ?? config.X_CLIENT_ID;
+  const clientSecret = own?.clientSecret ?? config.X_CLIENT_SECRET;
+  if (!clientId || !clientSecret) throw new Error("X Developer credentials are missing");
   const body = new URLSearchParams({
     grant_type: "authorization_code",
     code,
     redirect_uri: REDIRECT("x"),
     code_verifier: verifier,
-    client_id: config.X_CLIENT_ID!,
+    client_id: clientId,
   });
-  const basic = Buffer.from(`${config.X_CLIENT_ID}:${config.X_CLIENT_SECRET}`).toString("base64");
+  const basic = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
   const res = await fetch("https://api.x.com/2/oauth2/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded", Authorization: `Basic ${basic}` },
@@ -217,7 +222,7 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
           .type("text/html")
           .send(DONE_HTML("That connect link has expired. Head back to Telegram and tap connect again."));
       }
-      const url = buildAuthUrl(userId, platform, req.query.redirect);
+      const url = await buildAuthUrl(userId, platform, req.query.redirect);
       if (!url) return reply.code(503).send(`${platform} posting isn't configured on this instance`);
       return reply.redirect(url);
     },
@@ -241,7 +246,7 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
       let accessToken: string;
       try {
         if (platform === "x") {
-          const tok = await exchangeX(code, pend.verifier);
+          const tok = await exchangeX(pend.userId, code, pend.verifier);
           await storeToken(pend.userId, "x", tok);
           accessToken = tok.accessToken;
         } else {

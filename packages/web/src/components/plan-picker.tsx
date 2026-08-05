@@ -1,6 +1,8 @@
 import styles from "./plan-picker.module.css";
 
-type PlanKey = "growth" | "scale" | "founding" | "lifetime";
+type PlanKey = "open_source" | "growth" | "scale" | "founding";
+
+const GITHUB_URL = "https://github.com/parry22/yoinkybot";
 
 /** Splits "$9/mo" into the number and its unit so the price can be typeset as a
  *  headline with a small trailing "/mo", rather than one flat 13px string. */
@@ -28,9 +30,7 @@ export function PlanPicker({
   growthWas,
   scalePrice,
   scaleWas,
-  lifetimePrice,
-  lifetimeNote,
-  lifetimeAvailable,
+  selfHosted,
 }: {
   currentKey: PlanKey;
   onTrial: boolean;
@@ -39,12 +39,7 @@ export function PlanPicker({
   growthWas: string;
   scalePrice: string;
   scaleWas: string;
-  lifetimePrice: string;
-  /** "Limited time only …" - the deal is deliberately time-boxed, so say so. */
-  lifetimeNote: string;
-  /** False when DODO_PRODUCT_LIFETIME is unset - hide the card rather than
-   *  offer a checkout that cannot complete. */
-  lifetimeAvailable: boolean;
+  selfHosted: boolean;
 }) {
   const base = onTrial ? "/api/billing/start-trial" : "/api/billing/checkout";
 
@@ -55,12 +50,27 @@ export function PlanPicker({
     was: string;
     blurb: string;
     features: string[];
-    /** The visually promoted card. Lifetime, not Scale - it's the push. */
+    /** The visually promoted hosted card. */
     featured?: boolean;
-    /** Replaces the "/mo" unit; lifetime is billed once. */
+    /** Replaces the unit parsed from the price. */
     unitOverride?: string;
     note?: string;
   }[] = [
+    {
+      key: "open_source",
+      name: "Open Source",
+      price: "$0",
+      was: "",
+      unitOverride: "self-hosted",
+      blurb: "Run the complete Yoinky codebase on your own infrastructure.",
+      features: [
+        "Web app and Telegram agent",
+        "Bring your own AI and research API keys",
+        "Connect your own X and LinkedIn apps",
+        "Your database, infrastructure, and data",
+        "MIT licensed and community supported",
+      ],
+    },
     {
       key: "growth",
       name: "Growth",
@@ -77,6 +87,7 @@ export function PlanPicker({
         "30 scheduled posts / month, with media",
         "Telegram agent",
       ],
+      featured: true,
     },
     {
       key: "scale",
@@ -92,58 +103,23 @@ export function PlanPicker({
         "Proactive resurfacing, 5 a week",
       ],
     },
-    ...(lifetimeAvailable
-      ? [
-          {
-            key: "lifetime" as PlanKey,
-            name: "Lifetime",
-            price: lifetimePrice,
-            was: "",
-            unitOverride: "once",
-            featured: true,
-            note: lifetimeNote,
-            blurb: "Pay once, bring your own keys, and nothing is ever capped.",
-            features: [
-              "Everything in Scale, uncapped",
-              "Unlimited Auto Agent posts, hands-off",
-              "Unlimited buyer radar leads",
-              "BYOK - runs on your own keys, at cost",
-              "One payment. No subscription, ever.",
-            ],
-          },
-        ]
-      : []),
   ];
 
   return (
     <div className={styles.grid}>
       {cards.map((c) => {
         const isCurrent = c.key === currentKey;
-        const isLifetimeCard = c.key === "lifetime";
-        const ownsLifetime = currentKey === "lifetime";
+        const isOpenSource = c.key === "open_source";
 
-        /**
-         * The card's action.
-         *
-         * Lifetime is a ONE-TIME product, so it never routes through the
-         * subscription portal and never through the trial checkout - there is no
-         * recurring charge to manage or defer. It always goes straight to a
-         * plain checkout, even for someone who already holds a subscription
-         * (buying it out is exactly what that person is trying to do).
-         *
-         * And once someone owns lifetime, the monthly cards have nothing to
-         * offer them - they already have strictly more - so those go inert
-         * rather than inviting a pointless downgrade.
-         */
         let href: string | null;
         let ctaLabel: string | null;
-        if (isCurrent) {
-          href = null;
-          ctaLabel = null;
-        } else if (isLifetimeCard) {
-          href = `/api/billing/checkout?plan=lifetime`;
-          ctaLabel = "Get lifetime";
-        } else if (ownsLifetime) {
+        if (isOpenSource) {
+          href = GITHUB_URL;
+          ctaLabel = "View on GitHub";
+        } else if (selfHosted) {
+          href = `https://app.meetyoinky.com/sign-up?plan=${c.key}`;
+          ctaLabel = `Try managed ${c.name}`;
+        } else if (isCurrent) {
           href = null;
           ctaLabel = null;
         } else if (hasSubscription) {
@@ -182,7 +158,11 @@ export function PlanPicker({
               ))}
             </ul>
             {href && ctaLabel ? (
-              <a href={href} className={isCurrent ? styles.ctaGhost : styles.cta}>
+              <a
+                href={href}
+                className={isCurrent ? styles.ctaGhost : styles.cta}
+                {...(isOpenSource ? { target: "_blank", rel: "noreferrer" } : {})}
+              >
                 {ctaLabel}
               </a>
             ) : (

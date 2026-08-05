@@ -1,6 +1,7 @@
 import { config } from "../config.js";
 import { recordUsage } from "../usage/meter.js";
 import { LlmHttpError, fetchWithTimeout } from "./gateway.js";
+import { keyForUser } from "../byok/keys.js";
 
 interface EmbeddingProvider {
   baseUrl: string;
@@ -10,17 +11,20 @@ interface EmbeddingProvider {
 }
 
 /**
- * Prefer OpenAI; fall back to Qwen/DashScope (OpenAI-compatible embeddings endpoint).
- *
- * DELIBERATELY NOT BYOK. A lifetime user supplies an OpenRouter key, and
- * OpenRouter does not serve an embeddings endpoint - there is nothing to route
- * their embedding traffic to. Asking for a fourth key (OpenAI) to cover this
- * would add real setup friction for a line item measured at ~$0.00001 per call
- * (see docs/INTERNAL.md §3s), which is not a trade worth making. Embeddings stay
- * on our key for everyone, and that is a rounding error against the LLM and
- * scraper spend BYOK actually shifts.
+ * Prefer a Lifetime user's OpenRouter key, then the owner's OpenAI/Qwen key.
+ * OpenRouter exposes an OpenAI-compatible embeddings endpoint, so there is no
+ * reason for BYOK memory work to silently become an owner-paid exception.
  */
-function resolveProvider(): EmbeddingProvider {
+async function resolveProvider(userId: string | null): Promise<EmbeddingProvider> {
+  const byok = await keyForUser(userId, "openrouter");
+  if (byok) {
+    return {
+      baseUrl: config.OPENROUTER_BASE_URL,
+      apiKey: byok,
+      model: config.EMBEDDING_MODEL,
+      costPer1M: 0.13,
+    };
+  }
   if (config.OPENAI_API_KEY) {
     return {
       baseUrl: "https://api.openai.com/v1",
@@ -82,7 +86,7 @@ async function embedChunk(
 /** Embed a batch of texts. Order of results matches input order. */
 export async function embed(texts: string[], userId: string | null): Promise<number[][]> {
   if (texts.length === 0) return [];
-  const provider = resolveProvider();
+  const provider = await resolveProvider(userId);
   const chunks: string[][] = [];
   for (let i = 0; i < texts.length; i += MAX_BATCH_SIZE) chunks.push(texts.slice(i, i + MAX_BATCH_SIZE));
 

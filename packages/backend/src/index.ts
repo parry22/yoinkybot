@@ -108,7 +108,7 @@ async function main(): Promise<void> {
       .catch(() => null);
     return {
       ok: true,
-      llm: Boolean(config.OPENROUTER_API_KEY),
+      llm: config.LLM_TRANSPORT === "xai" ? Boolean(config.XAI_API_KEY) : Boolean(config.OPENROUTER_API_KEY),
       analytics: analyticsEnabled(),
       trends: {
         provider: Boolean(config.APIFY_TOKEN || config.BRAVE_API_KEY || config.TAVILY_API_KEY),

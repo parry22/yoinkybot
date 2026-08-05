@@ -47,5 +47,7 @@ export async function handleBuyerRadar(): Promise<void> {
  * poll instead of a held-open request.
  */
 export async function handleBuyerScanNow(data: BuyerScanNowJob): Promise<ScanResponse> {
-  return scanBuyerSignals(data.userId);
+  // Jobs do not inherit the web request's AsyncLocalStorage context. Restore it
+  // here so a Lifetime scan uses that customer's scraper key.
+  return runAsUser(data.userId, () => scanBuyerSignals(data.userId));
 }

@@ -21,14 +21,14 @@ describe("nextSlot (code owns the interview order, not the model)", () => {
     expect(nextSlot(EMPTY_SPEC)?.key).toBe("purpose");
   });
 
-  // The order matters: the three writing slots come before the operational ones,
-  // because they are what decide whether the agent's output is any good.
-  it("asks the writing slots before cadence and delivery", () => {
+  // The interview asks at most three grouped questions. A group stays current
+  // until every field in that answer has been extracted.
+  it("clubs writing and run settings into grouped questions", () => {
     expect(nextSlot(spec({ purpose: "x" }))?.key).toBe("postTypes");
-    expect(nextSlot(spec({ purpose: "x", postTypes: ["hot take"] }))?.key).toBe("angles");
-    expect(nextSlot(spec({ purpose: "x", postTypes: ["a"], angles: ["b"] }))?.key).toBe("hooks");
+    expect(nextSlot(spec({ purpose: "x", postTypes: ["hot take"] }))?.key).toBe("postTypes");
+    expect(nextSlot(spec({ purpose: "x", postTypes: ["a"], angles: ["b"] }))?.key).toBe("postTypes");
     expect(nextSlot(spec({ purpose: "x", postTypes: ["a"], angles: ["b"], hooks: ["c"] }))?.key).toBe("platform");
-    expect(nextSlot(spec({ purpose: "x", postTypes: ["a"], angles: ["b"], hooks: ["c"], platform: "x" }))?.key).toBe("source");
+    expect(nextSlot(spec({ purpose: "x", postTypes: ["a"], angles: ["b"], hooks: ["c"], platform: "x" }))?.key).toBe("platform");
   });
 
   it("treats an empty list as unanswered", () => {
@@ -53,7 +53,7 @@ describe("nextSlot (code owns the interview order, not the model)", () => {
   });
 
   it("stays incomplete when only the operational slots are missing", () => {
-    expect(nextSlot(spec({ ...full(), cadence: null }))?.key).toBe("cadence");
+    expect(nextSlot(spec({ ...full(), cadence: null }))?.key).toBe("platform");
   });
 });
 

@@ -1,5 +1,5 @@
 import { query } from "../db/pool.js";
-import { entitlementsFor } from "../billing/entitlements.js";
+import { isPaidOrExempt } from "../billing/entitlements.js";
 import { pullLinkedInProfile } from "../capture/imports/apify-profile.js";
 import { createCapture } from "../capture/service.js";
 import { runAsUser } from "../byok/context.js";
@@ -8,6 +8,7 @@ import { getBoss, QUEUES } from "./boss.js";
 interface Target {
   user_id: string;
   handle: string;
+  telegram_id: string | null;
 }
 
 const MAX_POSTS = 100;
@@ -18,11 +19,13 @@ const MIN_AGE_HOURS = 20;
  * OAuth grant; Apify reads the already-connected public profile URL. */
 export async function handleLinkedInRefresh(): Promise<void> {
   const targets = await query<Target>(
-    `SELECT user_id, handle FROM connected_accounts
-     WHERE platform = 'linkedin' AND status = 'ingested'
-       AND (last_refresh_attempt_at IS NULL
-            OR last_refresh_attempt_at < now() - make_interval(hours => $1::int))
-     ORDER BY last_refresh_attempt_at ASC NULLS FIRST, id ASC`,
+    `SELECT ca.user_id, ca.handle, u.telegram_id
+     FROM connected_accounts ca
+     JOIN users u ON u.id = ca.user_id
+     WHERE ca.platform = 'linkedin' AND ca.status = 'ingested'
+       AND (ca.last_refresh_attempt_at IS NULL
+            OR ca.last_refresh_attempt_at < now() - make_interval(hours => $1::int))
+     ORDER BY ca.last_refresh_attempt_at ASC NULLS FIRST, ca.id ASC`,
     [MIN_AGE_HOURS],
   );
 
@@ -30,7 +33,7 @@ export async function handleLinkedInRefresh(): Promise<void> {
     try {
       // This is a paid provider pull and new posts fan out into extraction. Do
       // not run it forever for a lapsed account.
-      if ((await entitlementsFor(target.user_id)).plan === "free") continue;
+      if (!(await isPaidOrExempt({ id: target.user_id, telegram_id: target.telegram_id }))) continue;
       await runAsUser(target.user_id, () => refreshOne(target));
     } catch (err) {
       console.error(`[linkedin.refresh] failed for ${target.handle} (${target.user_id})`, err);

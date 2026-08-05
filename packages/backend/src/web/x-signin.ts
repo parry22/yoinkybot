@@ -10,6 +10,7 @@ import { query } from "../db/pool.js";
 import { config } from "../config.js";
 import { ensureBoss } from "../jobs/boss.js";
 import { startConnect } from "../strategist/connect.js";
+import { scraperKeysForUser } from "../byok/keys.js";
 
 export interface XConnectStatus {
   /**
@@ -81,7 +82,11 @@ export async function connectLinkedInProfileFromWeb(userId: string, profileUrl: 
   if (!/^https:\/\/(?:[a-z]{2,3}\.)?linkedin\.com\/in\/[A-Za-z0-9_%.-]+\/?(?:\?.*)?$/i.test(value)) {
     throw new Error("Paste a full LinkedIn profile URL, like https://www.linkedin.com/in/your-name");
   }
-  if (!config.APIFY_TOKEN) throw new Error("LinkedIn profile reading isn't configured on this instance");
+  const byok = await scraperKeysForUser(userId);
+  if (byok.byok && !byok.apify) {
+    throw new Error("Add your Apify token in Settings before reading your LinkedIn posts.");
+  }
+  if (!byok.apify && !config.APIFY_TOKEN) throw new Error("LinkedIn profile reading isn't configured on this instance");
   await ensureBoss();
   await startConnect(userId, "linkedin", value);
 }

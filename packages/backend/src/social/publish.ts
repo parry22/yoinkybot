@@ -1,6 +1,7 @@
 import { config } from "../config.js";
 import { query, queryOne } from "../db/pool.js";
 import type { Platform } from "../lib/types.js";
+import { isByokUser, xDeveloperCredentialsForUser } from "../byok/keys.js";
 
 /**
  * Publishing - the write half of the social integration. Everything else in
@@ -42,7 +43,8 @@ export interface PublishResult {
 }
 
 /** Whether this instance even has the app credentials to post to a platform. */
-export function publishConfigured(platform: Platform): boolean {
+export async function publishConfigured(platform: Platform, userId?: string): Promise<boolean> {
+  if (platform === "x" && userId && (await isByokUser(userId))) return !!(await xDeveloperCredentialsForUser(userId));
   return platform === "x"
     ? !!(config.X_CLIENT_ID && config.X_CLIENT_SECRET)
     : !!(config.LINKEDIN_CLIENT_ID && config.LINKEDIN_CLIENT_SECRET);
@@ -148,8 +150,12 @@ type XRefreshOutcome =
  * routes/oauth.ts. X rotates the refresh token on every use, so the response's
  * refresh_token must be persisted or the NEXT refresh fails.
  */
-async function refreshXToken(refreshToken: string): Promise<XRefreshOutcome> {
-  const basic = Buffer.from(`${config.X_CLIENT_ID}:${config.X_CLIENT_SECRET}`).toString("base64");
+async function refreshXToken(userId: string, refreshToken: string): Promise<XRefreshOutcome> {
+  const own = await xDeveloperCredentialsForUser(userId);
+  const clientId = own?.clientId ?? config.X_CLIENT_ID;
+  const clientSecret = own?.clientSecret ?? config.X_CLIENT_SECRET;
+  if (!clientId || !clientSecret) return { ok: false, permanent: true, detail: "X Developer credentials are missing" };
+  const basic = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
   let res: Response;
   try {
     res = await fetch("https://api.x.com/2/oauth2/token", {
@@ -158,7 +164,7 @@ async function refreshXToken(refreshToken: string): Promise<XRefreshOutcome> {
       body: new URLSearchParams({
         grant_type: "refresh_token",
         refresh_token: refreshToken,
-        client_id: config.X_CLIENT_ID!,
+        client_id: clientId,
       }),
       signal: AbortSignal.timeout(TOKEN_TIMEOUT_MS),
     });
@@ -241,7 +247,7 @@ export async function ensureWriteAuth(userId: string, platform: Platform): Promi
     };
   }
 
-  const refreshed = await refreshXToken(row.post_refresh_token);
+  const refreshed = await refreshXToken(userId, row.post_refresh_token);
   if (!refreshed.ok) {
     if (!refreshed.permanent) {
       return { ok: false, reason: "refresh_failed", detail: `couldn't renew the ${label} token: ${refreshed.detail}` };
