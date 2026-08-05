@@ -1,5 +1,5 @@
 /**
- * Recurring Buyer Radar scan — DARK by default (config.BUYER_RADAR_PROACTIVE,
+ * Recurring Buyer Radar scan - DARK by default (config.BUYER_RADAR_PROACTIVE,
  * off). v1 delivery is pull-only via the web app; this job exists so the
  * proactive path can be turned on per rollout, AFTER the twitterapi.io search
  * budget behaves in prod (it has hit 402 credit errors before). When enabled, it
@@ -42,7 +42,7 @@ export async function handleBuyerRadar(): Promise<void> {
  * function ceiling, and the ladder makes the worst case longer, not shorter.
  * Running it as a job also means an impatient refresh can't buy a second scan.
  *
- * The return value becomes the pg-boss job output, which the web app polls — so
+ * The return value becomes the pg-boss job output, which the web app polls - so
  * the user still gets the same funnel counts and `reason` sentence, just after a
  * poll instead of a held-open request.
  */

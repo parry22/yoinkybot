@@ -20,7 +20,7 @@ export async function runWebChatTurn(user: User, text: string): Promise<{ messag
   // Chat tools (connect, schedule, refresh diagnosis) may enqueue jobs.
   await ensureBoss();
   const { channel, messages } = collectingChannel();
-  // Ambient BYOK identity — same as the Telegram turn (telegram/turns.ts).
+  // Ambient BYOK identity - same as the Telegram turn (telegram/turns.ts).
   await runAsUser(user.id, async () => {
     const result = await converseWithUser(user.id, text, { executeTool: chatToolExecutor(user, channel) });
     await deliverTurnOutput(user, text, result, channel);
@@ -29,19 +29,19 @@ export async function runWebChatTurn(user: User, text: string): Promise<{ messag
 }
 
 /**
- * The same turn, streamed. Identical brain, identical tool code path — the only
+ * The same turn, streamed. Identical brain, identical tool code path - the only
  * differences are that the Channel forwards each utterance as it happens instead
  * of collecting it, and the tool executor is wrapped so every tool call announces
  * itself first ("Searching everything you've told me").
  *
  * That wrapper is why the activity list is trustworthy: the label comes from the
- * tool the model actually invoked, written by us, before the tool runs — not from
+ * tool the model actually invoked, written by us, before the tool runs - not from
  * model narration, which under enforced structured output frequently isn't there.
  */
 export async function runWebChatTurnStreaming(user: User, text: string, emit: Emit): Promise<void> {
   await ensureBoss();
   // Tracks whether anything at all has reached the user this turn. A turn that
-  // ends having said nothing is the "it just sits there" failure — the activity
+  // ends having said nothing is the "it just sits there" failure - the activity
   // rows tick over, the last one finishes, and the transcript never gains a line,
   // so the page looks frozen at exactly the moment the work finished. The tail
   // below guarantees a closing message rather than trusting the model to produce
@@ -80,7 +80,7 @@ export async function runWebChatTurnStreaming(user: User, text: string, emit: Em
     console.error("streamed chat turn failed mid-turn", err);
     // An error event still closes the UI's activity list, so the page never
     // stays stuck on a spinning row.
-    emit({ type: "error", message: "That turn broke on my side — try again." });
+    emit({ type: "error", message: "That turn broke on my side - try again." });
     return;
   }
   emit({ type: "result" });

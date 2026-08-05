@@ -1,5 +1,5 @@
 /**
- * Deterministic resurfacing scorer — PRD 4.3: novelty × link-density × recency
+ * Deterministic resurfacing scorer - PRD 4.3: novelty × link-density × recency
  * ÷ prior surface count. No LLM anywhere in selection; the LLM only composes
  * the delivery after the choice is made. Pure functions, unit-tested.
  */
@@ -16,21 +16,21 @@ export interface ScorableMemory {
 
 const DAY = 24 * 60 * 60 * 1000;
 
-/** 0..1 — how "fresh to the user" this memory is. Never surfaced = fully novel. */
+/** 0..1 - how "fresh to the user" this memory is. Never surfaced = fully novel. */
 export function novelty(m: ScorableMemory, now: number): number {
   if (m.lastSurfacedAt === null) return 1;
   const days = (now - m.lastSurfacedAt) / DAY;
   return 1 - Math.exp(-days / 30);
 }
 
-/** ≥1 — well-connected ideas are worth more; growth is logarithmic. */
+/** ≥1 - well-connected ideas are worth more; growth is logarithmic. */
 export function linkDensity(m: ScorableMemory): number {
   return 1 + Math.log1p(m.linkCount);
 }
 
 /**
  * Recency of capture with a floor: fresh ideas score higher, but an old idea
- * never decays to zero — link density can still carry it back up.
+ * never decays to zero - link density can still carry it back up.
  */
 export function recency(m: ScorableMemory, now: number): number {
   const ageDays = Math.max(0, now - m.createdAt) / DAY;

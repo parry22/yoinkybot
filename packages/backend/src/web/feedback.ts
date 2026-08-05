@@ -22,7 +22,7 @@ export interface FeedbackInput {
  * Store one piece of in-app feedback, then deliver it. Primary channel is email
  * to FEEDBACK_EMAIL_TO (parry@meetyoinky.com by default) via Resend's HTTP API;
  * the Telegram admin ping is a secondary that also covers the case where the web
- * process has no bot instance. Both are best-effort — the DB row is the source
+ * process has no bot instance. Both are best-effort - the DB row is the source
  * of truth and a delivery failure never throws.
  */
 export async function submitFeedback(
@@ -41,7 +41,7 @@ export async function submitFeedback(
     [userId],
   );
   if (Number(today?.n ?? 0) >= MAX_PER_DAY) {
-    return { ok: false, reason: "that's a lot of feedback for one day — I've got it, give me a chance to read it" };
+    return { ok: false, reason: "that's a lot of feedback for one day - I've got it, give me a chance to read it" };
   }
 
   await query(`INSERT INTO feedback (user_id, type, category, message) VALUES ($1, $2, $3, $4)`, [
@@ -73,11 +73,11 @@ export async function submitFeedback(
           to: [config.FEEDBACK_EMAIL_TO],
           // Reply-to the user so the operator can answer them directly.
           ...(user?.email ? { reply_to: user.email } : {}),
-          subject: `${label}${category ? ` · ${category}` : ""} — from ${who}`,
+          subject: `${label}${category ? ` · ${category}` : ""} - from ${who}`,
           text:
             `${label}\n` +
             `From: ${who}${user?.telegram_id ? ` (telegram ${user.telegram_id})` : ""}\n` +
-            `Category: ${category || "—"}\n\n` +
+            `Category: ${category || "-"}\n\n` +
             `${message}\n`,
         }),
       });
@@ -95,7 +95,7 @@ export async function submitFeedback(
     try {
       await bot.api.sendMessage(
         Number(config.ADMIN_TELEGRAM_ID),
-        `${label}${category ? ` · ${category}` : ""} — from ${who}\n\n${message}`,
+        `${label}${category ? ` · ${category}` : ""} - from ${who}\n\n${message}`,
       );
     } catch (err) {
       console.error("feedback admin notify failed", err);

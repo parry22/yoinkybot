@@ -71,12 +71,12 @@ function pct(r: number | null): string {
   return r === null || r === undefined ? "-" : (r * 100).toFixed(1) + "%";
 }
 function signPct(r: number | null): string {
-  if (r === null || r === undefined) return "–";
+  if (r === null || r === undefined) return "-";
   return (r >= 0 ? "+" : "") + Math.round(r) + "%";
 }
 function liftColor(r: number | null): string | undefined {
   if (r === null || r === undefined) return undefined;
-  // Up is green, down is red — the universal reading. The pink accent is the
+  // Up is green, down is red - the universal reading. The pink accent is the
   // brand's action color, not a "good number" signal, so it never means "up".
   return r >= 0 ? "#2fb170" : "#d3455b";
 }
@@ -90,7 +90,7 @@ export function Analytics({ data }: { data: Data }) {
     try {
       const res = await fetch("/api/analytics/replies");
       const data = await res.json();
-      // A 402/429 body is `{ error }`, not a ReplyAnalytics — storing it raw left
+      // A 402/429 body is `{ error }`, not a ReplyAnalytics - storing it raw left
       // `available` undefined, which falls into the generic "couldn't pull
       // replies" branch and loses the server's actual explanation. Normalize to
       // the full shape and carry the reason through.
@@ -172,14 +172,14 @@ export function Analytics({ data }: { data: Data }) {
               </div>
             </div>
 
-            {/* Yoinky's impact — the differentiated cut: posts shipped through
+            {/* Yoinky's impact - the differentiated cut: posts shipped through
                 Yoinky vs your own baseline. Ties X metrics to our own data. */}
             <div className={panel.section}>
-              <div className={panel.sectionLabel}>Yoinky's impact — posts you shipped through Yoinky</div>
+              <div className={panel.sectionLabel}>Yoinky's impact - posts you shipped through Yoinky</div>
               {data.impact.assistedPosts === 0 ? (
                 <div className={panel.sectionBody}>
                   Approve an Auto Agent draft or schedule from Compose, and we&apos;ll track how your
-                  Yoinky-shipped posts perform against your own baseline — right here.
+                  Yoinky-shipped posts perform against your own baseline - right here.
                 </div>
               ) : (
                 <>
@@ -218,11 +218,11 @@ export function Analytics({ data }: { data: Data }) {
               )}
             </div>
 
-            {/* Format lab — which shape of post earns you the most. */}
+            {/* Format lab - which shape of post earns you the most. */}
             <div className={panel.section}>
               <div className={panel.sectionLabel}>What shape of post works for you</div>
               {data.formats.length === 0 ? (
-                <div className={panel.sectionBody}>Keep posting — this fills in as your history grows.</div>
+                <div className={panel.sectionBody}>Keep posting - this fills in as your history grows.</div>
               ) : (
                 <div className={styles.formatList}>
                   {data.formats.map((f) => (
@@ -263,16 +263,16 @@ export function Analytics({ data }: { data: Data }) {
               ))}
             </div>
 
-            {/* Momentum — posting consistency over the last 8 weeks. */}
+            {/* Momentum - posting consistency over the last 8 weeks. */}
             <div className={panel.section}>
-              <div className={panel.sectionLabel}>Posting momentum — last 8 weeks</div>
+              <div className={panel.sectionLabel}>Posting momentum - last 8 weeks</div>
               <div className={styles.spark}>
                 {data.weekly.map((w) => (
                   <div key={w.weeksAgo} className={styles.sparkCol} title={`${w.posts} posts, ${fmt(w.impressions)} impressions`}>
                     <div className={styles.sparkBarWrap}>
                       {/* A week with no posts draws NO bar. `Math.max(4, …)` floored
                           every week to a visible 4% stub, so seven empty weeks
-                          rendered as seven small pink bars — zero looking like a
+                          rendered as seven small pink bars - zero looking like a
                           quantity, which is the one thing a bar chart must never
                           do. The floor still applies to real values, so a 1-post
                           week next to a 40-post week stays visible. */}
@@ -293,7 +293,7 @@ export function Analytics({ data }: { data: Data }) {
           </>
         )}
 
-        {/* Auto Agent scorecard — operational, from automation_runs. Shown even
+        {/* Auto Agent scorecard - operational, from automation_runs. Shown even
             without X metrics, since it's our own data, not X's. */}
         <div className={panel.section}>
           <div className={panel.sectionLabel}>Auto Agent scorecard</div>
@@ -341,7 +341,7 @@ export function Analytics({ data }: { data: Data }) {
                 *  limit); fall back to the generic line for a bare failure. */}
               {replies.reason && replies.reason !== "unavailable"
                 ? replies.reason
-                : "Couldn't pull replies right now — try again in a bit."}
+                : "Couldn't pull replies right now - try again in a bit."}
             </div>
           ) : replies.count === 0 ? (
             <div className={panel.sectionBody}>No recent replies found.</div>
@@ -397,7 +397,7 @@ function hourLabel(h: number): string {
  *
  * 1) It was a <table> of fixed 15px cells, so on a wide container the grid
  *    occupied the left third and the rest of the card was empty. It's now a CSS
- *    grid (`auto repeat(24, 1fr)`) — the cells stretch to fill whatever width
+ *    grid (`auto repeat(24, 1fr)`) - the cells stretch to fill whatever width
  *    they're given, which is what a 24×7 matrix should do.
  *
  * 2) Far more importantly, it shaded each cell by TOTAL engagement. One post
@@ -444,7 +444,7 @@ function TimingSection({
 
   return (
     <div className={panel.section}>
-      <div className={panel.sectionLabel}>When your posts land — engagement per post</div>
+      <div className={panel.sectionLabel}>When your posts land - engagement per post</div>
 
       <div className={styles.heatGrid}>
         <div />
@@ -460,7 +460,7 @@ function TimingSection({
               const cell = byKey.get(`${day}:${hour}`);
               // getAnalytics falls back to `ranked[0]` when no slot has 2+ posts,
               // so bestWindow can point at a single post. Don't decorate it as
-              // "your best time" in that case — the copy below already says there
+              // "your best time" in that case - the copy below already says there
               // isn't a pattern yet, and the outline would contradict it.
               const isBest = bestWindow?.day === day && bestWindow?.hour === hour && (cell?.posts ?? 0) >= 2;
               // Hollow = posted here, but only once. Present, not persuasive.
@@ -477,9 +477,9 @@ function TimingSection({
                   }
                   title={
                     cell
-                      ? `${label} ${hourLabel(hour)} — ${cell.posts} post${cell.posts === 1 ? "" : "s"}, ` +
+                      ? `${label} ${hourLabel(hour)} - ${cell.posts} post${cell.posts === 1 ? "" : "s"}, ` +
                         `${fmt(Math.round(perPost(cell)))} engagements per post, ${fmt(cell.impressions)} impressions`
-                      : `${label} ${hourLabel(hour)} — never posted`
+                      : `${label} ${hourLabel(hour)} - never posted`
                   }
                 />
               );
@@ -499,7 +499,7 @@ function TimingSection({
           more
         </span>
         <span className={styles.legendThin}>
-          <i /> posted once — not enough to call a pattern
+          <i /> posted once - not enough to call a pattern
         </span>
       </div>
 
@@ -527,7 +527,7 @@ function TimingSection({
         </div>
       )}
 
-      {/* Coarser cut — with a thin history the 24×7 grid is mostly empty, but
+      {/* Coarser cut - with a thin history the 24×7 grid is mostly empty, but
           four dayparts usually have enough posts in them to say something. */}
       {totalPosts > 0 && (
         <div className={styles.daypartList}>

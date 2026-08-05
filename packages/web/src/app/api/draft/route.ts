@@ -10,8 +10,8 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 /**
- * One-shot draft. Nothing in the web UI calls this any more — Compose talks to
- * `/api/chat/stream` — but it is still routable, and it ran the full drafting
+ * One-shot draft. Nothing in the web UI calls this any more - Compose talks to
+ * `/api/chat/stream` - but it is still routable, and it ran the full drafting
  * pipeline (retrieval + several model calls) for anyone signed in, paid or not.
  * Gated like every other paid web route until it's either deleted or wired back
  * up to a caller.

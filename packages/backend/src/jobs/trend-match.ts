@@ -19,7 +19,7 @@ import { sendTelegram } from "../telegram/bot.js";
 import { inQuietHours, type UserSettings } from "../lib/time.js";
 import { runAsUser } from "../byok/context.js";
 
-/** Volume-verify at most this many niche-nearest candidates per user per run —
+/** Volume-verify at most this many niche-nearest candidates per user per run -
  *  no point paying for tweet volume on a topic that's nowhere near their niche.
  *  Kept a touch above MAX_DAILY_TREND_SENDS so a run can still fill the day's
  *  band even if one or two verified candidates fail the position gate. */
@@ -40,7 +40,7 @@ const takeSchema = z.object({
   fires: z.boolean().catch(false),
   reply: z.string().catch(""),
   // The specific post driving the volume: permalink + a short paraphrase (never
-  // a long quote). The whole point of the v2 delivery — the user sees exactly
+  // a long quote). The whole point of the v2 delivery - the user sees exactly
   // what they'd be riding.
   source_url: z.string().nullish(),
   source_note: z.string().catch(""),
@@ -58,12 +58,12 @@ export interface TrendCandidate {
   platform: string;
   distance: number;
   /** Id of the user's active position nearest this trend (deterministic argmin).
-   *  Used as grounding context for the compose agent — NOT a hard collision gate. */
+   *  Used as grounding context for the compose agent - NOT a hard collision gate. */
   nearest_position_id: string | null;
 }
 
 /**
- * The macro-moment pipeline, per user. Deterministic gates in code, in order —
+ * The macro-moment pipeline, per user. Deterministic gates in code, in order -
  * only a candidate that clears all of them reaches the composition agent:
  *
  *   daily band → Stage C niche gate (pgvector vs positions, cheap, BEFORE any
@@ -76,8 +76,8 @@ export interface TrendCandidate {
  * buzz-verified survivors are ranked by buzzScore and taken top-down until the
  * day's remaining band (MAX_DAILY_TREND_SENDS − already delivered today) is
  * filled, aiming for MIN_DAILY_TREND_SENDS while qualifying candidates last.
- * The position gate now runs PER TREND — a yes/no + which-position judgment on a
- * single candidate — not as a cross-trend pick, so the model never selects
+ * The position gate now runs PER TREND - a yes/no + which-position judgment on a
+ * single candidate - not as a cross-trend pick, so the model never selects
  * which trend to cover. (This replaced the old single-send-a-day + 4-per-month
  * rarity caps; see config.MIN/MAX_DAILY_TREND_SENDS.)
  *
@@ -89,7 +89,7 @@ export interface TrendCandidate {
 export async function handleTrendMatch(): Promise<void> {
   // Telegram users get the DM delivery; web-only users (connected X, no
   // Telegram) get the same surfacings in seed mode (channel 'web', no DM) so the
-  // web Inspiration feed fills and stays fresh for them too — it used to only
+  // web Inspiration feed fills and stays fresh for them too - it used to only
   // ever populate for Telegram-linked accounts.
   const users = await query<{ id: string; settings: UserSettings; has_tg: boolean }>(
     `SELECT id, settings, telegram_id IS NOT NULL AS has_tg FROM users
@@ -137,7 +137,7 @@ async function gatherThemes(userId: string): Promise<string[]> {
  * Stage D as a PER-TREND gate: does any of this user's stated positions collide
  * with THIS one trend, hard enough to clear the high-bar macro-match compare?
  * Returns the matched position + why-now, or null. Selection across trends is
- * done in code (buzzScore rank) before this runs — the model only judges one
+ * done in code (buzzScore rank) before this runs - the model only judges one
  * candidate at a time, never picks which to cover.
  */
 async function runPositionGate(
@@ -167,7 +167,7 @@ async function runPositionGate(
 }
 
 /**
- * Record the gated trend as a moment — the anchor for the daily-band count, the
+ * Record the gated trend as a moment - the anchor for the daily-band count, the
  * per-trend dedup (the niche query excludes trends that already have a moment),
  * and timeline inspection. `position`/`whyNow` are null for a moment created
  * only to tombstone a candidate that failed the position gate.
@@ -248,10 +248,10 @@ async function nicheCandidates(
 
 /**
  * The deterministic "ranked eligible trends for a user" selector: niche gate →
- * buzz verification (BUZZ_THRESHOLD) → rank by buzzScore. PURE READ — creates no
+ * buzz verification (BUZZ_THRESHOLD) → rank by buzzScore. PURE READ - creates no
  * moment and delivers nothing, so it's safe to call from multiple consumers (the
  * proactive `⚡` nudge AND automations) without one hiding trends from the other.
- * Returns [] on the degraded (no-twitterapi) path — callers handle their own
+ * Returns [] on the degraded (no-twitterapi) path - callers handle their own
  * fallback. NO LLM.
  */
 export async function selectEligibleTrends(userId: string): Promise<RankedTrend[]> {
@@ -333,7 +333,7 @@ export async function trendMatchForUser(
     return false;
   }
 
-  // Verified path — the SAME deterministic selector the automation uses (niche →
+  // Verified path - the SAME deterministic selector the automation uses (niche →
   // buzz → rank), so there is one definition of eligibility. Compose per trend in
   // buzzScore order, bounded by BOTH the per-run cap (MIN) and the remaining daily
   // band (MAX − sent today); the smaller wins. We attach the NEAREST position as
@@ -372,7 +372,7 @@ async function rejectMoment(momentId: string, reason: string): Promise<void> {
 /**
  * The composition agent + distinct delivery. The agent researches (cached
  * tweets, memory, voice, goals, the gate data) and either writes a grounded
- * take or declines — a skipped moment costs nothing, a forced one costs trust.
+ * take or declines - a skipped moment costs nothing, a forced one costs trust.
  */
 export async function composeAndDeliverTake(
   userId: string,
@@ -387,7 +387,7 @@ export async function composeAndDeliverTake(
   opts: { skipCadence?: boolean; seed?: boolean } = {},
 ): Promise<boolean> {
   const { trend, position, verification } = input;
-  // seed mode: web-only pre-population — persist with channel 'web' and skip the
+  // seed mode: web-only pre-population - persist with channel 'web' and skip the
   // Telegram send-and-delete tail (a web user has no Telegram to deliver to).
   const seed = opts.seed === true;
 
@@ -400,7 +400,7 @@ export async function composeAndDeliverTake(
         : verification.topTweets;
       const picked = (pool.length ? pool : verification.topTweets).slice(0, 8);
       if (picked.length === 0) return "no verified tweets in the pool";
-      // Include the permalink — the agent needs it to cite the specific post
+      // Include the permalink - the agent needs it to cite the specific post
       // driving the moment (the v2 source-post requirement).
       return picked
         .map(
@@ -431,7 +431,7 @@ export async function composeAndDeliverTake(
     get_positions: async () => {
       const others = (await activePositions(userId)).slice(0, 8);
       return (
-        `matched position (cleared the gate): "${position.statement}" — ${input.whyNow}\n` +
+        `matched position (cleared the gate): "${position.statement}" - ${input.whyNow}\n` +
         `their other active positions:\n${others.map((p) => `- ${p.statement}`).join("\n")}`
       );
     },
@@ -464,7 +464,7 @@ export async function composeAndDeliverTake(
 
   // Trends get their OWN cadence, not the shared proactive weekly cap (2026-07-14).
   // The shared cap was being exhausted by own-content resurfacings, so a real
-  // trend — the thing users actually ask for — got "weekly cap reached" and never
+  // trend - the thing users actually ask for - got "weekly cap reached" and never
   // fired. Trend volume is already governed by the daily band (MAX_DAILY_TREND_
   // SENDS, checked in trendMatchForUser); here we only enforce quiet hours + a
   // min-gap between trend sends so they space out. skipCadence bypasses for
@@ -509,11 +509,11 @@ export async function composeAndDeliverTake(
   // Seed mode stops here: the row is what the web Inspiration feed reads; no DM.
   if (seed) return true;
 
-  // Distinct delivery treatment: no 🔥/💤/🗑 resurfacing card — this should read
+  // Distinct delivery treatment: no 🔥/💤/🗑 resurfacing card - this should read
   // as "this is different" before they even open it. The wrapper is Yoinky
   // talking (casual); an embedded draft is feed content and stays untouched.
   // ONE link, and it's the specific X post driving the volume (source_url from
-  // get_top_tweets) — with the trend's own X permalink as the fallback when the
+  // get_top_tweets) - with the trend's own X permalink as the fallback when the
   // agent didn't surface a specific post. We never append the raw trend seed
   // separately: with the X-only candidate filter above every link here is an X
   // link, and a second trailing URL just muddied the message.
@@ -532,7 +532,7 @@ export async function composeAndDeliverTake(
   if (!sent) {
     // A TRANSPORT failure is not a verdict on the trend. Drop the phantom
     // surfacing (so it can't eat the budget), but DELETE the moment rather than
-    // reject it — a rejected moment permanently tombstones this trend for this
+    // reject it - a rejected moment permanently tombstones this trend for this
     // user (the niche query excludes any trend with a moment), so a transient
     // Telegram blip would kill an otherwise-perfect trend forever. Deleting lets
     // a later run retry it.

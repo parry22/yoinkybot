@@ -16,7 +16,7 @@ export const maxDuration = 300;
  * The bytes go to Vercel Blob from HERE, not from the browser and not from the
  * Railway backend: this route is the only place holding BLOB_READ_WRITE_TOKEN. The
  * stored URL is public (unguessable pathname suffix), which is what lets the
- * publisher on Railway fetch it later with a plain GET and no storage credential —
+ * publisher on Railway fetch it later with a plain GET and no storage credential -
  * see backend social/media.ts.
  *
  * The upload is STAGED, not attached: the post row doesn't exist yet (the user is
@@ -32,7 +32,7 @@ export async function POST(req: Request) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   if (!(await requirePaid(user))) return NextResponse.json({ error: "upgrade_required" }, { status: 402 });
-  // Burst guard — each accepted upload is up to 100MB of Blob storage we pay for,
+  // Burst guard - each accepted upload is up to 100MB of Blob storage we pay for,
   // and a staged row survives until the sweeper collects it.
   const limited = await rateLimited(user.id, "media_upload");
   if (limited) return limited;
@@ -41,7 +41,7 @@ export async function POST(req: Request) {
   try {
     form = await req.formData();
   } catch {
-    return NextResponse.json({ error: "that upload didn't come through — try again" }, { status: 400 });
+    return NextResponse.json({ error: "that upload didn't come through - try again" }, { status: 400 });
   }
 
   const file = form.get("file");
@@ -51,7 +51,7 @@ export async function POST(req: Request) {
   if (file.size <= 0) return NextResponse.json({ error: "that file is empty" }, { status: 400 });
   if (file.size > MAX_REQUEST_BYTES) {
     return NextResponse.json(
-      { error: `that file is too big to upload through the browser — keep it under ${MAX_REQUEST_BYTES / (1024 * 1024)}MB` },
+      { error: `that file is too big to upload through the browser - keep it under ${MAX_REQUEST_BYTES / (1024 * 1024)}MB` },
       { status: 413 },
     );
   }
@@ -59,7 +59,7 @@ export async function POST(req: Request) {
   // re-checks against the same table the publisher uses, which is authoritative.
   if (!ACCEPTED_MEDIA_TYPES.includes(file.type)) {
     return NextResponse.json(
-      { error: `${file.type || "that format"} isn't supported — use JPEG, PNG, WebP, GIF or MP4` },
+      { error: `${file.type || "that format"} isn't supported - use JPEG, PNG, WebP, GIF or MP4` },
       { status: 400 },
     );
   }
@@ -76,7 +76,7 @@ export async function POST(req: Request) {
     });
   } catch (err) {
     console.error("blob upload failed", err);
-    return NextResponse.json({ error: "couldn't store that file — try again" }, { status: 502 });
+    return NextResponse.json({ error: "couldn't store that file - try again" }, { status: 502 });
   }
 
   const staged = await stageMedia(user.id, {

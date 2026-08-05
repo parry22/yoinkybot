@@ -11,7 +11,7 @@ export interface DiagnosisRevealVars {
 /**
  * Delivery layer for the Brand Diagnosis. The generation step (diagnosis.v1)
  * already did the deep, evidence-grounded analysis; this turns that structured
- * read into the paced, multi-message reveal the product promises — a strategist
+ * read into the paced, multi-message reveal the product promises - a strategist
  * walking someone through what they found, not a report dump and not a single
  * line that jumps to goals. Emits an ordered list of Telegram messages; the
  * caller sends them one at a time.
@@ -33,14 +33,14 @@ THE READER IS ON A PHONE. A paragraph that looks fine on a laptop reads as a wal
 Every message must be scannable in under ten seconds: a verdict they can see at a glance, evidence
 under it, nothing that needs re-reading.
 
-EVERY MESSAGE FOLLOWS THIS SHAPE (plain text — no markdown, no asterisks, Telegram won't render them):
+EVERY MESSAGE FOLLOWS THIS SHAPE (plain text - no markdown, no asterisks, Telegram won't render them):
 - Line 1: the section marker + a verdict, not a label. "🧠 You hold 3 positions, not 12 topics"
   beats "🧠 Intellectual fingerprint". The first line IS the insight.
 - Blank line, then 2-4 short evidence lines, each starting with "•". One claim per bullet, one
   line each: the finding, then the proof in brackets (count, date, or a short quote). Example:
   "• Distribution beats product. Said 5 times since Mar (\"the best product loses to a decent one
   with an audience\")".
-- Optionally one closing line: the implication — what this costs them or hands them. Skip it if
+- Optionally one closing line: the implication - what this costs them or hands them. Skip it if
   the bullets already land it.
 
 HARD LIMITS, no exceptions:
@@ -55,32 +55,32 @@ SECTION MARKERS (keep these exact emoji so the reveal matches the /diagnosis com
 
 DELIVER AS SEPARATE MESSAGES, IN THIS EXACT ORDER. Never dump all of it in one block.
 
-1. ONE sharp observation — no marker, no bullets, just 1-2 plain sentences. Chosen from whichever
+1. ONE sharp observation - no marker, no bullets, just 1-2 plain sentences. Chosen from whichever
    dimension is most surprising or specific. It must prove you looked closely. No preamble like
-   "I analyzed your profile" — just say the observation.
-2. 🧠 The fingerprint — the owned positions as bullets, each with its recurrence count and date.
+   "I analyzed your profile" - just say the observation.
+2. 🧠 The fingerprint - the owned positions as bullets, each with its recurrence count and date.
    If the topics-covered vs positions-held gap is large, that gap is the verdict line.
-3. 🗣 The voice — how they actually write, with the measured numbers as proof. Drift gets its own
+3. 🗣 The voice - how they actually write, with the measured numbers as proof. Drift gets its own
    bullet with the before/after. Where the voice is most alive gets a bullet.
-4. 🌍 + ⚖️ The gap and the contradictions — the ratio stated plainly as numbers in the verdict
+4. 🌍 + ⚖️ The gap and the contradictions - the ratio stated plainly as numbers in the verdict
    line, missed moments and contradiction pairs as bullets with dates. Contradictions are framed
    as unresolved territory, not mistakes. This can be two messages if both have real material.
-5. 💎 The unsaid — last, as the payoff. Each never-written idea as a bullet with its evidence
+5. 💎 The unsaid - last, as the payoff. Each never-written idea as a bullet with its evidence
    fragments and dates. This should make them feel truly seen.
 6. A short close, 1-2 sentences, no marker or bullets: PAUSE and invite reaction. Ask if anything
    landed wrong or surprised them. Do NOT jump to goals, plans, or next steps. Just hand the floor
    back.
 
-Aim for 3-4 short messages total. Brevity wins — never pad, and merge sections rather than spawn extra messages.
+Aim for 3-4 short messages total. Brevity wins - never pad, and merge sections rather than spawn extra messages.
 
 WHAT EARNS A LINE: every line must be something they could act on or disagree with. "You post
-about AI a lot" describes — cut it. "You've taken one side of the build-vs-distribution fight 5
-times but never written the piece that owns it" diagnoses — keep it. If a line just narrates
+about AI a lot" describes - cut it. "You've taken one side of the build-vs-distribution fight 5
+times but never written the piece that owns it" diagnoses - keep it. If a line just narrates
 their history back to them, it's filler.
 
 Only deliver what the analysis actually supports. If a dimension came back empty or thin (few posts,
 no real contradictions, no genuine unsaid pattern), say so honestly in one line or skip its message
-entirely — never pad with plausible-sounding filler. If the whole read is thin because there wasn't
+entirely - never pad with plausible-sounding filler. If the whole read is thin because there wasn't
 much history, lead with that plainly.
 
 State findings as fact, backed by the evidence you were given: "You've said versions of this four
@@ -93,7 +93,7 @@ ${CASUAL_VOICE}
 Respond with ONLY valid JSON: {"messages": ["message 1", "message 2", ...]}`,
   render: ({ diagnosis: d, sampleMemories, memoryCount }) => {
     const lines: string[] = [];
-    lines.push(`MEMORY COUNT: ${memoryCount}${memoryCount < 40 ? " — THIN read; hedge honestly." : ""}`);
+    lines.push(`MEMORY COUNT: ${memoryCount}${memoryCount < 40 ? " - THIN read; hedge honestly." : ""}`);
     lines.push(`HEADLINE: ${d.headline}`);
     lines.push(
       `INTELLECTUAL FINGERPRINT:\n${d.intellectual_fingerprint.read}\n` +

@@ -19,7 +19,7 @@ const SLOW_PING_ATTEMPT = 3;
 const SAMPLE_SIZE = 140;
 // The real signal floor. The connect path already guarantees ~40 posts; this
 // guards the thin manual path (a handful of typed takes) so we never hand back
-// a confident, full-shaped read built on almost nothing — the one thing this
+// a confident, full-shaped read built on almost nothing - the one thing this
 // product exists to never do. /demo seeds comfortably above it.
 const MIN_DIAGNOSIS_MEMORIES = 8;
 
@@ -52,10 +52,10 @@ async function ingestionPending(userId: string): Promise<boolean> {
 export async function handleDiagnose(job: DiagnoseJob): Promise<void> {
   const attempt = job.attempt ?? 0;
 
-  // Never diagnose on a partial read — wait for extraction to finish (bounded).
+  // Never diagnose on a partial read - wait for extraction to finish (bounded).
   if ((await ingestionPending(job.userId)) && attempt < MAX_READINESS_ATTEMPTS) {
     // One honesty check-in on a big profile so silence reads as "working", not
-    // "broken" — fires once, never repeats on subsequent re-checks.
+    // "broken" - fires once, never repeats on subsequent re-checks.
     if (attempt === SLOW_PING_ATTEMPT && !job.pingedSlow) {
       await sendTelegram(job.userId, "still reading, you've posted a lot. almost through it.").catch(() => {});
     }
@@ -88,7 +88,7 @@ export async function runDiagnosis(
 ): Promise<Diagnosis | null> {
   // A representative spread of their history: most recent + oldest, capped.
   // sincerity_register/rhetorical_mode ride along so the prompt can tag jokes/
-  // bits inline — never cited as genuine positions, but not silently dropped
+  // bits inline - never cited as genuine positions, but not silently dropped
   // either (memory/classification.ts).
   const posts = await query<{
     content: string;
@@ -182,13 +182,13 @@ export async function runDiagnosis(
     [userId],
   );
 
-  // A fresh corpus is the moment to learn their voice — don't wait for the
+  // A fresh corpus is the moment to learn their voice - don't wait for the
   // nightly sweep, or /draft and reply drafting run voiceless all day one.
   if (!profile && memoryCount >= VOICE_MIN_MEMORIES) {
     await buildVoiceProfile(userId).catch((err) => console.error("post-diagnosis voice build failed", err));
   }
 
-  // Niche is now known — seed the web Inspiration feed (Trends & Virals) in the
+  // Niche is now known - seed the web Inspiration feed (Trends & Virals) in the
   // background so a freshly-connected user lands on real, on-niche examples
   // instead of an empty screen. Best-effort; the scheduled jobs backfill anyway.
   await getBoss()
@@ -211,7 +211,7 @@ export async function runDiagnosis(
 }
 
 /**
- * Buttons per unsaid pattern: spin it into post angles, or — the deeper move —
+ * Buttons per unsaid pattern: spin it into post angles, or - the deeper move -
  * synthesize the scattered fragments into the piece that was never written.
  */
 export function unsaidPatternKeyboard(
@@ -229,7 +229,7 @@ export function unsaidPatternKeyboard(
 
 /**
  * Split the diagnosis into a few readable Telegram messages (session-style).
- * Plain text only — these are sent without parse_mode, so markdown would show
+ * Plain text only - these are sent without parse_mode, so markdown would show
  * as literal asterisks. Structure comes from the emoji headers, blank lines,
  * and bullets instead.
  */

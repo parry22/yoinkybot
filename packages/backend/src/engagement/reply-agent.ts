@@ -13,7 +13,7 @@ import { computeHeuristics } from "./heuristics.js";
 
 /**
  * The agentic drafting step for one mention that already cleared the
- * deterministic reply-worthy bar (engagement/scoring.ts — untouched, by
+ * deterministic reply-worthy bar (engagement/scoring.ts - untouched, by
  * design). The loop lets the model pull grounding before writing: memory,
  * voice, pillars, the full thread, and computed visibility facts.
  */
@@ -67,7 +67,7 @@ export async function draftReplyWithAgent(
     },
     get_voice_profile: async () => {
       const profile = await currentVoiceProfile(userId);
-      return profile?.traits ? JSON.stringify(profile.traits).slice(0, 900) : "no voice profile built yet — default to plain, blunt, no filler";
+      return profile?.traits ? JSON.stringify(profile.traits).slice(0, 900) : "no voice profile built yet - default to plain, blunt, no filler";
     },
     get_content_pillars: async () => {
       const profile = await getProfile(userId);
@@ -82,20 +82,20 @@ export async function draftReplyWithAgent(
     get_thread_context: async () => {
       const tweet = await liveTweet();
       const conversationId = tweet?.conversationId;
-      if (!conversationId) return "couldn't resolve the thread — treat the mention as standalone";
+      if (!conversationId) return "couldn't resolve the thread - treat the mention as standalone";
       try {
         const thread = await searchTweets(`conversation_id:${conversationId} lang:en`, {
           queryType: "Latest",
           maxPages: 1,
         });
-        if (thread.length === 0) return "thread lookup returned nothing — treat the mention as standalone";
+        if (thread.length === 0) return "thread lookup returned nothing - treat the mention as standalone";
         return thread
           .slice(0, 10)
           .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
           .map((t) => `@${t.authorHandle}: ${t.text.slice(0, 240)}`)
           .join("\n");
       } catch (err) {
-        return `thread lookup failed (${err instanceof Error ? err.message : "error"}) — treat the mention as standalone`;
+        return `thread lookup failed (${err instanceof Error ? err.message : "error"}) - treat the mention as standalone`;
       }
     },
     get_engagement_heuristics: async () => {
@@ -107,7 +107,7 @@ export async function draftReplyWithAgent(
         likeCount: tweet?.likeCount ?? 0,
         retweetCount: tweet?.retweetCount ?? 0,
       });
-      const caveat = tweet ? "" : " (live counts unavailable — reply/like counts read 0)";
+      const caveat = tweet ? "" : " (live counts unavailable - reply/like counts read 0)";
       return JSON.stringify(h) + caveat;
     },
   };

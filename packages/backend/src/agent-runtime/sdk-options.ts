@@ -9,7 +9,7 @@ import { config } from "../config.js";
 /**
  * The prompts in src/prompts were written for the legacy JSON envelope, where a
  * tool call is `{"tool": {...}}` inside the model's output. Under the SDK the
- * tools are real callable tools, so that instruction is not merely redundant —
+ * tools are real callable tools, so that instruction is not merely redundant -
  * it is actively harmful: a model that emits an envelope makes zero tool calls
  * and returns a placeholder answer. Rather than fork every prompt, the protocol
  * is overridden at the END of the system prompt, where recency favours it.
@@ -19,7 +19,7 @@ export const PROTOCOL_OVERRIDE = `
 --- RUNTIME OVERRIDE (native tool calling is active) ---
 Ignore the JSON "tool" envelope described above. Do NOT include a "tool" key in
 your output and do NOT write tool requests as JSON. The tools listed above are
-exposed to you as real, directly callable tools — call them normally.
+exposed to you as real, directly callable tools - call them normally.
 When you have finished gathering, your final message must be ONLY the result
 object described above, with the "tool" key omitted entirely.`;
 
@@ -29,7 +29,7 @@ object described above, with the "tool" key omitted entirely.`;
  * skills, so a loop would behave differently on a laptop than on Railway.
  */
 export const LOCKDOWN = {
-  tools: [] as string[], // remove ALL built-ins — no Bash/Read/Write in a product loop
+  tools: [] as string[], // remove ALL built-ins - no Bash/Read/Write in a product loop
   permissionMode: "dontAsk" as const,
   settingSources: [] as [],
   strictMcpConfig: true,

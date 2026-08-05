@@ -1,15 +1,15 @@
 /**
- * Growth — the gamified board that fuses the Diagnosis (who you are) and the
+ * Growth - the gamified board that fuses the Diagnosis (who you are) and the
  * Plan (what to do next) into one surface built to actually move a user to post.
  *
  * Every number here is computed from REAL stored data (no invented XP): posts you
  * actually shipped, ideas you actually developed, agent drafts, a real weekly
  * posting streak, follower snapshot. The game layer just reframes that data with
  * the behavioural levers that make people come back:
- *   • Goal-gradient — an XP bar and a Brand Score you push toward the next notch.
- *   • Loss aversion — a weekly posting streak you don't want to break.
- *   • Zeigarnik / next-best-action — a short, ordered quest list; open loops nag.
- *   • Endowed progress + milestones — visible thresholds you're partway toward.
+ *   • Goal-gradient - an XP bar and a Brand Score you push toward the next notch.
+ *   • Loss aversion - a weekly posting streak you don't want to break.
+ *   • Zeigarnik / next-best-action - a short, ordered quest list; open loops nag.
+ *   • Endowed progress + milestones - visible thresholds you're partway toward.
  */
 import { query, queryOne } from "../db/pool.js";
 import { currentDiagnosis, type Diagnosis } from "../strategist/diagnosis.js";
@@ -100,7 +100,7 @@ function clampWeeks(iso: string): number | null {
 function streakFromWeeks(active: boolean[]): { current: number; best: number; postedThisWeek: boolean } {
   const postedThisWeek = active[0] === true;
   // Grace: if you haven't posted THIS week yet but did last week, the streak is
-  // still alive (at risk) — we count from last week so the number doesn't scare-drop to 0.
+  // still alive (at risk) - we count from last week so the number doesn't scare-drop to 0.
   let i = active[0] ? 0 : 1;
   let current = 0;
   while (active[i]) {
@@ -181,7 +181,7 @@ export async function getGrowthState(userId: string): Promise<GrowthState> {
   }
   const streak = streakFromWeeks(active);
 
-  // XP — only from things that actually happened.
+  // XP - only from things that actually happened.
   const xp =
     (connected ? 50 : 0) +
     (profileComplete ? 50 : 0) +
@@ -196,7 +196,7 @@ export async function getGrowthState(userId: string): Promise<GrowthState> {
   const xpIntoLevel = xp - curr.min;
   const xpForNextLevel = next ? next.min - curr.min : null;
 
-  // Brand Score (0–100): four 25-pt pillars, all from measurable signal.
+  // Brand Score (0-100): four 25-pt pillars, all from measurable signal.
   const foundation = (connected ? 10 : 0) + (profileComplete ? 8 : 0) + (hasDiagnosis ? 7 : 0);
   const consistency = bar(streak.current, 5, 25); // a 5-week streak = full marks
   const depth = bar(ideasDeveloped, 5, 25); // developing your backlog
@@ -209,7 +209,7 @@ export async function getGrowthState(userId: string): Promise<GrowthState> {
   ];
   const brandScore = scoreParts.reduce((a, p) => a + p.value, 0);
 
-  // Quests — ordered next-best-actions. Setup first (gates the board), then the
+  // Quests - ordered next-best-actions. Setup first (gates the board), then the
   // habit loop, then concrete ideas from the plan backlog.
   const quests: GrowthQuest[] = [];
   quests.push({
@@ -224,7 +224,7 @@ export async function getGrowthState(userId: string): Promise<GrowthState> {
   quests.push({
     id: "profile",
     title: "Complete your brand profile",
-    detail: "Niche, angle, and goals — the spine every draft reasons against.",
+    detail: "Niche, angle, and goals - the spine every draft reasons against.",
     xp: 50,
     done: profileComplete,
     kind: "setup",
@@ -241,10 +241,10 @@ export async function getGrowthState(userId: string): Promise<GrowthState> {
   });
   quests.push({
     id: "post-week",
-    title: streak.postedThisWeek ? "Posted this week — streak safe" : "Post something this week",
+    title: streak.postedThisWeek ? "Posted this week - streak safe" : "Post something this week",
     detail: streak.postedThisWeek
       ? "Nice. Keep the streak alive next week too."
-      : "Don't break your streak — one post keeps the chain going.",
+      : "Don't break your streak - one post keeps the chain going.",
     xp: 30,
     done: streak.postedThisWeek,
     kind: "habit",
@@ -262,7 +262,7 @@ export async function getGrowthState(userId: string): Promise<GrowthState> {
   quests.push({
     id: "ship-yoink",
     title: "Ship a post through Yoinky",
-    detail: "Approve an agent draft or schedule from Compose — then track its lift in Analytics.",
+    detail: "Approve an agent draft or schedule from Compose - then track its lift in Analytics.",
     xp: 40,
     done: yoinkShipped > 0,
     kind: "reach",
@@ -288,7 +288,7 @@ export async function getGrowthState(userId: string): Promise<GrowthState> {
     }
   }
 
-  // Milestones — visible thresholds with the nearest target auto-selected per track.
+  // Milestones - visible thresholds with the nearest target auto-selected per track.
   const pick = (current: number, targets: number[]) =>
     targets.find((t) => current < t) ?? targets[targets.length - 1]!;
   const milestones: GrowthMilestone[] = [

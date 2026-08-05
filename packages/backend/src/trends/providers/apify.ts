@@ -6,7 +6,7 @@ import type { FetchOpts, Trend, TrendProvider } from "../provider.js";
  * X + LinkedIn trends via Apify managed actors (run-sync REST API). Apify hosts
  * and maintains the scrapers, so anti-bot upkeep and ban exposure sit with the
  * platform, not this codebase. Field mappings below are verified against live
- * runs of the specific actors named in config (2026-07-04) — if the actor
+ * runs of the specific actors named in config (2026-07-04) - if the actor
  * changes, `parseXTrendItems`/`parseLinkedInTrendItems` are the functions to fix.
  */
 export const apifyProvider: TrendProvider = {
@@ -52,14 +52,14 @@ export function parseXTrendItems(items: unknown[]): Trend[] {
       source: "apify",
     });
   }
-  // Highest-engagement first — that's the "trend" signal.
+  // Highest-engagement first - that's the "trend" signal.
   return trends.sort((a, b) => (b.volume ?? 0) - (a.volume ?? 0));
 }
 
 /**
  * Build the X search query from theme terms: multi-word themes are quoted so
  * `AI agents OR design` can't parse as word soup, single words pass through.
- * Pure — unit-tested in apify.test.ts.
+ * Pure - unit-tested in apify.test.ts.
  */
 export function buildXContentQuery(themes: string[], max = 4): string {
   return themes

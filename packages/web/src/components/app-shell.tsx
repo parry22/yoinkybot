@@ -10,7 +10,7 @@ import styles from "@/app/app/shell.module.css";
 
 /**
  * Client wrapper coordinating the mobile drawer's open/closed state between
- * the mobile header's hamburger button and the sidebar itself — the two live
+ * the mobile header's hamburger button and the sidebar itself - the two live
  * in separate components and layout.tsx is a server component, so this is the
  * one place that actually owns `navOpen`. On desktop none of this state matters
  * (the sidebar is always visible via CSS; the mobile header renders nothing).

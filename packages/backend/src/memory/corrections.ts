@@ -15,7 +15,7 @@ export type CorrectableField = (typeof CORRECTABLE_FIELDS)[number];
 
 /**
  * Compact callback_data codec (Telegram caps callback_data at 64 bytes, and a
- * button needs to carry a full capture UUID PLUS field PLUS value — encoding
+ * button needs to carry a full capture UUID PLUS field PLUS value - encoding
  * field/value as a 1-char code + an index into the field's fixed value list,
  * rather than the value's own text, keeps every button well under the limit).
  */
@@ -37,14 +37,14 @@ export const CORRECTION_FIELD_VALUES: Record<CorrectableField, readonly string[]
 
 /** Encode (field, value) as "<code><index>" for a callback_data button, or
  *  null when the value isn't in that field's known list (only possible for
- *  rhetorical_mode, which isn't zod-enum-constrained) — callers fall back to
+ *  rhetorical_mode, which isn't zod-enum-constrained) - callers fall back to
  *  applying the correction directly rather than offering an unencodable button. */
 export function encodeCorrection(field: CorrectableField, value: string): string | null {
   const idx = CORRECTION_FIELD_VALUES[field].indexOf(value);
   return idx === -1 ? null : `${CORRECTION_FIELD_CODE[field]}${idx}`;
 }
 
-/** Inverse of encodeCorrection — null when the code is stale/malformed. */
+/** Inverse of encodeCorrection - null when the code is stale/malformed. */
 export function decodeCorrection(code: string): { field: CorrectableField; value: string } | null {
   const fieldChar = code[0];
   const field = fieldChar ? CORRECTION_FIELD_BY_CODE[fieldChar] : undefined;
@@ -75,14 +75,14 @@ const ACK_LINE: Record<CorrectableField, string> = {
 
 export interface RecordCorrectionResult {
   /** Non-null the one turn the repeated-correction pattern first crosses
-   *  threshold — the caller should deliver this line once, then never again. */
+   *  threshold - the caller should deliver this line once, then never again. */
   acknowledgment: string | null;
 }
 
 /**
  * Apply a correction: update the capture's classification column, log it as a
  * permanent per-user signal, and synchronously check whether this is the 2nd+
- * correction on the same field in the last 30 days — if so (and not already
+ * correction on the same field in the last 30 days - if so (and not already
  * acknowledged), return the one-time acknowledgment line. Synchronous by
  * design, not a scheduled sweep: matches this codebase's existing detect-and-
  * notify-in-the-write-path idiom (jobs/extract.ts's belief-flip DM does the
@@ -96,7 +96,7 @@ const FIELD_LABEL: Record<CorrectableField, string> = {
 
 /**
  * Pure: turn a user's raw correction rows into a short calibration note.
- * Deterministic, not an LLM paraphrase — the fact "you corrected sincerity 3x
+ * Deterministic, not an LLM paraphrase - the fact "you corrected sincerity 3x
  * toward ironic" is more honest and cheaper to produce than a model's gloss on
  * it, and this feeds directly back into the classification prompt as a fact.
  */
@@ -113,7 +113,7 @@ export function buildCalibrationNote(corrections: Array<{ field: CorrectableFiel
     const total = [...counts.values()].reduce((a, b) => a + b, 0);
     const [topValue, topCount] = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]!;
     parts.push(
-      `${FIELD_LABEL[field]} was corrected ${total} time${total === 1 ? "" : "s"} recently, most often to "${topValue}" (${topCount}x) — weight toward that when it's genuinely ambiguous.`,
+      `${FIELD_LABEL[field]} was corrected ${total} time${total === 1 ? "" : "s"} recently, most often to "${topValue}" (${topCount}x) - weight toward that when it's genuinely ambiguous.`,
     );
   }
   return parts.join(" ");
@@ -122,7 +122,7 @@ export function buildCalibrationNote(corrections: Array<{ field: CorrectableFiel
 /**
  * Monthly recalibration: for every user with a correction in the last 30 days,
  * re-derive their calibration note from the raw log and upsert it. Correction-
- * only by design — no external research into platform-wide humor drift (that
+ * only by design - no external research into platform-wide humor drift (that
  * would need a new integration this backend doesn't have).
  */
 export async function handleMonthlyRecalibration(): Promise<void> {
@@ -152,7 +152,7 @@ export async function recordCorrection(
   correctedValue: string,
 ): Promise<RecordCorrectionResult> {
   // The column name is whitelisted before interpolation, never trusted from a
-  // caller purely by its TS type — mirrors strategist/profile.ts's
+  // caller purely by its TS type - mirrors strategist/profile.ts's
   // upsertProfileField, since one call site resolves `field` from LLM output.
   if (!CORRECTABLE_FIELDS.includes(field)) throw new Error(`unknown correctable field: ${field}`);
   const prev = await queryOne<Record<string, string | null>>(

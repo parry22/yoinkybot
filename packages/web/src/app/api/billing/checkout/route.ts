@@ -9,7 +9,7 @@ export const maxDuration = 60;
 /**
  * Start a Dodo checkout for the signed-in user and redirect to the hosted
  * checkout page. Reached from the trial pill's "Upgrade" link and Settings.
- * `plan` mirrors the landing plans — founding, scale, or (default) the paid
+ * `plan` mirrors the landing plans - founding, scale, or (default) the paid
  * Growth product.
  *
  * Anyone who ALREADY has a Dodo subscription is sent to the customer portal
@@ -31,7 +31,7 @@ export async function GET(req: Request) {
       ? "founding"
       : planParam === "scale"
         ? "scale"
-        // Lifetime is a ONE-TIME product — createCheckout omits subscription_data
+        // Lifetime is a ONE-TIME product - createCheckout omits subscription_data
         // for it, so it never carries a trial and never renews.
         : planParam === "lifetime"
           ? "lifetime"

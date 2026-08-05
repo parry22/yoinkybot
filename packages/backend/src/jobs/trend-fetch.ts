@@ -10,7 +10,7 @@ import { trendThemes } from "../prompts/trend-themes.v1.js";
 /**
  * Populates the shared `trends` table a few times a day. Trends are fetched once
  * for the whole user base (biased by the themes users actually think about) and
- * matched per-user later by trend-match — so provider spend is O(1), not O(users).
+ * matched per-user later by trend-match - so provider spend is O(1), not O(users).
  */
 export async function handleTrendFetch(): Promise<void> {
   const themes = await interestThemes();
@@ -21,7 +21,7 @@ export async function handleTrendFetch(): Promise<void> {
   // discover-x produces searchable-TERM topics + a driving source tweet + verified
   // volume. The Apify provider produces VERBATIM tweet-text topics that can never
   // clear the buzz gate (buzz ~0.15) AND are now filtered out of the candidate
-  // query (source='twitterapi' only) — so fetching them was pure wasted spend and
+  // query (source='twitterapi' only) - so fetching them was pure wasted spend and
   // table pollution. When twitterapi is configured we use ONLY discover-x; an
   // empty run just means the next tick retries (the 3-day table window covers the
   // gap). The Apify registry is the fallback ONLY on instances with no twitterapi.
@@ -87,13 +87,13 @@ const themesSchema = z.object({ themes: z.array(z.string().min(2).max(40)).catch
  * personal-life chatter ("Passport and Flight Issues", "Punjab and Drinks"),
  * so the trend search literally queried X for passport talk while a
  * Musk/Altman feud and a wave of model launches went unseen. And even
- * on-niche labels are phrases nobody tweets verbatim — an event news cycle
+ * on-niche labels are phrases nobody tweets verbatim - an event news cycle
  * uses event vocabulary, so discovery needs short broad terms, not sentences.
  *
  * A cheap system-level LLM call turns profile niches/pillars + cluster labels
  * + recent positions into 4-6 short professional search terms, explicitly
  * discarding personal-life topics. Deterministic fallback (profile bits, then
- * cluster labels, then position slices) if the call fails — degraded seeds
+ * cluster labels, then position slices) if the call fails - degraded seeds
  * beat no seeds.
  */
 export async function interestThemes(): Promise<string[]> {
@@ -116,7 +116,7 @@ export async function interestThemes(): Promise<string[]> {
 
   try {
     const res = await llmCall({
-      userId: null, // system job — exempt from per-user caps
+      userId: null, // system job - exempt from per-user caps
       eventType: "trend_themes",
       tier: trendThemes.tier,
       system: trendThemes.system,

@@ -1,5 +1,5 @@
 /**
- * "Whose work is this?" — an ambient user id for BYOK key resolution.
+ * "Whose work is this?" - an ambient user id for BYOK key resolution.
  *
  * The LLM gateway already receives `req.userId` on every call, so it resolves a
  * BYOK key directly. The SCRAPERS don't: `runApifyActor` and the twitterapi.io
@@ -8,11 +8,11 @@
  * through all of it would touch dozens of signatures for one feature.
  *
  * AsyncLocalStorage carries it instead. `runAsUser` is set once at each entry
- * point where a unit of work begins for a known user, and anything underneath —
- * however deep — can ask `currentUserId()`.
+ * point where a unit of work begins for a known user, and anything underneath -
+ * however deep - can ask `currentUserId()`.
  *
  * THE FALLBACK IS DELIBERATELY SAFE. Miss an entry point and `currentUserId()`
- * returns null, the scraper uses OUR key, and the work still succeeds — we just
+ * returns null, the scraper uses OUR key, and the work still succeeds - we just
  * don't save the money on that path. The alternative failure (throwing, or
  * silently doing nothing) would break the product for a paying user, which is
  * far worse than a missed saving. So this degrades toward "works, costs us",

@@ -52,7 +52,7 @@ export interface WeeklyPoint {
   impressions: number;
 }
 
-/** How posts shipped THROUGH Yoinky perform vs the rest — the differentiated metric. */
+/** How posts shipped THROUGH Yoinky perform vs the rest - the differentiated metric. */
 export interface YoinkImpact {
   assistedPosts: number;
   assistedImpressions: number;
@@ -95,7 +95,7 @@ const EMPTY_IMPACT: YoinkImpact = {
 };
 const EMPTY_AGENT: AgentScorecard = { drafted: 0, shipped: 0, awaiting: 0, rejected: 0, avgEdits: 0 };
 
-// Deterministic content-format lenses. A post can match several — each is a
+// Deterministic content-format lenses. A post can match several - each is a
 // separate way of slicing the same posts, computed from the text we already
 // store (no model, no extra API). This is the "beyond native analytics" cut:
 // X shows you numbers per post, not which *shape* of post earns you the most.
@@ -128,7 +128,7 @@ function formatStats(posts: AnalyticsPost[]): FormatStat[] {
   }
   // Sort by lift, nulls last. The old comparator was
   // `(b.liftPct ?? -Infinity) - (a.liftPct ?? -Infinity)`, which returns NaN for
-  // any pair where BOTH lifts are null (-Infinity - -Infinity) — and every lift
+  // any pair where BOTH lifts are null (-Infinity - -Infinity) - and every lift
   // is null whenever the overall median engagement rate is 0 or unmeasurable,
   // i.e. exactly the accounts with no impression data. A NaN comparator leaves
   // the array in an implementation-defined order, so the "best format" the page
@@ -293,8 +293,8 @@ export async function getAnalytics(userId: string): Promise<AnalyticsData> {
   const heatmap = [...heat.values()];
   // Best window = highest engagement-per-post cell with at least MIN_BEST_WINDOW_POSTS
   // posts. There is deliberately NO fallback any more: it used to fall back to
-  // `ranked[0]`, which is a single-post cell on a sparse account — "your best time
-  // to post is Tuesday 3pm" derived from one tweet — and, when every cell has zero
+  // `ranked[0]`, which is a single-post cell on a sparse account - "your best time
+  // to post is Tuesday 3pm" derived from one tweet - and, when every cell has zero
   // engagement, the comparator is 0 for every pair so `ranked[0]` is just whichever
   // cell the Map happened to yield first. The UI already refuses to decorate a
   // best window built on fewer than two posts, so claiming one here was a promise
@@ -331,7 +331,7 @@ export async function getAnalytics(userId: string): Promise<AnalyticsData> {
     impact.liftPct = ((impact.assistedMedianEngagementRate - impact.baselineMedianEngagementRate) / impact.baselineMedianEngagementRate) * 100;
   }
 
-  // 2) Auto Agent scorecard — operational counts straight from automation_runs.
+  // 2) Auto Agent scorecard - operational counts straight from automation_runs.
   const agentRow = await queryOne<{ drafted: string; shipped: string; awaiting: string; rejected: string; avg_edits: string }>(
     `SELECT
        count(*) FILTER (WHERE draft_body IS NOT NULL)::text AS drafted,

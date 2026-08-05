@@ -4,9 +4,9 @@ import { scraperKeyForUser } from "../byok/keys.js";
 
 /**
  * Run an Apify actor synchronously and return its dataset items in one request.
- * Shared by the trends provider and the strategist's profile ingestion — Apify
+ * Shared by the trends provider and the strategist's profile ingestion - Apify
  * hosts/maintains the scrapers so anti-bot upkeep and ban risk sit with them.
- * One retry on network/5xx errors — observed transient failures on cold actor
+ * One retry on network/5xx errors - observed transient failures on cold actor
  * starts in practice, and a full /connect run is expensive to just fail outright.
  */
 export async function runApifyActor(
@@ -16,7 +16,7 @@ export async function runApifyActor(
 ): Promise<unknown[]> {
   // BYOK: a lifetime user's own Apify token, when we're inside their work (see
   // byok/context.ts). Falls back to ours for every other plan and for any path
-  // that hasn't set the ambient user — that fallback is intentional, so a missed
+  // that hasn't set the ambient user - that fallback is intentional, so a missed
   // entry point costs us money rather than breaking the user's run.
   const byok = await scraperKeyForUser(currentUserId());
   const token = byok?.provider === "apify" ? byok.key : config.APIFY_TOKEN;

@@ -6,8 +6,8 @@ import { tool, type SdkMcpToolDefinition } from "@anthropic-ai/claude-agent-sdk"
  * (docs/INTERNAL §3n).
  *
  * WHY THIS IS GENERIC: all five bounded loops already declare their tools the
- * same way — `z.discriminatedUnion("name", [ z.object({ name: z.literal("x"),
- * ...args }), ... ])` — paired with an `executors` map keyed by that same name.
+ * same way - `z.discriminatedUnion("name", [ z.object({ name: z.literal("x"),
+ * ...args }), ... ])` - paired with an `executors` map keyed by that same name.
  * That is enough structure to derive SDK `tool()` definitions mechanically, so
  * migrating a feature needs NO hand-written tool declarations and no second
  * source of truth to drift. Add a tool to the union + the executors map, as
@@ -15,7 +15,7 @@ import { tool, type SdkMcpToolDefinition } from "@anthropic-ai/claude-agent-sdk"
  *
  * The SDK's `tool()` takes a ZodRawShape (a plain `{ key: zodType }` object), so
  * we strip the `name` discriminator off each union member's shape and hand over
- * the rest verbatim — the arg types the model sees are exactly the ones the
+ * the rest verbatim - the arg types the model sees are exactly the ones the
  * legacy parser validated.
  */
 
@@ -47,7 +47,7 @@ export function qualify(toolName: string): string {
  * Decompose a tool schema into SDK tools bound to their executors.
  *
  * Accepts a discriminated union (every current feature) or a bare object schema
- * (a single-tool loop). Members without a matching executor are skipped — the
+ * (a single-tool loop). Members without a matching executor are skipped - the
  * legacy runner also rejects those, so exposing them would invite a call that
  * can only fail.
  */
@@ -82,7 +82,7 @@ export function toolsFromSchema(
     // The SDK's tool() types want ZodRawShape | zod/v4; v3 raw shapes satisfy the
     // ZodRawShape branch, so the peer-dep warning about zod@4 is cosmetic (§3n).
     // The result is widened to SdkMcpToolDefinition<any> because these shapes are
-    // only known at runtime — createSdkMcpServer accepts exactly that.
+    // only known at runtime - createSdkMcpServer accepts exactly that.
     const derivedTool = tool(toolName, description, argsShape, async (args) => {
       const callArgs = (args ?? {}) as Record<string, unknown>;
       let text: string;

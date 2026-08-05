@@ -25,7 +25,7 @@ export async function recordMessage(userId: string, chatId: number, messageId: n
  * Global outgoing-API transformer: every Bot API call that returns a `Message`
  * (sendMessage, sendVoice, editMessageText that returns a Message, …) gets its
  * chat_id + message_id recorded. Filtering on "does the response carry a
- * message_id" — rather than a hardcoded method list — means any future
+ * message_id" - rather than a hardcoded method list - means any future
  * send-shaped call is covered automatically, and non-message calls
  * (answerCallbackQuery, setMyCommands, getFile, …) are naturally skipped.
  * Registered once on `bot.api.config`; grammY re-applies it to every per-update
@@ -48,7 +48,7 @@ export const trackOutgoingMessages: Transformer = async (prev, method, payload, 
   return result;
 };
 
-/** Split an array into chunks of at most `size` — deleteMessages caps at 100 ids/call. */
+/** Split an array into chunks of at most `size` - deleteMessages caps at 100 ids/call. */
 export function chunk<T>(items: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
@@ -61,7 +61,7 @@ const DELETE_BATCH_SIZE = 100;
  * Best-effort delete of every tracked message in this user's chat(s). Chunks
  * into batches of 100 (the API limit); if a batch call itself fails (e.g. one
  * stale id in it), falls back to deleting that batch's messages one at a time
- * so a single bad id can't sink the rest. Never throws — the wipe must still
+ * so a single bad id can't sink the rest. Never throws - the wipe must still
  * hit the DB even if Telegram deletion is partial (message too old, chat gone).
  */
 export async function deleteAllTrackedMessages(api: Api, userId: string): Promise<{ attempted: number; deleted: number }> {
@@ -88,7 +88,7 @@ export async function deleteAllTrackedMessages(api: Api, userId: string): Promis
             await api.deleteMessage(chatId, id);
             deleted++;
           } catch {
-            // message already gone / too old to delete — best effort, move on
+            // message already gone / too old to delete - best effort, move on
           }
         }
       }
@@ -101,7 +101,7 @@ export async function clearMessageLog(userId: string): Promise<void> {
   await query(`DELETE FROM telegram_messages WHERE user_id = $1`, [userId]);
 }
 
-/** Read-only lookup used by tests only — not exercised in the hot path. */
+/** Read-only lookup used by tests only - not exercised in the hot path. */
 export async function trackedMessageCount(userId: string): Promise<number> {
   const row = await queryOne<{ n: string }>(`SELECT count(*)::text n FROM telegram_messages WHERE user_id = $1`, [userId]);
   return Number(row?.n ?? 0);

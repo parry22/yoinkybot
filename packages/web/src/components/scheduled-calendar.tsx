@@ -31,7 +31,7 @@ interface Post {
   platform: Platform;
   content: string;
   scheduledFor: string; // ISO
-  /** Absent on posts this component just created optimistically — treated as pending. */
+  /** Absent on posts this component just created optimistically - treated as pending. */
   status?: PostStatus;
   /** Why it didn't go out, verbatim from the publisher. */
   error?: string | null;
@@ -55,7 +55,7 @@ const LINK_RE = /(https?:\/\/|www\.)\S+|\b[a-z0-9-]+\.(?:com|io|co|net|org|xyz|a
 
 const ACCEPT = "image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime";
 const MAX_ATTACHMENTS = 4;
-/** Same ceiling the server enforces on scheduled_for — see MAX_SCHEDULE_AHEAD_MS. */
+/** Same ceiling the server enforces on scheduled_for - see MAX_SCHEDULE_AHEAD_MS. */
 const MAX_AHEAD_MS = 365 * 24 * 60 * 60 * 1000;
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -78,7 +78,7 @@ export function ScheduledCalendar({
   media,
 }: {
   posts: Post[];
-  /** This month's scheduling usage — cap null = unlimited (Scale). */
+  /** This month's scheduling usage - cap null = unlimited (Scale). */
   usage: { used: number; cap: number | null; reauthRequiredPlatforms?: Platform[] };
   /** Whether media will actually publish, and the reason when it won't. */
   media: Record<Platform, MediaReadiness>;
@@ -254,7 +254,7 @@ export function ScheduledCalendar({
                       }`}
                       // The failure reason is the only place the user can read
                       // WHY, so it rides the chip's tooltip too.
-                      title={st === "failed" ? `Didn't go out — ${p.error ?? "no reason recorded"}` : p.content}
+                      title={st === "failed" ? `Didn't go out - ${p.error ?? "no reason recorded"}` : p.content}
                       onClick={(e) => e.stopPropagation()}
                     >
                       <span className={styles.chipTime}>
@@ -310,7 +310,7 @@ export function ScheduledCalendar({
 
 /**
  * 09:00 is the right default for a future day, but the composer also opens on
- * TODAY (a retry re-queues right now), and 09:00 today is usually in the past —
+ * TODAY (a retry re-queues right now), and 09:00 today is usually in the past -
  * which would greet a retry with "pick a time in the future". Fifteen minutes
  * out gives the user room to edit before it fires.
  */
@@ -333,7 +333,7 @@ function AddPostModal({
   onScheduled,
 }: {
   day: Date;
-  /** Starting text — set when re-queueing a post that failed. */
+  /** Starting text - set when re-queueing a post that failed. */
   prefill?: string;
   mediaReady: Record<Platform, MediaReadiness>;
   onClose: () => void;
@@ -353,7 +353,7 @@ function AddPostModal({
   // Live link check, so the refusal arrives while typing rather than on submit.
   const linkFound = LINK_RE.test(content);
   const hasVideo = attachments.some((a) => a.kind !== "image");
-  // X's rule: one video/GIF, or up to four images — never mixed.
+  // X's rule: one video/GIF, or up to four images - never mixed.
   const canAttachMore = hasVideo ? false : attachments.length < MAX_ATTACHMENTS;
 
   async function addFiles(files: FileList | null) {
@@ -416,7 +416,7 @@ function AddPostModal({
     // MAX_SCHEDULE_AHEAD_MS). The calendar lets you page to any year, so a
     // mis-navigation is easy; catching it here explains it in place.
     if (when.getTime() > Date.now() + MAX_AHEAD_MS) {
-      setErr("that's more than a year out — pick a time within the next 12 months");
+      setErr("that's more than a year out - pick a time within the next 12 months");
       return;
     }
     setSaving(true);
@@ -434,11 +434,11 @@ function AddPostModal({
       });
       const data = await res.json();
       if (res.status === 402) {
-        setErr("Scheduling is a paid feature — upgrade to continue.");
+        setErr("Scheduling is a paid feature - upgrade to continue.");
         return;
       }
       if (res.status === 429) {
-        setErr(data.reason ?? "You've hit this month's scheduling limit — upgrade to Scale for unlimited.");
+        setErr(data.reason ?? "You've hit this month's scheduling limit - upgrade to Scale for unlimited.");
         return;
       }
       if (!res.ok) {
@@ -479,7 +479,7 @@ function AddPostModal({
         {/* The link rule, stated before it's broken and again the moment it is. */}
         <div className={linkFound ? styles.linkWarn : styles.linkHint}>
           {linkFound
-            ? `That's an external link — this ${platform === "x" ? "X" : "LinkedIn"} post won't schedule with it. Add it separately after publishing.`
+            ? `That's an external link - this ${platform === "x" ? "X" : "LinkedIn"} post won't schedule with it. Add it separately after publishing.`
             : `Native ${platform === "x" ? "X" : "LinkedIn"} posts only. Add external links separately after publishing.`}
         </div>
 

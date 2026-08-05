@@ -10,7 +10,7 @@ export type AgentEvent =
 
 export interface Activity {
   label: string;
-  /** False once a later stage has started — renders as a completed tick. */
+  /** False once a later stage has started - renders as a completed tick. */
   active: boolean;
 }
 
@@ -21,7 +21,7 @@ export interface Activity {
  * on the SSE record separator. Events are discrete JSON objects (not token
  * deltas), so a partial-line buffer is all the framing we need.
  *
- * The activity list is append-only and keeps completed steps visible — seeing
+ * The activity list is append-only and keeps completed steps visible - seeing
  * "Retrieving relevant memories ✓ → Reading what's actually worked for you" is
  * the point; a single replaced line would just be a fancier spinner.
  */
@@ -97,7 +97,7 @@ export function useAgentStream() {
           }
         }
       } catch (err) {
-        if ((err as Error)?.name !== "AbortError") handlers.onError?.("Network dropped — try again.");
+        if ((err as Error)?.name !== "AbortError") handlers.onError?.("Network dropped - try again.");
       } finally {
         setBusy(false);
         abortRef.current = null;

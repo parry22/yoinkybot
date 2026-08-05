@@ -52,7 +52,7 @@ export async function generatePlanDraft(userId: string): Promise<string> {
   const goals = await activeGoals(userId);
   if (!diag) {
     await setStage(userId, "diagnosed");
-    return "I need to finish your diagnosis before I can build the plan — give me a moment and try again.";
+    return "I need to finish your diagnosis before I can build the plan - give me a moment and try again.";
   }
 
   const d = diag.dimensions;
@@ -280,10 +280,10 @@ export function formatPlan(p: PlanView): string {
   const unlock = p.unlock.map((u, i) => `${i + 1}. ${u.idea}\n   → ${u.rationale}`).join("\n");
   return (
     `Here's your plan:\n\n` +
-    `🎯 *Throughline* — what you should become known for:\n${p.throughline}\n\n` +
-    `🔓 *Unlock list* — in order of impact:\n${unlock}\n\n` +
-    `🌍 *Outside-in* — what I'll watch for and bring you:\n${p.outside_in}\n\n` +
+    `🎯 *Throughline* - what you should become known for:\n${p.throughline}\n\n` +
+    `🔓 *Unlock list* - in order of impact:\n${unlock}\n\n` +
+    `🌍 *Outside-in* - what I'll watch for and bring you:\n${p.outside_in}\n\n` +
     `🗓 *Cadence*: ${p.cadence.perWeek ?? "?"}/week\n\n` +
-    `Commit to this and I'll start working it — prioritizing these unlocks, checking your drafts against the throughline, and surfacing the right moments.`
+    `Commit to this and I'll start working it - prioritizing these unlocks, checking your drafts against the throughline, and surfacing the right moments.`
   );
 }

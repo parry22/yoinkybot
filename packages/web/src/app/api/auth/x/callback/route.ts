@@ -10,7 +10,7 @@ export const maxDuration = 60;
 const X_OAUTH_COOKIE = "x_oauth";
 
 /**
- * X OAuth callback — connect only. Identity is Clerk's now, so this requires an
+ * X OAuth callback - connect only. Identity is Clerk's now, so this requires an
  * existing Clerk session and attaches the X posting token to that account
  * (finalizeXConnect also kicks the history read). An unauthenticated hit is
  * bounced to sign-in.
@@ -28,7 +28,7 @@ export async function GET(req: Request) {
    * `kind` separates "try again" from "an operator has to fix something".
    *
    * Everything used to funnel into connect_error=1, whose copy says "please try
-   * again" — advice that is actively wrong for a 401. X returns 401
+   * again" - advice that is actively wrong for a 401. X returns 401
    * unauthorized_client when the client credentials it was handed are not the
    * ones it issued, and no amount of retrying changes that. Telling the user to
    * retry in that case wastes their time and hides a config bug from us.
@@ -77,7 +77,7 @@ export async function GET(req: Request) {
       const body = await tokRes.text().catch(() => "");
       // 401 = X does not recognise the client credentials we sent. Since X only
       // issues a code for a client_id it knows, a 401 here means the SECRET is
-      // stale or mismatched — an operator fix, never a user retry.
+      // stale or mismatched - an operator fix, never a user retry.
       // 400 = a genuinely spent/expired code, which retrying does resolve.
       return fail(
         `token exchange ${tokRes.status}: ${body.slice(0, 300)}`,

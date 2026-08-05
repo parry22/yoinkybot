@@ -13,7 +13,7 @@ export type RunStatus =
   | "edited"
   | "failed"
   | "skipped"
-  /** An approval nobody answered, aged out by the reaper — see store.expireStaleApprovals. */
+  /** An approval nobody answered, aged out by the reaper - see store.expireStaleApprovals. */
   | "expired";
 
 export interface Automation {

@@ -59,7 +59,7 @@ export function getBot(): Bot | undefined {
   return bot;
 }
 
-/** Channel over a live grammY context — replies land in the chat that spoke. */
+/** Channel over a live grammY context - replies land in the chat that spoke. */
 function ctxChannel(ctx: Context): Channel {
   return {
     say: async (text, keyboard) => {
@@ -110,7 +110,7 @@ export async function withTyping<T>(channel: Channel, fn: () => Promise<T>): Pro
 
 export function createBot(): Bot | undefined {
   if (!config.TELEGRAM_BOT_TOKEN) {
-    console.warn("TELEGRAM_BOT_TOKEN not set — Telegram capture disabled");
+    console.warn("TELEGRAM_BOT_TOKEN not set - Telegram capture disabled");
     return undefined;
   }
   bot = new Bot(config.TELEGRAM_BOT_TOKEN);
@@ -118,21 +118,21 @@ export function createBot(): Bot | undefined {
   // Track every outgoing message's (chat_id, message_id) so wiping everything can
   // delete the visible chat, not just derived data. Registered on bot.api.config, so
   // grammY re-applies it to every per-update ctx.api AND direct bot.api calls
-  // from job/worker code (sendTelegram, sendTelegramSequence) — see message-log.ts.
+  // from job/worker code (sendTelegram, sendTelegramSequence) - see message-log.ts.
   bot.api.config.use(trackOutgoingMessages);
 
   // Track every genuine incoming message the same way (never for callback_query
-  // or edited-message updates — only real new messages count as "chat history").
+  // or edited-message updates - only real new messages count as "chat history").
   bot.use(async (ctx, next) => {
     const msg = ctx.update.message;
     // Read-only: the bot is auth-gated now, so an unlinked Telegram id has no
     // user row and we log/track nothing for it (the handlers turn it away). We
-    // never create a row here — that used to be silent account creation.
+    // never create a row here - that used to be silent account creation.
     if (msg && ctx.chat?.type === "private") {
       const user = await findUserByTelegramId(msg.from.id);
       if (user) {
         await recordMessage(user.id, msg.chat.id, msg.message_id);
-        // Core engagement signal. Kind only — never the message content.
+        // Core engagement signal. Kind only - never the message content.
         const kind = "voice" in msg ? "voice" : "command" in msg || msg.text?.startsWith("/") ? "command" : "text";
         track(user.id, "message_received", { kind });
       }
@@ -142,7 +142,7 @@ export function createBot(): Bot | undefined {
 
   bot.command("start", async (ctx) => {
     // A deep-link token means the user tapped "Connect Telegram" in the web app
-    // — link this chat to their web account, then welcome them.
+    // - link this chat to their web account, then welcome them.
     const payload = ctx.match?.trim();
     if (payload) {
       const linked = await consumeTelegramLinkToken(payload, ctx.from!.id);
@@ -152,7 +152,7 @@ export function createBot(): Bot | undefined {
       }
       // Token bad/expired → fall through to the not-linked prompt below.
     }
-    // Auth gate: the bot is now web-account-gated. No onboarding here — that all
+    // Auth gate: the bot is now web-account-gated. No onboarding here - that all
     // happens on the web. An unlinked visitor is told to sign in there first.
     const user = await findUserByTelegramId(ctx.from!.id);
     if (!user) {
@@ -174,10 +174,10 @@ export function createBot(): Bot | undefined {
       await setState(user.id, { ...st, awaitingConnect: true });
       // OAuth-first when the platform apps are configured: real account auth
       // (verified identity + posting unlocked) beats a typed handle. Uses
-      // offerReconnect, NOT maybeSendConnectAuthOffer — an explicit /connect tap
+      // offerReconnect, NOT maybeSendConnectAuthOffer - an explicit /connect tap
       // must always show the button, even for a user whose read is already
       // done (status='ingested') but whose posting token has gone stale (e.g.
-      // after rotating the platform app's credentials) — isConnected() would
+      // after rotating the platform app's credentials) - isConnected() would
       // otherwise wrongly call that "already connected" and never re-offer.
       const offered = await offerReconnect(user.id).catch(() => false);
       if (!offered) {
@@ -203,14 +203,14 @@ export function createBot(): Bot | undefined {
     await ctx.reply(
       `${CAPABILITIES}\n\n` +
         "the work (all of this works in plain words too):\n" +
-        "/draft your idea  — i turn a thought into a post in your voice\n" +
-        "/repurpose  — reshape a finished post for another platform, or pull scattered takes into one piece\n" +
-        "/scheduled  — see and cancel what's queued to publish\n" +
-        "/peers  — watch a few peers, compare territory (never raw numbers)\n\n" +
+        "/draft your idea  - i turn a thought into a post in your voice\n" +
+        "/repurpose  - reshape a finished post for another platform, or pull scattered takes into one piece\n" +
+        "/scheduled  - see and cancel what's queued to publish\n" +
+        "/peers  - watch a few peers, compare territory (never raw numbers)\n\n" +
         "housekeeping:\n" +
-        "/settings  — quiet hours, timezone, how often i reach out\n" +
-        "/upgrade  — unlock the paid work\n\n" +
-        "the deeper setup — connecting X, your diagnosis, your plan, analytics — lives in the web app.\n\n" +
+        "/settings  - quiet hours, timezone, how often i reach out\n" +
+        "/upgrade  - unlock the paid work\n\n" +
+        "the deeper setup - connecting X, your diagnosis, your plan, analytics - lives in the web app.\n\n" +
         "or just say what you want: \"draft me a post about X\", \"post this friday at 6pm\", " +
         "\"does this contradict what i've said\", \"what have i said about pricing\". bring me a thought and i'll find the story in it.",
     );
@@ -235,8 +235,8 @@ export function createBot(): Bot | undefined {
   // read connect flow (/connect) only scrapes public history; this is the
   // separate write-scope OAuth. Links point at our own /oauth/:p/start, which
   // mints fresh PKCE state at click time. The ?u=<id> is an internal UUID (not
-  // guessable/enumerable); a signed token would be strictly better — see oauth.ts.
-  // Quiet hours, timezone, proactive frequency — how I behave around your life.
+  // guessable/enumerable); a signed token would be strictly better - see oauth.ts.
+  // Quiet hours, timezone, proactive frequency - how I behave around your life.
   bot.command("settings", async (ctx) => {
     const user = await requireUser(ctx);
     if (!user) return;
@@ -253,7 +253,7 @@ export function createBot(): Bot | undefined {
     if (wall) return void (await ctx.reply(wall.text, { reply_markup: wall.keyboard }));
     const cmd = parsePeersCommand(ctx.match ?? "");
     if (!cmd) {
-      await ctx.reply("usage:\n/peers  — see the watchlist\n/peers add @handle why them\n/peers remove @handle");
+      await ctx.reply("usage:\n/peers  - see the watchlist\n/peers add @handle why them\n/peers remove @handle");
       return;
     }
     if (cmd.kind === "list") return void (await ctx.reply(await listPeers(user.id)));
@@ -294,7 +294,7 @@ export function createBot(): Bot | undefined {
 
   // See what's queued to publish, and cancel any of it. Scheduling itself is
   // done in plain language ("post this to linkedin tomorrow 9am"), per the
-  // lean-commands convention — this command is the "show me the queue" surface.
+  // lean-commands convention - this command is the "show me the queue" surface.
   bot.command("scheduled", async (ctx) => {
     const user = await requireUser(ctx);
     if (!user) return;
@@ -311,7 +311,7 @@ export function createBot(): Bot | undefined {
 
   // Voice notes / audio → capture with the Telegram file URL; transcription is async.
   bot.on(["message:voice", "message:audio", "message:video_note"], async (ctx) => {
-    // Private DMs only, same as the text handler — a voice note in a group would
+    // Private DMs only, same as the text handler - a voice note in a group would
     // otherwise get captured + transcribed against a shared chat. 1:1 by design.
     if (ctx.chat?.type !== "private") return;
     const user = await requireUser(ctx);
@@ -332,37 +332,37 @@ export function createBot(): Bot | undefined {
       metadata: { telegram_file_id: fileId, duration: ctx.message?.voice?.duration ?? null },
     });
     // The real reply lands after transcription (jobs/transcribe.ts runs the
-    // transcript through the conversation brain) — this is just the "I heard you".
+    // transcript through the conversation brain) - this is just the "I heard you".
     await ctx.reply("🎙 got it, listening now, back in a moment.");
   });
 
   bot.on("message:text", async (ctx) => {
     // Private DMs only. If the bot is added to a group, every message would
-    // otherwise spin up the full onboarding/chat brain against a shared chat id —
+    // otherwise spin up the full onboarding/chat brain against a shared chat id -
     // wasted spend and cross-talk. The product is 1:1 by design.
     if (ctx.chat?.type !== "private") return;
     const user = await requireUser(ctx);
     if (!user) return;
     const text = ctx.message.text.trim();
     if (!text) return;
-    // A slash message reaching here is a command we don't have — every real
+    // A slash message reaching here is a command we don't have - every real
     // command was consumed by its bot.command() handler above. Answer it
     // instead of going silent.
     if (text.startsWith("/")) {
       await ctx.reply("don't know that one. /help lists everything, or just say what you want in plain words.");
       return;
     }
-    // Immediate "I'm on it" the instant we process the update — matters most on a
+    // Immediate "I'm on it" the instant we process the update - matters most on a
     // cold start, so a slow first turn reads as thinking, not offline. withTyping
     // then keeps it alive for the rest of the turn.
     void ctx.replyWithChatAction("typing").catch(() => {});
     // Serialize per user: one turn at a time, and messages typed while a turn
     // is running merge into the next turn (people send one thought as several
-    // fragments — answer the whole thought once, like a person would).
+    // fragments - answer the whole thought once, like a person would).
     await runSerializedTurn(user.id, text, ctx, (merged, c) => handleTextTurn(user, merged, c));
   });
 
-  // Media we can't see yet. A caption is still the user talking to us — route
+  // Media we can't see yet. A caption is still the user talking to us - route
   // it through the normal turn (with an honest note about the attachment).
   // Captionless media gets a straight answer instead of dead silence.
   bot.on(["message:photo", "message:video", "message:document", "message:animation"], async (ctx) => {
@@ -462,7 +462,7 @@ export function createBot(): Bot | undefined {
       try {
         await ctx.editMessageReplyMarkup();
       } catch {
-        // question message too old to edit — the skip still runs below
+        // question message too old to edit - the skip still runs below
       }
       await runSerializedTurn(user.id, "skip this question", ctx, async (_merged, c) => {
         await handleTextTurn(user, "skip this question", c);
@@ -477,12 +477,12 @@ export function createBot(): Bot | undefined {
       try {
         await ctx.editMessageReplyMarkup();
       } catch {
-        // too old to edit — the skip still runs below
+        // too old to edit - the skip still runs below
       }
       await runSerializedTurn(user.id, "skip onboarding", ctx, async (_merged, c) => {
         await skipAllIntake(user.id);
         await c.reply(
-          "no problem — we'll skip the rest of the questions. let's connect your account so i can read your actual work and diagnose from there.",
+          "no problem - we'll skip the rest of the questions. let's connect your account so i can read your actual work and diagnose from there.",
         );
         await maybeSendConnectAuthOffer(user.id, { force: true }).catch((err) =>
           console.error("connect auth offer after skip failed", err),
@@ -493,18 +493,18 @@ export function createBot(): Bot | undefined {
 
     if (data.startsWith("clr:")) {
       if (data === "clr:confirm") {
-        // Ack immediately — deleting a long chat history can take a few
+        // Ack immediately - deleting a long chat history can take a few
         // seconds and answerCallbackQuery has its own short timeout.
         await ctx.answerCallbackQuery({ text: "wiping everything…" });
         // Delete the visible chat FIRST, while telegram_messages still has the
-        // ids — resetUserData wipes that table along with everything else.
+        // ids - resetUserData wipes that table along with everything else.
         await deleteAllTrackedMessages(ctx.api, user.id).catch((err) =>
           console.error("clear: message deletion sweep failed", err),
         );
         await resetUserData(user.id);
-        // Onboarding lives on the web now — no profile intake to restart here.
+        // Onboarding lives on the web now - no profile intake to restart here.
         await ctx.reply(
-          "done. clean slate — everything's wiped.\n\n" +
+          "done. clean slate - everything's wiped.\n\n" +
             `to set up fresh, head to ${config.WEB_APP_URL}. here, just drop me a thought whenever.`,
         );
         return;
@@ -531,7 +531,7 @@ export function createBot(): Bot | undefined {
       try {
         await ctx.editMessageReplyMarkup({ reply_markup: new InlineKeyboard().text(ack, "noop") });
       } catch {
-        // message may be too old to edit — the reaction is already recorded
+        // message may be too old to edit - the reaction is already recorded
       }
       return;
     }
@@ -551,7 +551,7 @@ export function createBot(): Bot | undefined {
           reply_markup: new InlineKeyboard().text(reaction === "useful" ? "👍 useful" : "👎 noted", "noop"),
         });
       } catch {
-        // message too old to edit — reaction already recorded
+        // message too old to edit - reaction already recorded
       }
       return;
     }
@@ -566,7 +566,7 @@ export function createBot(): Bot | undefined {
       // Drafting runs an LLM call (15-30s); keep the typing indicator alive the
       // whole time, not the ~5s a one-shot chat action lasts.
       await withTyping(ctxChannel(ctx), async () => {
-        // Resolve the angle by (surfacing, slot) — the button only carries the slot.
+        // Resolve the angle by (surfacing, slot) - the button only carries the slot.
         const angle = await queryOne<{ id: string }>(
           `SELECT id FROM angles WHERE surfacing_id = $1 AND user_id = $2 AND slot = $3`,
           [surfacingId, user.id, Number(slot)],
@@ -580,7 +580,7 @@ export function createBot(): Bot | undefined {
           await ctx.reply(result.note || "couldn't write that one.");
           return;
         }
-        // The draft is content for their feed — only the label and media nudge are casual.
+        // The draft is content for their feed - only the label and media nudge are casual.
         const media = result.mediaSuggestion ? `\n\n📎 pair it with: ${result.mediaSuggestion}` : "";
         await ctx.reply(`✍️ here you go:\n\n${result.draft}${media}`, {
           reply_markup: new InlineKeyboard().text("🔥 love it", `angfb:${surfacingId}:fire`).text("💤 meh", `angfb:${surfacingId}:later`),
@@ -603,7 +603,7 @@ export function createBot(): Bot | undefined {
       try {
         await ctx.editMessageReplyMarkup({ reply_markup: new InlineKeyboard().text("✨ angles below", "noop") });
       } catch {
-        // message too old to edit — fine
+        // message too old to edit - fine
       }
       return;
     }
@@ -623,13 +623,13 @@ export function createBot(): Bot | undefined {
       try {
         await ctx.editMessageReplyMarkup({ reply_markup: new InlineKeyboard().text("✏️ corrected", "noop") });
       } catch {
-        // message too old to edit — the correction is already recorded
+        // message too old to edit - the correction is already recorded
       }
       if (result.acknowledgment) await ctx.reply(result.acknowledgment);
       return;
     }
 
-    // Quick "that was a joke" tap straight from a resurfaced memory — the
+    // Quick "that was a joke" tap straight from a resurfaced memory - the
     // exact post is unambiguous (it's the one just shown), no search needed.
     const corrj = /^corrj:([0-9a-f-]{36})$/.exec(data);
     if (corrj) {
@@ -651,7 +651,7 @@ export function createBot(): Bot | undefined {
       try {
         await ctx.editMessageReplyMarkup({ reply_markup: new InlineKeyboard().text("🃏 marked as a joke", "noop") });
       } catch {
-        // message too old to edit — the correction is already recorded
+        // message too old to edit - the correction is already recorded
       }
       if (result.acknowledgment) await ctx.reply(result.acknowledgment);
       return;
@@ -709,7 +709,7 @@ export function createBot(): Bot | undefined {
       return;
     }
 
-    // Synthesis from a diagnosis unsaid pattern — the loop from "you clearly
+    // Synthesis from a diagnosis unsaid pattern - the loop from "you clearly
     // think this but never wrote it" straight to a written piece.
     const dxsyn = /^dxsyn:([0-9a-f-]{36}):(\d)$/.exec(data);
     if (dxsyn) {
@@ -746,7 +746,7 @@ export function createBot(): Bot | undefined {
           reply_markup: new InlineKeyboard().text(action === "used" ? "✅ posted" : "⏭ passed", "noop"),
         });
       } catch {
-        // message too old to edit — outcome already recorded
+        // message too old to edit - outcome already recorded
       }
       await ctx.reply(ack);
       return;
@@ -763,7 +763,7 @@ export function createBot(): Bot | undefined {
       try {
         await ctx.editMessageReplyMarkup({ reply_markup: new InlineKeyboard().text(chip, "noop") });
       } catch {
-        // message too old to edit — the outcome is already recorded
+        // message too old to edit - the outcome is already recorded
       }
       await ctx.reply(ack);
       return;
@@ -814,7 +814,7 @@ export function createBot(): Bot | undefined {
         // Growth when the requested product is unconfigured or the founding
         // cohort is full, and the Dodo page is the honest source of what's being
         // charged. Saying "(founding)" over a Growth checkout would be a lie.
-        await ctx.reply(`here's your secure checkout — the price is on the page:\n${url}`);
+        await ctx.reply(`here's your secure checkout - the price is on the page:\n${url}`);
       } catch (err) {
         await ctx.reply(err instanceof Error ? `couldn't start checkout: ${err.message}` : "checkout's unavailable right now.");
       }
@@ -822,7 +822,7 @@ export function createBot(): Bot | undefined {
     }
 
     // Stage 4 tone multi-select. Toggles write straight to brand_profiles (its own
-    // row — no strategist_state race). "Done" marks the field captured and hands
+    // row - no strategist_state race). "Done" marks the field captured and hands
     // back to the intake for the next question, all inside the per-user turn lock.
     if (data.startsWith("tone:")) {
       const key = data.slice(5);
@@ -831,7 +831,7 @@ export function createBot(): Bot | undefined {
         try {
           await ctx.editMessageReplyMarkup();
         } catch {
-          // menu message too old to edit — the selections are already saved
+          // menu message too old to edit - the selections are already saved
         }
         await runSerializedTurn(user.id, "those are the modes that fit me", ctx, async (_merged, c) => {
           const st = await getState(user.id);
@@ -852,7 +852,7 @@ export function createBot(): Bot | undefined {
         try {
           await ctx.editMessageReplyMarkup({ reply_markup: toneKeyboard([...cur]) });
         } catch {
-          // rapid taps can collide on the edit — the selection is saved regardless
+          // rapid taps can collide on the edit - the selection is saved regardless
         }
       }
       return void (await ctx.answerCallbackQuery());
@@ -874,7 +874,7 @@ export function createBot(): Bot | undefined {
       { command: "draft", description: "Write a post from your thinking, in your voice" },
       { command: "repurpose", description: "Reshape finished content, or synthesize scattered takes" },
       { command: "scheduled", description: "See and cancel posts you've scheduled" },
-      { command: "peers", description: "Watch a few peers — territory comparison, not a scoreboard" },
+      { command: "peers", description: "Watch a few peers - territory comparison, not a scoreboard" },
       { command: "settings", description: "Quiet hours, timezone, proactive frequency" },
       { command: "upgrade", description: "Unlock paid features" },
       { command: "help", description: "What Yoinky can do" },
@@ -887,7 +887,7 @@ export function createBot(): Bot | undefined {
 /**
  * One full text turn, already serialized per user. Routes between the
  * deterministic connect fast-paths, the paced onboarding session, and the
- * steady-state agentic conversation — with the typing indicator held for the
+ * steady-state agentic conversation - with the typing indicator held for the
  * whole turn.
  */
 /**
@@ -896,22 +896,22 @@ export function createBot(): Bot | undefined {
  */
 const CAPABILITIES =
   "i'm yoinky, your personal-branding strategist. here in Telegram i'm your day-to-day capture + reach line:\n\n" +
-  "• drop a thought anytime, voice or text — i file it and can turn it into a post in your voice\n" +
+  "• drop a thought anytime, voice or text - i file it and can turn it into a post in your voice\n" +
   "• ask me to draft, or reshape a finished post for another platform\n" +
   "• i'll ping you when a trend or viral moment in your lane is worth jumping on\n" +
   "• i'll flag when a draft contradicts something you've already said\n" +
   "• i resurface the right idea at the right time, on your schedule\n\n" +
-  "the deeper setup — connecting X, your diagnosis, your plan, analytics — lives in the web app. here, mostly just talk to me.";
+  "the deeper setup - connecting X, your diagnosis, your plan, analytics - lives in the web app. here, mostly just talk to me.";
 
 // Sent right after a Telegram user is authenticated (linked + subscribed). Kept
-// short on purpose — no onboarding, just "here's what this chat is for."
+// short on purpose - no onboarding, just "here's what this chat is for."
 const TELEGRAM_WELCOME =
   "you're in ✅\n\n" + CAPABILITIES;
 
 // Shown to anyone who opens the bot without a linked web account. The bot is
 // web-account-gated now: sign in on the web (Clerk), then link Telegram.
 const NOT_LINKED_MSG =
-  "hey — you'll need to sign in first.\n\n" +
+  "hey - you'll need to sign in first.\n\n" +
   `1. open ${config.WEB_APP_URL} and sign in (that starts your free trial)\n` +
   "2. go to Settings → Connect Telegram\n\n" +
   "that links this chat to your account, and i'll pick things up right here.";
@@ -919,11 +919,11 @@ const NOT_LINKED_MSG =
 /** Auth + subscription welcome, sent after linking or on /start for a linked user. */
 async function sendTelegramWelcome(ctx: Context, user: User): Promise<void> {
   if (await isPaidOrExempt(user)) {
-    // On the trial? Say so, with the day count — so the clock is never a surprise.
+    // On the trial? Say so, with the day count - so the clock is never a surprise.
     const trial = await trialInfo(user.id).catch(() => null);
     if (trial?.onTrial) {
       const days = trial.daysLeft === 1 ? "1 day" : `${trial.daysLeft} days`;
-      await ctx.reply(`${TELEGRAM_WELCOME}\n\nyou're on the free trial — ${days} left. upgrade anytime in the app.`);
+      await ctx.reply(`${TELEGRAM_WELCOME}\n\nyou're on the free trial - ${days} left. upgrade anytime in the app.`);
       return;
     }
     await ctx.reply(TELEGRAM_WELCOME);
@@ -932,7 +932,7 @@ async function sendTelegramWelcome(ctx: Context, user: User): Promise<void> {
   // Trial over (or never subscribed): the bot's default is now the upgrade ask.
   const offer = await buildUpgradeOffer();
   await ctx.reply(
-    `you're signed in ✅ — your free trial has ended. a subscription keeps everything here (and in the app) unlocked.\n\n${offer.text}`,
+    `you're signed in ✅ - your free trial has ended. a subscription keeps everything here (and in the app) unlocked.\n\n${offer.text}`,
     { reply_markup: offer.keyboard },
   );
 }
@@ -987,7 +987,7 @@ async function handleTextTurn(user: User, text: string, ctx: Context): Promise<v
 
     // "connect / diagnose my X @handle" typed in plain language still kicks off a
     // real scrape (a feature, not onboarding). Only when it's plausibly THEIR
-    // account — an ownership cue, or we're awaiting a handle. "check out @naval"
+    // account - an ownership cue, or we're awaiting a handle. "check out @naval"
     // is conversation about someone else and the chat brain handles it (it can
     // still call the connect_account tool after clarifying).
     const intent = detectConnectIntent(text);
@@ -1001,7 +1001,7 @@ async function handleTextTurn(user: User, text: string, ctx: Context): Promise<v
       return;
     }
 
-    // Everything else is steady-state chat. Onboarding lives on the web now —
+    // Everything else is steady-state chat. Onboarding lives on the web now -
     // Telegram never runs the profile intake.
     await handleConversation(user, text, channel);
   });
@@ -1064,7 +1064,7 @@ async function handleConversation(user: User, text: string, channel: Channel): P
   } catch (err) {
     console.error("conversation failed, filing message as a fallback", err);
     void import("../lib/alerts.js").then(({ alertAdmin }) =>
-      alertAdmin("llm:converse-turn", `Conversation turn failed — user saw the glitch line. Error: ${err instanceof Error ? err.message : String(err)}`),
+      alertAdmin("llm:converse-turn", `Conversation turn failed - user saw the glitch line. Error: ${err instanceof Error ? err.message : String(err)}`),
     );
     // Never lose a thought to an LLM error.
     await createCapture({ userId: user.id, source: "telegram_text", rawText: text });
@@ -1079,7 +1079,7 @@ async function handleConversation(user: User, text: string, channel: Channel): P
 /**
  * The auth gate for every message/command. Looks up the linked web account for
  * this Telegram id (never creates one). If the chat isn't linked, it replies
- * with the sign-in instructions and returns undefined so the caller bails —
+ * with the sign-in instructions and returns undefined so the caller bails -
  * this is what makes the bot web-account-gated.
  */
 async function requireUser(ctx: Context): Promise<User | undefined> {
@@ -1094,7 +1094,7 @@ async function requireUser(ctx: Context): Promise<User | undefined> {
 }
 
 /**
- * Fire off a real scrape+diagnose for a handle — thin ctx wrapper over the
+ * Fire off a real scrape+diagnose for a handle - thin ctx wrapper over the
  * shared connectAccount executor (also used by the connect_account chat tool).
  */
 async function beginConnect(
@@ -1105,7 +1105,7 @@ async function beginConnect(
 ): Promise<void> {
   await connectAccount(user, platform, handle, ctxChannel(ctx));
   // A typed handle connected the platform whose OAuth app isn't configured on
-  // this instance (or OAuth isn't set up at all) — still ask for the other
+  // this instance (or OAuth isn't set up at all) - still ask for the other
   // platform once, mid-onboarding, so an X-only OAuth setup doesn't silently
   // drop the LinkedIn ask. No-ops outside onboarding / once already asked.
   await nudgeOtherPlatformTyped(user.id, platform).catch(() => {});
@@ -1120,7 +1120,7 @@ async function beginConnect(
  *
  * `owned` reports whether the message carries a first-person ownership cue
  * ("my x", "read me", "I'm @…"). Callers use it to decide whether the intent
- * may fire for an already-read user — "check out @naval on x" names someone
+ * may fire for an already-read user - "check out @naval on x" names someone
  * else's account and must go to the chat brain, not the scraper.
  */
 export function detectConnectIntent(
@@ -1131,7 +1131,7 @@ export function detectConnectIntent(
     /\b(connect|link|diagnos\w*|analy[sz]\w*|read|scan|scrape|ingest|pull|audit|review|look\s+at|check\s+out)\b/i.test(t);
   const owned = /\b(my|mine|me|myself|i'?m|i\s+am|i'?ve)\b/i.test(t);
 
-  // Profile URLs are unambiguous — take them first.
+  // Profile URLs are unambiguous - take them first.
   const liUrl = t.match(/linkedin\.com\/in\/([^\s/?#]+)/i);
   if (liUrl?.[1]) return { platform: "linkedin", handle: liUrl[1], owned };
   const xUrl = t.match(/(?:x\.com|twitter\.com)\/@?([A-Za-z0-9_]{1,15})/i);
@@ -1149,7 +1149,7 @@ export function detectConnectIntent(
   return null;
 }
 
-/** Ordinary chat words that happen to be valid handle shapes — never scrape these bare. */
+/** Ordinary chat words that happen to be valid handle shapes - never scrape these bare. */
 const NOT_A_HANDLE = new Set([
   "hi", "hey", "hello", "yo", "sup", "yes", "no", "ok", "okay", "thanks", "thank",
   "sure", "cool", "nice", "great", "what", "why", "how", "help", "start", "stop",
@@ -1157,11 +1157,11 @@ const NOT_A_HANDLE = new Set([
 ]);
 
 /**
- * Parse a message that IS a handle — the reply to "send me your handle".
+ * Parse a message that IS a handle - the reply to "send me your handle".
  * Accepts "@wtfparry", a profile URL, "x wtfparry" / "linkedin <url>", or a
  * bare "wtfparry". Bare handles default to X (LinkedIn is a URL/slug in
  * practice). `explicit` is true when the message carries clear connect intent
- * (@-prefix, URL, or platform word) — callers require it outside of a direct
+ * (@-prefix, URL, or platform word) - callers require it outside of a direct
  * "what's your handle?" exchange, so "hello" never gets scraped.
  */
 export function parseConnectTarget(
@@ -1175,7 +1175,7 @@ export function parseConnectTarget(
   if (li?.[1]) return { platform: "linkedin", handle: li[1], explicit: true };
 
   // Lenient short form: a message of ≤6 words naming a platform with one
-  // @handle in it — "x: @wtfparry", "my x is @wtfparry", "on twitter @foo".
+  // @handle in it - "x: @wtfparry", "my x is @wtfparry", "on twitter @foo".
   if (t.split(/\s+/).length <= 6) {
     const plat = /\blinked\s?in\b/i.test(t) ? "linkedin" : /\b(twitter|x)\b/i.test(t) ? "x" : null;
     const at = t.match(/@([A-Za-z0-9_]{2,30})/);
@@ -1201,15 +1201,15 @@ export function reactionKeyboard(surfacingId: string): InlineKeyboard {
 }
 
 /**
- * Resurfacing's keyboard: the standard reaction row, plus — since angle-offering
- * now folds into resurfacing rather than running its own separate hourly scan —
+ * Resurfacing's keyboard: the standard reaction row, plus - since angle-offering
+ * now folds into resurfacing rather than running its own separate hourly scan -
  * a second row offering to turn the resurfaced idea straight into angles.
  */
 export function resurfaceKeyboard(surfacingId: string, momentId: string | null): InlineKeyboard {
   const kb = reactionKeyboard(surfacingId);
   if (momentId) kb.row().text("✍️ turn into angles", `mkang:${momentId}`);
   // Every resurfaced memory already quotes real content back, so the exact
-  // post is unambiguous — a light "you read that wrong" affordance costs
+  // post is unambiguous - a light "you read that wrong" affordance costs
   // nothing to offer even when it's not needed.
   kb.row().text("🃏 that was a joke", `corrj:${surfacingId}`);
   return kb;
@@ -1233,13 +1233,13 @@ export async function sendTelegram(
   if (!user?.telegram_id) return false;
   const reply_markup = keyboard ?? (surfacingId ? reactionKeyboard(surfacingId) : undefined);
   const chatId = Number(user.telegram_id);
-  // Telegram hard-caps a message at 4096 chars — a long draft/breakdown would
+  // Telegram hard-caps a message at 4096 chars - a long draft/breakdown would
   // throw and (pre-soft-fail) corrupt state. Split on paragraph/line boundaries;
   // the keyboard rides the LAST chunk so buttons still attach to the whole message.
   const chunks = splitForTelegram(text);
   // Fail SOFT: a blocked/deactivated user makes sendMessage throw 403 (and a
   // stale chat can 400). Callers treat the boolean as "delivered?" and clean up
-  // on false (drop the phantom surfacing, don't mark the mention drafted) — a
+  // on false (drop the phantom surfacing, don't mark the mention drafted) - a
   // throw here instead skipped that cleanup, so a user who blocked the bot piled
   // up mentions forever and leaked cadence budget. Return false, never throw.
   try {
@@ -1273,7 +1273,7 @@ export function splitForTelegram(text: string, max = 4000): string[] {
       continue;
     }
     flush();
-    // A single paragraph over the cap — break it on lines, then hard chars.
+    // A single paragraph over the cap - break it on lines, then hard chars.
     let line = "";
     for (const ln of para.split(/\n/)) {
       const withLn = line ? `${line}\n${ln}` : ln;
@@ -1310,7 +1310,7 @@ export async function sendTelegramSequence(userId: string, messages: string[]): 
   const chatId = Number(user.telegram_id);
   for (let i = 0; i < messages.length; i++) {
     // These sequences are always Yoinky speaking (diagnosis/gap/plan reveals,
-    // progress reads), never content for the user's feed — so the casual opener
+    // progress reads), never content for the user's feed - so the casual opener
     // backstop is safe to apply here.
     const text = casualize(messages[i] ?? "");
     if (!text) continue;

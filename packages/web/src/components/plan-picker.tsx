@@ -16,7 +16,7 @@ function splitPrice(label: string): { amount: string; unit: string } {
  * starts the right checkout; once a Dodo subscription exists, plan changes go
  * through the customer portal so we never mint a duplicate subscription.
  *
- * Both prices now come from config (PAID_PRICE_LABEL / SCALE_PRICE_LABEL) —
+ * Both prices now come from config (PAID_PRICE_LABEL / SCALE_PRICE_LABEL) -
  * Scale used to render the literal string "Higher tier", which meant the one
  * screen where someone decides to pay more never told them what it cost.
  */
@@ -40,9 +40,9 @@ export function PlanPicker({
   scalePrice: string;
   scaleWas: string;
   lifetimePrice: string;
-  /** "Limited time only …" — the deal is deliberately time-boxed, so say so. */
+  /** "Limited time only …" - the deal is deliberately time-boxed, so say so. */
   lifetimeNote: string;
-  /** False when DODO_PRODUCT_LIFETIME is unset — hide the card rather than
+  /** False when DODO_PRODUCT_LIFETIME is unset - hide the card rather than
    *  offer a checkout that cannot complete. */
   lifetimeAvailable: boolean;
 }) {
@@ -55,7 +55,7 @@ export function PlanPicker({
     was: string;
     blurb: string;
     features: string[];
-    /** The visually promoted card. Lifetime, not Scale — it's the push. */
+    /** The visually promoted card. Lifetime, not Scale - it's the push. */
     featured?: boolean;
     /** Replaces the "/mo" unit; lifetime is billed once. */
     unitOverride?: string;
@@ -68,7 +68,7 @@ export function PlanPicker({
       was: growthWas,
       blurb: "The full Yoinky brain for building your brand.",
       // Concrete, and the same numbers the landing page shows and
-      // billing/entitlements.ts actually enforces — the old vague copy ("higher
+      // billing/entitlements.ts actually enforces - the old vague copy ("higher
       // automation caps") had no relationship to what the code allowed.
       features: [
         "Unlimited voice-matched drafts",
@@ -107,7 +107,7 @@ export function PlanPicker({
               "Everything in Scale, uncapped",
               "Unlimited Auto Agent posts, hands-off",
               "Unlimited buyer radar leads",
-              "BYOK — runs on your own keys, at cost",
+              "BYOK - runs on your own keys, at cost",
               "One payment. No subscription, ever.",
             ],
           },
@@ -126,13 +126,13 @@ export function PlanPicker({
          * The card's action.
          *
          * Lifetime is a ONE-TIME product, so it never routes through the
-         * subscription portal and never through the trial checkout — there is no
+         * subscription portal and never through the trial checkout - there is no
          * recurring charge to manage or defer. It always goes straight to a
          * plain checkout, even for someone who already holds a subscription
          * (buying it out is exactly what that person is trying to do).
          *
          * And once someone owns lifetime, the monthly cards have nothing to
-         * offer them — they already have strictly more — so those go inert
+         * offer them - they already have strictly more - so those go inert
          * rather than inviting a pointless downgrade.
          */
         let href: string | null;

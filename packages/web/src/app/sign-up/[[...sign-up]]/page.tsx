@@ -3,7 +3,7 @@ import { SignUp } from "@clerk/nextjs";
 export const dynamic = "force-dynamic";
 
 /**
- * Sign-up starts the 7-day free trial (no card up front — we collect it inside
+ * Sign-up starts the 7-day free trial (no card up front - we collect it inside
  * the app once the user has seen the value). The trial row is minted on the
  * first authenticated request (lib/session → findOrCreateUserByClerkId →
  * startTrial); the user lands straight in /app with full access. The landing
@@ -38,7 +38,7 @@ export default async function SignUpPage({
           <img src="/favicon.png" alt="" style={{ width: 24, height: 24, objectFit: "contain" }} />
           Yoinky
         </div>
-        <div style={{ color: "var(--ink-700)", fontSize: 13 }}>Start your 7-day free trial — no card required.</div>
+        <div style={{ color: "var(--ink-700)", fontSize: 13 }}>Start your 7-day free trial - no card required.</div>
       </div>
       <SignUp signInUrl="/sign-in" forceRedirectUrl={redirectUrl} />
     </div>

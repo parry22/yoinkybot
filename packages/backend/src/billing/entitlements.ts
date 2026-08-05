@@ -2,7 +2,7 @@ import { query, queryOne } from "../db/pool.js";
 import { config } from "../config.js";
 
 // "trialing" is an in-memory plan LABEL for a user inside their 7-day free trial
-// — it maps to the full paid feature set. It is never written to
+// - it maps to the full paid feature set. It is never written to
 // subscriptions.plan (whose CHECK is free/paid/founding); the trial is stored as
 // status='trialing' + trial_ends_at. See startTrial / trialInfo below.
 export type Plan = "free" | "trialing" | "paid" | "scale" | "founding" | "lifetime";
@@ -10,7 +10,7 @@ export type Plan = "free" | "trialing" | "paid" | "scale" | "founding" | "lifeti
 export interface Entitlements {
   plan: Plan;
   // ── Numeric caps. `null` means UNLIMITED (JSON-safe, and the type forces every
-  //    call site to handle the unlimited branch — unlike Infinity/-1). Use
+  //    call site to handle the unlimited branch - unlike Infinity/-1). Use
   //    withinCap()/remainingFor() below so the null case is handled identically. ──
   /** Posts a user may schedule per calendar month. */
   scheduledPostsPerMonth: number | null;
@@ -21,13 +21,13 @@ export interface Entitlements {
   /** Auto Agent posts across ALL of a user's automations per calendar month. */
   automationPostsPerMonth: number | null;
   // NOTE: `trendsPerDay` used to live here. It was identical on every paid tier
-  // (config.MAX_DAILY_TREND_SENDS) and read by nothing — the trend sender caps
-  // itself off config directly — so it was a documented promise no code kept.
+  // (config.MAX_DAILY_TREND_SENDS) and read by nothing - the trend sender caps
+  // itself off config directly - so it was a documented promise no code kept.
   // Removed rather than enforced: it isn't a plan differentiator.
   /** Hard cap on proactive resurfacings per week. */
   maxResurfacePerWeek: number;
   // ── Feature flags ──
-  /** Hands-off AUTO automation delivery ("posts on its own") — Scale only. */
+  /** Hands-off AUTO automation delivery ("posts on its own") - Scale only. */
   autoAgent: boolean;
   consistencyChecks: boolean;
   voiceProfile: boolean;
@@ -59,13 +59,13 @@ const FREE: Entitlements = {
   macroMatching: false,
 };
 
-// Growth (the 'paid' plan): the entry paid tier — real caps, no hands-off agent.
+// Growth (the 'paid' plan): the entry paid tier - real caps, no hands-off agent.
 const GROWTH: Omit<Entitlements, "plan"> = {
   scheduledPostsPerMonth: 30,
   buyerIntentsPerMonth: 25,
   viralPerDay: 1,
   // Auto Agent runs in APPROVAL mode on Growth (autoAgent below gates hands-off
-  // posting, which stays Scale-only) — so this is 5 agent-written posts a month
+  // posting, which stays Scale-only) - so this is 5 agent-written posts a month
   // that still come to you first.
   automationPostsPerMonth: 5,
   maxResurfacePerWeek: 3,
@@ -82,7 +82,7 @@ const SCALE: Omit<Entitlements, "plan"> = {
   scheduledPostsPerMonth: null,
   // 300/month, NOT unlimited. Every buyer lead is a paid twitterapi.io search
   // plus an embedding, billed per user rather than shared across the fleet like
-  // trends — so "unlimited" was a promise the unit economics could not keep, and
+  // trends - so "unlimited" was a promise the unit economics could not keep, and
   // the UI showed an ∞ that nothing enforced. 300 is ~50 scans of six leads a
   // month, far past what anyone works through, and it is a real number the
   // screen can count down.
@@ -102,15 +102,15 @@ const SCALE: Omit<Entitlements, "plan"> = {
 /**
  * Lifetime (BYOK): one payment, no caps.
  *
- * Every other plan's caps exist to bound what WE spend on a user — each buyer
+ * Every other plan's caps exist to bound what WE spend on a user - each buyer
  * lead is a paid twitterapi.io search we pay for, each agent post is model spend
  * we pay for. A lifetime user brings their own LLM and scraper keys, so that
  * spend lands on their account, not ours (llm/gateway.ts and the scrapers
- * resolve their key — see byok/keys.ts). With the cost reason gone, a cap would
+ * resolve their key - see byok/keys.ts). With the cost reason gone, a cap would
  * only be throttling a product they have already bought outright.
  *
  * `maxResurfacePerWeek` is 7 rather than `null` on purpose: it's a PROACTIVE
- * cadence — how often we message them unprompted — so it's a politeness limit,
+ * cadence - how often we message them unprompted - so it's a politeness limit,
  * not a cost one. Once a day is already the ceiling of what anyone wants.
  */
 const LIFETIME: Omit<Entitlements, "plan"> = {
@@ -166,11 +166,11 @@ export async function isPaidOrExempt(user: { id: string; telegram_id: string | n
 /**
  * Map a plan label to its entitlement caps. Growth ('paid') is the entry tier;
  * Scale ('scale'), Founding, and the trial get the full uncapped set. Exported
- * for unit tests — the pure heart of the plan differentiation.
+ * for unit tests - the pure heart of the plan differentiation.
  */
 export function entitlementsForPlan(plan: Plan): Entitlements {
   switch (plan) {
-    // BYOK — they fund their own model + scraper spend, so there is nothing for
+    // BYOK - they fund their own model + scraper spend, so there is nothing for
     // a cap to protect. See LIFETIME.
     case "lifetime":
       return { plan, ...LIFETIME };
@@ -179,9 +179,9 @@ export function entitlementsForPlan(plan: Plan): Entitlements {
       return { plan, ...SCALE };
     case "paid":
       return { plan, ...GROWTH };
-    // A trial runs at the ENTRY tier. This case is defensive — `entitlementsFor`
+    // A trial runs at the ENTRY tier. This case is defensive - `entitlementsFor`
     // routes trials through `trialCaps` and only ever passes a real DB `plan`
-    // here — but it used to answer SCALE, which would have quietly reopened the
+    // here - but it used to answer SCALE, which would have quietly reopened the
     // free-Scale-trial hole for any future caller. One rule, one answer.
     case "trialing":
       return { plan, ...GROWTH };
@@ -208,7 +208,7 @@ export interface SubscriptionRow {
   trial_ends_at: string | Date | null;
   /** Paid-through date from Dodo (`next_billing_date`). Drives both grace windows. */
   current_period_end: string | Date | null;
-  /** When we last wrote this row — the best available proxy for "hold started". */
+  /** When we last wrote this row - the best available proxy for "hold started". */
   updated_at: string | Date | null;
   intended_plan: string | null;
   /** Present once Dodo has ever told us about a real subscription for this user. */
@@ -231,7 +231,7 @@ export interface AccessDecision {
   /** True when the user should get paid-tier entitlements right now. */
   entitled: boolean;
   /**
-   * Epoch ms at which time-limited access runs out — the on_hold grace deadline
+   * Epoch ms at which time-limited access runs out - the on_hold grace deadline
    * or the paid-through date of a cancelled plan. Null when access is either
    * open-ended (active/trialing) or already gone.
    */
@@ -247,7 +247,7 @@ function ms(v: string | Date | null | undefined): number | null {
 /**
  * Resolve a subscription row into "what state is this and do they get in".
  * Pure and exported so entitlementsFor (access) and trialInfo (copy) can never
- * disagree about the same row — the bug where Settings said "trial ended" to a
+ * disagree about the same row - the bug where Settings said "trial ended" to a
  * customer who still had entitlements was exactly that disagreement.
  */
 export function resolveBillingState(sub: SubscriptionRow | undefined | null, now: number): AccessDecision {
@@ -256,12 +256,12 @@ export function resolveBillingState(sub: SubscriptionRow | undefined | null, now
   /**
    * LIFETIME SHORT-CIRCUITS THE WHOLE STATE MACHINE, and has to.
    *
-   * Everything below reasons about a SUBSCRIPTION — trial clocks, paid-through
+   * Everything below reasons about a SUBSCRIPTION - trial clocks, paid-through
    * dates, dunning grace, "cancelled but paid until". A lifetime purchase has
    * none of those: it's one payment, there is no renewal to fail and no period
    * to end. Fall through and `current_period_end IS NULL` would make a stray
    * `cancelled` or `on_hold` event revoke access permanently from someone who
-   * paid once and owns it forever — the worst billing bug available to us.
+   * paid once and owns it forever - the worst billing bug available to us.
    *
    * The ONLY thing that takes a lifetime plan away is the money coming back:
    * a refund or a lost dispute, both handled below by falling through.
@@ -304,7 +304,7 @@ export function resolveBillingState(sub: SubscriptionRow | undefined | null, now
     }
 
     case "cancelled": {
-      // Cancelling is "don't renew me", not "cut me off mid-month" — they have
+      // Cancelling is "don't renew me", not "cut me off mid-month" - they have
       // paid through current_period_end. Killing access instantly was both wrong
       // and the kind of thing that gets charged back.
       const stillPaidFor = paidPlan && periodEnd !== null && periodEnd > now;
@@ -313,7 +313,7 @@ export function resolveBillingState(sub: SubscriptionRow | undefined | null, now
 
     case "refunded":
     case "disputed":
-      // Money went back to the customer. No grace, no paid-through — revoke now.
+      // Money went back to the customer. No grace, no paid-through - revoke now.
       return { state: "cancelled", entitled: false, accessUntil: null };
 
     case "expired":
@@ -336,13 +336,13 @@ export function resolveBillingState(sub: SubscriptionRow | undefined | null, now
  * any kind. So ANY signed-in user could visit `/app?plan=scale` and hand
  * themselves, free for 7 days, 300 paid twitterapi.io buyer searches instead of
  * 25, unlimited virals instead of 1/day, 90 agent posts instead of 5, and
- * `autoAgent: true` — hands-off posting with no card on file. The trial was
+ * `autoAgent: true` - hands-off posting with no card on file. The trial was
  * effectively Scale for anyone who edited a URL.
  *
  * The rule now: **`intended_plan` decides what we SHOW, never what we GRANT.**
  * It is still recorded and still drives which product Settings preselects and
  * which plan the upgrade CTA points at (`purchasablePlanParam`), so someone who
- * came in on the Scale CTA still sees Scale as the thing they're about to buy —
+ * came in on the Scale CTA still sees Scale as the thing they're about to buy -
  * they just trial the entry tier until a real payment lands, at which point
  * `entitlementsForPlan(sub.plan)` takes over with the plan they actually hold.
  *
@@ -373,8 +373,8 @@ export async function entitlementsFor(userId: string): Promise<Entitlements> {
     return { plan: sub?.plan ?? "free", ...SCALE };
   }
 
-  // The trial runs at the caps of the plan the user picked — not a blanket Scale
-  // grant — so the limits shown everywhere match the plan Settings marks current.
+  // The trial runs at the caps of the plan the user picked - not a blanket Scale
+  // grant - so the limits shown everywhere match the plan Settings marks current.
   if (trialing) return { plan: "trialing", ...trialCaps(sub!.intended_plan) };
   // `entitled` now also covers the on_hold grace window and a cancelled plan
   // that is still inside its paid period, at the caps of the plan they hold.
@@ -384,7 +384,7 @@ export async function entitlementsFor(userId: string): Promise<Entitlements> {
 
 /**
  * Start a user's 7-day free trial (TRIAL_DAYS). Idempotent: a user who already
- * has a subscription row — trialing, paid, or lapsed — is left untouched, so
+ * has a subscription row - trialing, paid, or lapsed - is left untouched, so
  * this never resets a clock or revives an expired trial. Called once, when the
  * account is first created (lib/auth.findOrCreateUserByClerkId).
  */
@@ -409,7 +409,7 @@ export async function setIntendedPlan(userId: string, plan: string): Promise<voi
   // Whitelist, don't sanitize. This lands in a column that Settings and the
   // upgrade CTA read back, and it arrives from a query param, so anything
   // outside the three real landing plans is junk we'd be storing and later
-  // rendering. (It no longer grants entitlements — see `trialCaps` — but a
+  // rendering. (It no longer grants entitlements - see `trialCaps` - but a
   // value that can't be junk is one less thing to reason about.)
   const clean = plan.trim().toLowerCase();
   if (!INTENDED_PLANS.has(clean)) return;
@@ -447,7 +447,7 @@ export interface TrialInfo {
   /**
    * The `?plan=` value an upgrade CTA may safely link to: the plan picked at
    * signup, but ONLY when that plan's Dodo product is configured. Founding was
-   * a permanent dead end for anyone who arrived from a founding link —
+   * a permanent dead end for anyone who arrived from a founding link -
    * DODO_PRODUCT_FOUNDING is unset, so every checkout throw threw and the CTA
    * could never be completed. Null means "just use the default Growth product".
    */
@@ -485,7 +485,7 @@ export async function billingOverview(userId: string): Promise<BillingOverview> 
  * product id is unset can't be bought, so pointing a user at it is a dead end;
  * null tells the caller to fall back to the default Growth product.
  *
- * Deliberately config-only — no founding SEAT check here, because trialInfo runs
+ * Deliberately config-only - no founding SEAT check here, because trialInfo runs
  * on every app page render and a live seat count is a DB round trip per render.
  * A full cohort is handled at checkout (createCheckout downgrades to Growth).
  */

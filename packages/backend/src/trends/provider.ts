@@ -1,7 +1,7 @@
 /**
  * Trend provider abstraction. Everything downstream (trend-match, angle offers)
  * consumes a normalized `Trend[]` and never knows or cares which provider
- * produced it — so scraping (Apify), news search (Brave/Tavily), or the official
+ * produced it - so scraping (Apify), news search (Brave/Tavily), or the official
  * X API are interchangeable and a takedown/ban is a one-line config swap.
  */
 export interface Trend {

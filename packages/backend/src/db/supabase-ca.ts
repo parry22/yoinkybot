@@ -2,14 +2,14 @@
  * Supabase's root CA, inlined.
  *
  * WHY INLINE AND NOT A .crt FILE: `tsc` only emits .js, so a .crt sitting next
- * to this module would not be copied into `dist/` — the exact trap that already
+ * to this module would not be copied into `dist/` - the exact trap that already
  * bites `db/migrate.js` with the .sql migrations. A string constant is always
  * where the compiled code expects it.
  *
  * WHY IT IS NEEDED AT ALL: the Supabase pooler serves a chain rooted in this CA,
  * which is not in the public trust store. node-postgres treats `sslmode=require`
  * as `verify-full`, so without this it fails outright with "self-signed
- * certificate in certificate chain" — verified in CI before the cutover.
+ * certificate in certificate chain" - verified in CI before the cutover.
  *
  * The alternative was `sslmode=no-verify` / `rejectUnauthorized: false`, which
  * encrypts but authenticates nothing and would leave the database credential

@@ -115,13 +115,13 @@ export async function findOrCreateUserByTelegram(telegramId: number): Promise<Us
   const created = (await queryOne(`INSERT INTO users (telegram_id) VALUES ($1) RETURNING *`, [
     telegramId,
   ])) as unknown as User;
-  // First time we've seen this Telegram user — the top of the funnel.
+  // First time we've seen this Telegram user - the top of the funnel.
   identify(created.id, { source: "telegram", created_at: created.created_at });
   track(created.id, "user_signed_up", { source: "telegram" });
   return created;
 }
 
-/** Read-only lookup — never creates a row. Used by the outgoing message tracker
+/** Read-only lookup - never creates a row. Used by the outgoing message tracker
  *  so a DM to a non-app chat (e.g. an admin alert) doesn't spawn a stray user. */
 export async function findUserIdByTelegramId(telegramId: number): Promise<string | null> {
   const row = await queryOne<{ id: string }>(`SELECT id FROM users WHERE telegram_id = $1`, [telegramId]);
@@ -129,14 +129,14 @@ export async function findUserIdByTelegramId(telegramId: number): Promise<string
 }
 
 /** Read-only: the full user row for a Telegram id, or null. The Telegram bot is
- *  now auth-gated — a user must have linked this telegram_id to a web account,
+ *  now auth-gated - a user must have linked this telegram_id to a web account,
  *  so the bot looks up (never creates) and turns unlinked visitors away. */
 export async function findUserByTelegramId(telegramId: number): Promise<User | null> {
   const row = (await queryOne(`SELECT * FROM users WHERE telegram_id = $1`, [telegramId])) as User | undefined;
   return row ?? null;
 }
 
-/** Find or create a user by their X account id — the "Sign in with X" identity. */
+/** Find or create a user by their X account id - the "Sign in with X" identity. */
 export async function findOrCreateUserByXId(xUserId: string): Promise<User> {
   const existing = (await queryOne(`SELECT * FROM users WHERE x_user_id = $1`, [xUserId])) as User | undefined;
   if (existing) return existing;
@@ -154,7 +154,7 @@ export async function findOrCreateUserByEmail(email: string): Promise<User> {
   return (await queryOne(`INSERT INTO users (email) VALUES ($1) RETURNING *`, [email])) as unknown as User;
 }
 
-/** Read-only lookup by Clerk user id — the web app's fast path on every request. */
+/** Read-only lookup by Clerk user id - the web app's fast path on every request. */
 export async function findUserByClerkId(clerkUserId: string): Promise<User | undefined> {
   return (await queryOne(`SELECT * FROM users WHERE clerk_user_id = $1`, [clerkUserId])) as User | undefined;
 }

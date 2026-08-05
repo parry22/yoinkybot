@@ -4,7 +4,7 @@ import { track } from "../analytics/posthog.js";
 import { alertAdmin } from "../lib/alerts.js";
 import type { Plan } from "./entitlements.js";
 
-/** Founding cohort size. Must match the landing page's "first 50 users" line —
+/** Founding cohort size. Must match the landing page's "first 50 users" line -
  *  the seat counter in the Telegram upgrade offer is derived from this. */
 const FOUNDING_CAP = 50;
 
@@ -27,7 +27,7 @@ function productIdFor(plan: BuyablePlan): string | undefined {
 }
 
 /** Lifetime is billed once, so it must never carry subscription_data at checkout
- *  and never gets a trial — there is no recurring charge to defer. */
+ *  and never gets a trial - there is no recurring charge to defer. */
 export function isOneTimePlan(plan: BuyablePlan): boolean {
   return plan === "lifetime";
 }
@@ -68,7 +68,7 @@ function checkProductConfig(): void {
     }
   }
   if (configured.length === 0) {
-    console.warn("no DODO_PRODUCT_* ids configured — checkout is unavailable for every plan");
+    console.warn("no DODO_PRODUCT_* ids configured - checkout is unavailable for every plan");
   }
 }
 
@@ -100,18 +100,18 @@ export async function foundingSeatsLeft(): Promise<number> {
  * enters a card at checkout but isn't charged until the trial ends, when Dodo
  * auto-charges the collected method (`subscription_data.trial_period_days`).
  * Signup uses this (7-day trial → auto-convert to paid). The post-trial upgrade
- * wall calls WITHOUT trialDays, so it charges immediately — a lapsed user can't
+ * wall calls WITHOUT trialDays, so it charges immediately - a lapsed user can't
  * mint themselves a second free trial.
  *
  * An unbuyable plan DEGRADES to Growth rather than throwing. DODO_PRODUCT_FOUNDING
  * has never been set, so anyone who arrived from a founding link (intended_plan =
- * 'founding') hit a checkout that threw every single time — a permanent dead end
+ * 'founding') hit a checkout that threw every single time - a permanent dead end
  * with no way for the user to route around it. Same for a full cohort. The Dodo
  * checkout page shows the product and its price before any card is entered, so
  * the substitution is visible to the user before they commit to anything.
  *
  * `opts.returnUrl` is where Dodo drops the customer after payment. It defaults
- * to config.CHECKOUT_RETURN_URL, which production points at the Telegram bot —
+ * to config.CHECKOUT_RETURN_URL, which production points at the Telegram bot -
  * correct for a Telegram buyer, badly wrong for a web buyer, who used to finish
  * paying inside the app and land on t.me. Web callers pass their own settings
  * URL; Telegram callers keep the default.
@@ -127,7 +127,7 @@ export async function createCheckout(
 
   let resolvedPlan = plan;
   if (!productIdFor(resolvedPlan)) {
-    console.warn(`Dodo product for plan "${resolvedPlan}" is not configured — falling back to Growth ("paid")`);
+    console.warn(`Dodo product for plan "${resolvedPlan}" is not configured - falling back to Growth ("paid")`);
     if (resolvedPlan === "founding") {
       // Operator-visible: we are still linking people at a plan we cannot bill.
       void alertAdmin(
@@ -140,7 +140,7 @@ export async function createCheckout(
   }
 
   if (resolvedPlan === "founding" && (await foundingSeatsLeft()) <= 0) {
-    console.warn(`Founding cohort is full (${FOUNDING_CAP}/${FOUNDING_CAP}) — falling back to Growth ("paid")`);
+    console.warn(`Founding cohort is full (${FOUNDING_CAP}/${FOUNDING_CAP}) - falling back to Growth ("paid")`);
     resolvedPlan = "paid";
   }
 
@@ -149,7 +149,7 @@ export async function createCheckout(
   // set up at all. There is nothing left to degrade to, so this one still throws.
   if (!productId) throw new Error(`Dodo product id for plan "${resolvedPlan}" not configured`);
 
-  // A one-time product must not be sent subscription_data — Dodo would either
+  // A one-time product must not be sent subscription_data - Dodo would either
   // reject it or mint a recurring charge for something sold as "pay once".
   const trial =
     !isOneTimePlan(resolvedPlan) && opts.trialDays && opts.trialDays > 0
@@ -166,7 +166,7 @@ export async function createCheckout(
       product_cart: [{ product_id: productId, quantity: 1 }],
       customer: email ? { email } : undefined,
       return_url: opts.returnUrl || config.CHECKOUT_RETURN_URL,
-      // resolvedPlan, not the requested plan — the metadata has to describe what
+      // resolvedPlan, not the requested plan - the metadata has to describe what
       // they are actually being charged for or the webhook provisions the wrong tier.
       metadata: { user_id: userId, plan: resolvedPlan },
       ...(trial ? { subscription_data: trial } : {}),
@@ -179,12 +179,12 @@ export async function createCheckout(
 
 /**
  * Create a Dodo customer-portal session so the user can self-serve manage their
- * subscription — change/upgrade the plan, update the card, or cancel. Returns
+ * subscription - change/upgrade the plan, update the card, or cancel. Returns
  * the hosted portal URL to redirect to. Needs the Dodo `customer_id` we stored
  * from the subscription webhook.
  *
  * `returnUrl` defaults to config.CHECKOUT_RETURN_URL (the Telegram bot in prod).
- * Web callers pass their own settings URL — see createCheckout for why.
+ * Web callers pass their own settings URL - see createCheckout for why.
  */
 export async function createCustomerPortal(customerId: string, returnUrl?: string): Promise<{ url: string }> {
   if (!config.DODO_API_KEY) throw new Error("DODO_API_KEY not configured");
@@ -232,7 +232,7 @@ const STATUS_BY_EVENT: Record<string, string> = {
   "subscription.expired": "expired",
   // Money-back events. These used to be ignored entirely (the map only had
   // `subscription.*`), so a refunded customer or one who won a chargeback kept
-  // full paid access forever — we were literally paying to serve them. They get
+  // full paid access forever - we were literally paying to serve them. They get
   // their own statuses rather than reusing 'cancelled', because 'cancelled' now
   // means "access until current_period_end" and a refund must revoke instantly.
   //
@@ -257,7 +257,7 @@ function eventAtFor(ctx: DodoEventContext): Date {
   return new Date(Number.isFinite(tsSeconds) && tsSeconds > 0 ? tsSeconds * 1000 : Date.now());
 }
 
-/** Is this payment the lifetime product? Product id OR our own checkout metadata —
+/** Is this payment the lifetime product? Product id OR our own checkout metadata -
  *  the payment payload doesn't always echo the cart back. */
 function isLifetimePayment(d: DodoSubscriptionEvent["data"]): boolean {
   const byProduct = Boolean(config.DODO_PRODUCT_LIFETIME) && d.product_id === config.DODO_PRODUCT_LIFETIME;
@@ -270,10 +270,10 @@ function isLifetimePayment(d: DodoSubscriptionEvent["data"]): boolean {
  * Deliberately NOT routed through the subscription upsert below: that path
  * writes `dodo_subscription_id` and `current_period_end` and is guarded by the
  * subscription state machine, none of which applies to a single payment. A
- * lifetime row is simply `plan='lifetime', status='active'` with no period —
+ * lifetime row is simply `plan='lifetime', status='active'` with no period -
  * `resolveBillingState` short-circuits on it and never expires it (only a refund
  * or lost dispute revokes, via the existing REVOKING_STATUSES path, which
- * correlates by `dodo_customer_id` — hence storing it here).
+ * correlates by `dodo_customer_id` - hence storing it here).
  *
  * Shares the same webhook-id idempotency claim as everything else, so a retried
  * delivery can't double-provision.
@@ -287,7 +287,7 @@ async function provisionLifetime(
   if (!userId) {
     const msg =
       `Dodo payment.succeeded for the LIFETIME product carried no user_id in metadata ` +
-      `(customer ${d.customer?.customer_id ?? "unknown"}). The customer has PAID and is unprovisioned — ` +
+      `(customer ${d.customer?.customer_id ?? "unknown"}). The customer has PAID and is unprovisioned - ` +
       `grant them lifetime by hand.`;
     console.error(msg);
     void alertAdmin("dodo-lifetime-no-user", msg);
@@ -302,7 +302,7 @@ async function provisionLifetime(
         [ctx.webhookId, "payment.succeeded"],
       );
       if (claim.rowCount === 0) {
-        console.log(`dodo webhook ${ctx.webhookId} already applied — ignoring replay`);
+        console.log(`dodo webhook ${ctx.webhookId} already applied - ignoring replay`);
         return;
       }
     }
@@ -328,12 +328,12 @@ async function provisionLifetime(
  * Idempotent in two senses now: the `webhook-id` is persisted so a replayed or
  * retried delivery is a no-op, and the event timestamp is compared against the
  * last one applied so an out-of-order delivery can't move the row backwards.
- * The old handler had neither — a delayed `subscription.active` landing after a
+ * The old handler had neither - a delayed `subscription.active` landing after a
  * `subscription.cancelled` quietly resurrected a dead subscription.
  *
  * The claim and the apply share one transaction: if the apply throws, the claim
  * rolls back with it and Dodo's retry still gets a chance. Transient DB failures
- * are still allowed to propagate (the route 500s, Dodo retries — that is what we
+ * are still allowed to propagate (the route 500s, Dodo retries - that is what we
  * want). Only the *deterministic* failures below are made safe, because those
  * would retry forever with the customer charged and unprovisioned.
  */
@@ -345,7 +345,7 @@ export async function handleDodoEvent(event: DodoSubscriptionEvent, ctx: DodoEve
    * LIFETIME: a one-time purchase, which this whole handler was blind to.
    *
    * Dodo fires `subscription.*` for recurring products. A one-time product has
-   * no subscription, so it fires `payment.succeeded` — which falls straight into
+   * no subscription, so it fires `payment.succeeded` - which falls straight into
    * the `!status` early return below. Without this branch a customer could pay
    * $99 and be provisioned nothing at all, with no error anywhere.
    *
@@ -360,7 +360,7 @@ export async function handleDodoEvent(event: DodoSubscriptionEvent, ctx: DodoEve
 
   if (!status) {
     // Other payment.* and the non-terminal dispute.* events are informational.
-    // An unrecognised *product* on a recognised event is a different story — see below.
+    // An unrecognised *product* on a recognised event is a different story - see below.
     return;
   }
 
@@ -396,7 +396,7 @@ export async function handleDodoEvent(event: DodoSubscriptionEvent, ctx: DodoEve
         [ctx.webhookId, event.type],
       );
       if (claim.rowCount === 0) {
-        console.log(`dodo webhook ${ctx.webhookId} already applied — ignoring replay`);
+        console.log(`dodo webhook ${ctx.webhookId} already applied - ignoring replay`);
         return;
       }
     }
@@ -417,14 +417,14 @@ export async function handleDodoEvent(event: DodoSubscriptionEvent, ctx: DodoEve
         if (stolen.rowCount) {
           const msg =
             `Dodo subscription ${d.subscription_id} moved from another user to ${userId}. ` +
-            `The previous owner's row has been detached — check for a duplicate account or a bad checkout metadata.`;
+            `The previous owner's row has been detached - check for a duplicate account or a bad checkout metadata.`;
           console.error(msg);
           void alertAdmin("dodo-subscription-reassigned", msg);
         }
       }
 
       // `plan` is NOT NULL. The insert branch used to pass `plan ?? null` and
-      // blow up on an unrecognised/absent product id — a guaranteed 500 loop.
+      // blow up on an unrecognised/absent product id - a guaranteed 500 loop.
       // Default to the entry paid tier instead: the customer HAS paid, so
       // provisioning them at the cheapest paid tier fails safer than leaving
       // them on 'free', and the alert above tells us to correct it. The UPDATE
@@ -460,7 +460,7 @@ export async function handleDodoEvent(event: DodoSubscriptionEvent, ctx: DodoEve
         ],
       );
       if (res.rowCount === 0) {
-        console.warn(`dodo event "${event.type}" for user ${userId} is older than the last applied event — ignored`);
+        console.warn(`dodo event "${event.type}" for user ${userId} is older than the last applied event - ignored`);
       }
       return;
     }
@@ -480,7 +480,7 @@ export async function handleDodoEvent(event: DodoSubscriptionEvent, ctx: DodoEve
       return;
     }
 
-    // Refund/dispute payloads don't always carry a subscription id — they are
+    // Refund/dispute payloads don't always carry a subscription id - they are
     // keyed off the payment. Correlate by Dodo customer as a last resort, and
     // only for the revoking statuses, where being slightly over-eager is the
     // safe direction (we stop serving someone who got their money back).
@@ -497,7 +497,7 @@ export async function handleDodoEvent(event: DodoSubscriptionEvent, ctx: DodoEve
     console.warn(`dodo event "${event.type}" had no user_id, subscription_id or customer_id to correlate on`);
   });
 
-  // Monetization event — only the transition INTO an active subscription, not
+  // Monetization event - only the transition INTO an active subscription, not
   // the informational churn/renewal statuses. Fired after the transaction so a
   // rolled-back apply never reports a phantom conversion.
   if (status === "active" && userId) {

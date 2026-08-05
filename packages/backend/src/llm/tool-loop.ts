@@ -5,7 +5,7 @@ import { llmCall, hashForCacheKey, type Tier } from "./gateway.js";
  * The shared bounded agent loop. Instead of one fixed-context call, the model
  * gets a small toolset and may make a few research calls before it must commit
  * to a final answer. The gates that decide WHETHER a loop runs at all stay in
- * deterministic code at the callsite — this runner never selects or scores,
+ * deterministic code at the callsite - this runner never selects or scores,
  * it only lets the model gather grounding before composing.
  *
  * Hard rules, enforced here so no feature can drift into an open ReAct loop:
@@ -15,7 +15,7 @@ import { llmCall, hashForCacheKey, type Tier } from "./gateway.js";
  *   a final answer (the anti-loop ledger pattern from the profiling intake).
  * - Every tool call + result is returned as `steps` and logged, so a loop is
  *   inspectable after the fact, never a black box.
- * - Every model call goes through llm/gateway.ts — no new call path.
+ * - Every model call goes through llm/gateway.ts - no new call path.
  *
  * Envelope convention the prompt must follow: each response is JSON with an
  * optional "tool" key. `{"tool":{"name":"...",...args}}` requests a call;
@@ -35,7 +35,7 @@ export interface ToolLoopRequest<S extends z.ZodTypeAny> {
   system: string;
   /** Renders the user message; receives the accumulated tool notes so each
    *  iteration sees what the loop has already learned (compact notes, not raw
-   *  payloads — the loop's own context stays lean). */
+   *  payloads - the loop's own context stays lean). */
   renderUser: (toolNotes: string[]) => string;
   /** Validates a raw tool request from the model. Malformed → forces final. */
   toolSchema: z.ZodType<{ name: string }>;
@@ -88,7 +88,7 @@ export async function runToolLoop<S extends z.ZodTypeAny>(
       const parsedTool = req.toolSchema.safeParse(envelope.tool);
       if (!parsedTool.success) {
         // Unknown/malformed tool → one more call, final answer only.
-        notes.push("(your last tool request was invalid — answer with what you have)");
+        notes.push("(your last tool request was invalid - answer with what you have)");
         forceFinal = true;
         continue;
       }
@@ -96,7 +96,7 @@ export async function runToolLoop<S extends z.ZodTypeAny>(
       const key = JSON.stringify(parsedTool.data);
       const executor = req.executors[name];
       if (!executor || seen.has(key)) {
-        notes.push(`(rejected repeat/unknown call to ${name} — answer with what you have)`);
+        notes.push(`(rejected repeat/unknown call to ${name} - answer with what you have)`);
         forceFinal = true;
         continue;
       }

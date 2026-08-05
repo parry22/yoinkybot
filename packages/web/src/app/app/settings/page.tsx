@@ -66,16 +66,16 @@ export default async function SettingsPage({
     if (!t || t.status === "none") return "No active plan yet.";
     switch (t.status) {
       case "active":
-        return `Paid plan${planLabel} — active. Auto-renews; manage or cancel anytime.`;
+        return `Paid plan${planLabel} - active. Auto-renews; manage or cancel anytime.`;
       case "trialing":
-        return `Free trial — ${t.daysLeft} day${t.daysLeft === 1 ? "" : "s"} left. Add a card to auto-continue after it ends.`;
+        return `Free trial - ${t.daysLeft} day${t.daysLeft === 1 ? "" : "s"} left. Add a card to auto-continue after it ends.`;
       case "past_due":
         return t.hasAccess && accessDay
-          ? `Payment failed — update your card to keep your plan${planLabel}. We'll keep retrying, and your access continues until ${accessDay}.`
-          : `Payment failed — update your card to restore your plan${planLabel}.`;
+          ? `Payment failed - update your card to keep your plan${planLabel}. We'll keep retrying, and your access continues until ${accessDay}.`
+          : `Payment failed - update your card to restore your plan${planLabel}.`;
       case "cancelled":
         return t.hasAccess && accessDay
-          ? `Plan cancelled — it won't renew, and you keep full access until ${accessDay}.`
+          ? `Plan cancelled - it won't renew, and you keep full access until ${accessDay}.`
           : "Your plan has ended. Resubscribe to get full access back.";
       default:
         return "Your free trial has ended. Upgrade to keep full access.";
@@ -108,7 +108,7 @@ export default async function SettingsPage({
           )}
 
           {t?.plan === "founding" ? (
-            <div className={styles.sectionBody}>You're on the Founding plan — thank you for being early.</div>
+            <div className={styles.sectionBody}>You're on the Founding plan - thank you for being early.</div>
           ) : (
             <PlanPicker
               currentKey={currentPlanKey(t?.status === "active" ? t.plan : null, t?.intendedPlan ?? null)}
@@ -120,7 +120,7 @@ export default async function SettingsPage({
               scaleWas={config.SCALE_PRICE_WAS_LABEL}
               lifetimePrice={config.LIFETIME_PRICE_LABEL}
               lifetimeNote={config.LIFETIME_NOTE}
-              // Hidden when the Dodo product isn't configured — better no card
+              // Hidden when the Dodo product isn't configured - better no card
               // than a card whose checkout can't complete.
               lifetimeAvailable={Boolean(config.DODO_PRODUCT_LIFETIME)}
             />
@@ -129,13 +129,13 @@ export default async function SettingsPage({
           {billing?.hasDodoSubscription && (
             <div style={{ marginTop: 14 }}>
               <a href="/api/billing/portal" className="btnGhost" style={linkBtn}>
-                Manage plan — update card, switch, or cancel
+                Manage plan - update card, switch, or cancel
               </a>
             </div>
           )}
         </div>
 
-        {/* Only for the plan that uses them — every other plan runs on our keys
+        {/* Only for the plan that uses them - every other plan runs on our keys
           * and would just be confused by a credentials panel. */}
         {byok.required && (
           <div className={styles.section}>
@@ -154,10 +154,9 @@ export default async function SettingsPage({
         </div>
 
         <div className={styles.section}>
-          <div className={styles.sectionLabel}>Connected LinkedIn</div>
+          <div className={styles.sectionLabel}>LinkedIn</div>
           <div className={styles.sectionBody} style={{ marginBottom: 12 }}>
-            OAuth lets Yoinky publish and schedule for you through LinkedIn&apos;s official API. Your public profile URL
-            lets the ghostwriter learn your LinkedIn voice, reactions, comments, reposts, media, and best posting windows.
+            Connect LinkedIn to publish and schedule posts from Yoinky.
           </div>
           <LinkedInConnectRow account={linkedIn ? { handle: linkedIn.handle, status: linkedIn.status } : null} />
         </div>

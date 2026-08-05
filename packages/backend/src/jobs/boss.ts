@@ -28,7 +28,7 @@ export const QUEUES = {
   scheduledPostReap: "posts.scheduled-reap",
   // NOTE: `agentTick: "agent.tick"` used to sit here. The single global autopilot
   // it drove was subsumed by the multi-automation system in migration 0024, and
-  // nothing has referenced the queue since — no worker, no sender, no schedule —
+  // nothing has referenced the queue since - no worker, no sender, no schedule -
   // yet startBoss() below kept creating and updating it on every boot. Removed.
   // jobs/workers.ts still unschedules the literal string "agent.tick" so installs
   // that registered the old cron shed it; that list deliberately does not depend
@@ -101,7 +101,7 @@ export function getBoss(): PgBoss {
 let ensurePromise: Promise<PgBoss> | undefined;
 
 /**
- * Lazily start pg-boss for a process that only ENQUEUES — namely the web app
+ * Lazily start pg-boss for a process that only ENQUEUES - namely the web app
  * (`packages/web`), which runs domain code in-process but never calls
  * `startBoss()` (that's the backend server's job). Idempotent and
  * concurrency-safe. No-op if already started.
@@ -110,14 +110,14 @@ let ensurePromise: Promise<PgBoss> | undefined;
  * visible. Vercel is serverless, so every cold start that touched chat, connect,
  * scheduling or buyer radar paid for: pg-boss's schema migrate check, its
  * supervision + monitoring timers (in a process that is about to be frozen), and
- * a loop of 27 `createQueue` + 27 `updateQueue` calls — **54 queries to
+ * a loop of 27 `createQueue` + 27 `updateQueue` calls - **54 queries to
  * re-declare queues the backend already owns**. All of it billed as Neon compute
  * time, none of it doing anything.
  *
  * Enqueue-only mode instead: no supervision, no cron scheduling, no schema
  * migration, and no queue declarations. The backend's `startBoss()` remains the
  * single writer of queue configuration, which is where that responsibility
- * belonged anyway — two processes racing on `updateQueue` was never intentional.
+ * belonged anyway - two processes racing on `updateQueue` was never intentional.
  */
 export async function ensureBoss(): Promise<PgBoss> {
   if (boss) return boss;
@@ -125,7 +125,7 @@ export async function ensureBoss(): Promise<PgBoss> {
     ensurePromise = (async () => {
       const b = new PgBoss({
         // Shared with db/pool.ts so TLS can't be right in one place and wrong
-        // here — a raw DATABASE_URL fails Supabase's cert check outright.
+        // here - a raw DATABASE_URL fails Supabase's cert check outright.
         ...dbConnectionOptions(),
         schema: "pgboss",
         // Nothing here consumes jobs, so none of the background machinery earns
@@ -135,7 +135,7 @@ export async function ensureBoss(): Promise<PgBoss> {
         schedule: false,
         migrate: false,
         // Enqueue-only, and it runs on Vercel where each serverless instance
-        // builds its own pool — so it takes the smallest slice that still works.
+        // builds its own pool - so it takes the smallest slice that still works.
         max: 2,
       });
       b.on("error", (err) => console.error("pg-boss error (enqueue-only)", err));
@@ -143,7 +143,7 @@ export async function ensureBoss(): Promise<PgBoss> {
       boss = b;
       return b;
     })().catch((err) => {
-      // Don't cache a rejected promise — a transient DB blip at cold start would
+      // Don't cache a rejected promise - a transient DB blip at cold start would
       // otherwise poison every later enqueue in this instance's lifetime.
       ensurePromise = undefined;
       throw err;
@@ -157,8 +157,8 @@ export async function ensureBoss(): Promise<PgBoss> {
  *
  * WHY THIS IS SET AT ALL. pg-boss defaults to 2000ms, and `registerWorkers`
  * makes ~33 workers (27 `work()` sites, two of them inside an
- * INGEST_CONCURRENCY=4 loop). At the default that is ~16 queries/second — about
- * 1.4 MILLION "any jobs?" round-trips a day — every one of them almost always
+ * INGEST_CONCURRENCY=4 loop). At the default that is ~16 queries/second - about
+ * 1.4 MILLION "any jobs?" round-trips a day - every one of them almost always
  * returning nothing. Postgres barely notices the load, but Neon bills COMPUTE
  * TIME, and a database questioned 16×/second never gets to suspend. That is what
  * exhausted the compute quota and took production down with PG 53000
@@ -167,7 +167,7 @@ export async function ensureBoss(): Promise<PgBoss> {
  *
  * 30s is chosen against what the queues actually are: crons, fleet sweeps and
  * ingest fan-out, none of which care about half a minute. The three queues where
- * a human is genuinely waiting get an explicit override — see FAST_POLL_SECONDS
+ * a human is genuinely waiting get an explicit override - see FAST_POLL_SECONDS
  * and its call sites in workers.ts. Net effect is ~85% fewer idle queries.
  */
 export const POLL_SECONDS = 30;
@@ -182,7 +182,7 @@ export const SCHEDULED_POST_POLL_SECONDS = 15;
 /**
  * pg-boss's share of Supabase's 15-connection session-pooler budget (the split is
  * documented on APP_POOL_MAX in db/pool.ts). pg-boss defaults to 10 and declared
- * nothing here, so it took 10 while the app pool took another 10 — 20 against a
+ * nothing here, so it took 10 while the app pool took another 10 - 20 against a
  * ceiling of 15, which threw EMAXCONNSESSION and made unrelated queries fail at
  * random. It gets the larger share because 27 registered workers poll plus its
  * maintenance and cron machinery.
@@ -199,7 +199,7 @@ export async function startBoss(): Promise<PgBoss> {
   boss.on("error", (err) => console.error("pg-boss error", err));
   await boss.start();
   // Scheduled fleet jobs that hit PAID external providers and re-run on their
-  // own cron anyway — retrying a failed run just triples provider spend on a
+  // own cron anyway - retrying a failed run just triples provider spend on a
   // flaky day for data the next tick fetches regardless. No retries for these.
   const NO_RETRY: string[] = [
     QUEUES.trendFetch,
@@ -218,7 +218,7 @@ export async function startBoss(): Promise<PgBoss> {
   // one is a subprocess that may queue behind AGENT_MAX_CONCURRENCY. The default
   // 10-minute expiry can plausibly be hit; expiring mid-scan would strand a job
   // the user is actively polling.
-  // x.refresh is a SEQUENTIAL fleet sweep — the provider throttle is 5.5s/request
+  // x.refresh is a SEQUENTIAL fleet sweep - the provider throttle is 5.5s/request
   // and it walks every connected account, so it budgets up to 45 wall-clock
   // minutes (jobs/x-refresh.ts MAX_RUN_MS). Under the default 10-minute expiry
   // pg-boss would kill it mid-sweep every single tick.
@@ -226,7 +226,7 @@ export async function startBoss(): Promise<PgBoss> {
   // legitimately run for minutes: a 200 MB video is a 120s fetch from Blob, a
   // chunked upload, then a transcode poll that alone budgets 5 minutes. Under the
   // default 10-minute expiry pg-boss would kill such a job AFTER it had claimed
-  // the row, stranding the post in 'publishing' with no error and no retry —
+  // the row, stranding the post in 'publishing' with no error and no retry -
   // 20 minutes covers the worst realistic case, and reapStuckPublishing (which
   // waits 30) is the backstop for anything that still dies mid-flight.
   const LONG_EXPIRY: Partial<Record<string, number>> = {
@@ -238,7 +238,7 @@ export async function startBoss(): Promise<PgBoss> {
   // unique indexes with `WHERE policy = 'short' | 'singleton' | 'stately'`, so on
   // the default `standard` policy a singletonKey is silently ignored. Buyer
   // "Scan now" is user-triggered and spends real twitterapi.io + LLM budget, so
-  // two queued scans is money, not just noise — `short` makes the unique index
+  // two queued scans is money, not just noise - `short` makes the unique index
   // on (name, singletonKey) apply while a job is still `created`. It is only
   // half the guard: it cannot stop a second scan starting once the first is
   // already `active`, which is why enqueueBuyerScan also checks for an in-flight
@@ -247,7 +247,7 @@ export async function startBoss(): Promise<PgBoss> {
     [QUEUES.buyerScanNow]: "short",
   };
   for (const q of Object.values(QUEUES)) {
-    // Per-item ingest jobs (extract/embed/transcribe/…) DO retry — a retry there
+    // Per-item ingest jobs (extract/embed/transcribe/…) DO retry - a retry there
     // recovers real per-capture work that won't otherwise re-run. The scheduled
     // provider jobs above don't: 0 retries, they come back on the next cron.
     const retryLimit = NO_RETRY.includes(q) ? 0 : 3;

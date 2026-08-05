@@ -27,7 +27,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   /**
    * BYOK gate. A lifetime user funds their own model and scraper spend, so until
-   * their keys are in place there is literally nothing the app can do — every
+   * their keys are in place there is literally nothing the app can do - every
    * generation and every X read would fail. Sending them to setup is the only
    * honest state.
    *
@@ -41,7 +41,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <AppShell trial={trial}>{children}</AppShell>
       {/* Mandatory: users must connect X before using the app. `reading`/`failed`
        *  come along because a half-finished connect is not the same thing as no
-       *  connect — one needs progress, the other needs a reason and a retry. */}
+       *  connect - one needs progress, the other needs a reason and a retry. */}
       <ConnectXGate connected={x.connected} reading={x.reading} failed={x.failed} />
     </div>
   );

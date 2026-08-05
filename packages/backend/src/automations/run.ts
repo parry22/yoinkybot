@@ -42,13 +42,13 @@ export type AutomationStage = "caps" | "select" | "moderate" | "drafting" | "del
 /**
  * Run one automation once. Safe for both the cron tick and the web "run once now"
  * button (pass manual:true so an empty source records a visible skipped run).
- * `onStage` is optional progress reporting — the cron ignores it.
+ * `onStage` is optional progress reporting - the cron ignores it.
  */
 export async function runAutomationOnce(
   automation: Automation,
   opts: { manual?: boolean; onStage?: (s: AutomationStage) => void } = {},
 ): Promise<RunResult> {
-  // Ambient BYOK identity for the whole run — source selection, drafting and any
+  // Ambient BYOK identity for the whole run - source selection, drafting and any
   // scrape underneath resolve this user's own keys (byok/context.ts).
   return runAsUser(automation.user_id, () => runAutomationOnceInner(automation, opts));
 }
@@ -67,7 +67,7 @@ async function runAutomationOnceInner(
     }
   };
 
-  // The whole unattended path is DARK until the flag flips — auto automations
+  // The whole unattended path is DARK until the flag flips - auto automations
   // produce nothing (and spend nothing) until then. Hands-off AUTO mode is also
   // a Scale-only entitlement: Growth may build approval-mode automations but not
   // let them post on their own. (Runtime backstop; save-time gate is in web/automations.ts.)
@@ -80,7 +80,7 @@ async function runAutomationOnceInner(
 
   stage("caps");
   // Caps BEFORE any paid/model work (buyer-radar doctrine).
-  // PLAN ceiling first — it's the one the user is actually paying for (Growth 5 /
+  // PLAN ceiling first - it's the one the user is actually paying for (Growth 5 /
   // Scale 90 Auto Agent posts a month) and it bounds every automation at once, so
   // a user can't route around it by creating more automations.
   const planCap = (await entitlementsFor(userId)).automationPostsPerMonth;
@@ -91,7 +91,7 @@ async function runAutomationOnceInner(
     return {
       status: "skipped",
       runId: run.id,
-      reason: `you've used all ${planCap} Auto Agent posts this month — upgrade for a higher cap`,
+      reason: `you've used all ${planCap} Auto Agent posts this month - upgrade for a higher cap`,
     };
   }
   if ((await monthlyRunCount(automation.id)) >= automation.monthly_cap) {
@@ -103,7 +103,7 @@ async function runAutomationOnceInner(
   }
 
   stage("select");
-  // Deterministic select — no LLM has run yet.
+  // Deterministic select - no LLM has run yet.
   const source = SOURCES[automation.source_type];
   const item = await source.select(userId, automation);
   if (!item) {
@@ -140,7 +140,7 @@ async function runAutomationOnceInner(
     });
     // STAMP THE DAY EVEN THOUGH NOTHING SHIPPED. A declined draft is recorded
     // `skipped`, which counts against no cap, and this path used to return
-    // without touching `last_run_at` — so isDue() still said yes, and the next
+    // without touching `last_run_at` - so isDue() still said yes, and the next
     // tick three hours later ran the whole pipeline again. A source the model
     // keeps refusing (off-limits topic, unusable seed) therefore burned eight
     // full LLM compositions a day, every day, bounded only by the global 400/day
@@ -173,7 +173,7 @@ async function runAutomationOnceInner(
   if (effectiveApproval) {
     const claimed = await claimRun(run.id, "drafting", "awaiting_approval");
     if (!claimed) return { status: "skipped", runId: run.id, reason: "already handled" };
-    // DM the approval card (no-op if the user hasn't linked Telegram — the web
+    // DM the approval card (no-op if the user hasn't linked Telegram - the web
     // Approvals inbox mirrors it either way). Draft body is sent VERBATIM.
     await dmChannel(userId)
       .say(approvalMessage(automation.name, item.label, draft.draft, draft.mediaSuggestion || null), approvalKeyboard(run.id))

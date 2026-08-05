@@ -13,18 +13,18 @@ import type { Platform } from "../lib/types.js";
  * the connect hand-off leads with a real account authorization (tap → approve →
  * done) instead of asking for a handle to scrape:
  *   - X: OAuth proves ownership, `GET /2/users/me` gives the VERIFIED handle +
- *     profile metadata (bio, follower count) — the sanctioned way to identify
- *     the account — and ingestion then runs against that verified handle, so we
+ *     profile metadata (bio, follower count) - the sanctioned way to identify
+ *     the account - and ingestion then runs against that verified handle, so we
  *     only ever read a profile the user has demonstrably consented to. The same
  *     token unlocks posting (scheduled posts) with no second auth later.
  *   - LinkedIn: the open API has NO scope that reads a member's posts
- *     (r_member_social / Community Management is partner-gated — do not request
+ *     (r_member_social / Community Management is partner-gated - do not request
  *     it), so auth here buys verified identity + posting rights, and the post
  *     history still comes from the profile-URL scrape the user hands us next.
  *
  * Sequence (the product rule): offer X first; once X resolves (connected or
  * skipped), offer LinkedIn. Either may be skipped, but skipping BOTH is refused
- * until at least one account is connected — there is no read without history.
+ * until at least one account is connected - there is no read without history.
  * A typed @handle / profile URL keeps working everywhere as the fallback (and
  * is the whole flow when no platform app is configured).
  */
@@ -67,7 +67,7 @@ async function anyConnected(userId: string): Promise<boolean> {
 }
 
 /**
- * The consent link. Carries an opaque, short-lived ticket — NOT the user id.
+ * The consent link. Carries an opaque, short-lived ticket - NOT the user id.
  * `?u=<users.id>` on an unauthenticated route meant anyone who could construct
  * the URL could steer the consent at any account; see lib/connect-tickets.ts.
  * Minted fresh every time the offer is rendered, so the 15-minute window starts
@@ -99,24 +99,24 @@ async function sendOffer(userId: string, text: string, kb: InlineKeyboard, plain
 function offerCopy(platform: Platform, first: boolean): string {
   if (platform === "x") {
     return (
-      "one more thing before the read: connect your x properly — tap the button, approve on x, done. " +
+      "one more thing before the read: connect your x properly - tap the button, approve on x, done. " +
       "that verifies it's actually your account (so i read the right person), and it means when we get " +
       "to posting, i can publish drafts for you the moment you say go.\n\n" +
       "rather not? skip it, or just drop your @handle and i'll read it the scrappy way."
     );
   }
   return first
-    ? "let's get linkedin in the picture — tap to connect it. that verifies you and unlocks me posting " +
+    ? "let's get linkedin in the picture - tap to connect it. that verifies you and unlocks me posting " +
         "there for you later. linkedin doesn't let apps read your posts, so after connecting i'll ask for " +
         "your profile url to do the actual reading.\n\n" +
         "rather not? skip it, or just drop your profile url (linkedin.com/in/you) and i'll read from that."
-    : "want linkedin in the picture too? a different register usually lives there — worth having both. " +
+    : "want linkedin in the picture too? a different register usually lives there - worth having both. " +
         "tap to connect (verifies you + unlocks posting there), then i'll grab your profile url for the read.";
 }
 
 /**
  * Offer the auth connect for one platform (marks it offered in connectFlow).
- * `withSkip` controls whether the skip button appears — the at-least-one
+ * `withSkip` controls whether the skip button appears - the at-least-one
  * refusal re-offers without it.
  */
 export async function offerAuthConnect(userId: string, platform: Platform, opts: { first?: boolean; withSkip?: boolean } = {}): Promise<void> {
@@ -137,13 +137,13 @@ export async function offerAuthConnect(userId: string, platform: Platform, opts:
 /**
  * Explicit reconnect: for the `/connect` command with no arg, used by an
  * already-active user, not the automated onboarding hand-off. Unlike
- * `maybeSendConnectAuthOffer`, this does NOT consult `isConnected` — an
+ * `maybeSendConnectAuthOffer`, this does NOT consult `isConnected` - an
  * explicit tap of /connect is unambiguous intent to (re)connect, and the
  * "already connected, don't re-offer" logic exists to avoid pestering someone
  * mid-onboarding, not to hide the button from someone asking for it by name.
  * This also covers the case a scrape-read (`status=ingested`) exists but the
  * POSTING token has gone stale (e.g. the platform app's credentials were
- * rotated) — `isConnected` would wrongly call that "already connected" and
+ * rotated) - `isConnected` would wrongly call that "already connected" and
  * never show the button again. Offers every platform with app credentials
  * configured, unconditionally; returns false only when none are configured.
  */
@@ -155,7 +155,7 @@ export async function offerReconnect(userId: string): Promise<boolean> {
   const connectWord = platforms.map(label).join(" or ");
   await sendOffer(
     userId,
-    `connect ${connectWord} — tap below, approve, done. verifies it's you and unlocks me posting for you. ` +
+    `connect ${connectWord} - tap below, approve, done. verifies it's you and unlocks me posting for you. ` +
       `already connected? tapping again just refreshes it, no harm.`,
     kb,
     platforms.map((p) => `${label(p)}: ${authUrl(userId, p)}`),
@@ -168,7 +168,7 @@ export async function offerReconnect(userId: string): Promise<boolean> {
  * X auth offer if it's configured and nothing has been offered yet. Returns
  * whether an offer actually went out, so callers can fall back to the plain
  * handle ask. `force` (the /start-resume and /connect paths) sends regardless
- * of phase, prior offers, and prior skips — an explicit ask to connect always
+ * of phase, prior offers, and prior skips - an explicit ask to connect always
  * gets the buttons back. No-ops (false) when no platform app is configured or
  * everything offerable is already connected.
  */
@@ -199,7 +199,7 @@ async function nextAuthPlatform(userId: string, opts: { ignoreSkips?: boolean } 
 
 /**
  * The "skip for now" tap. Skipping one platform moves to the other; skipping
- * the last one with nothing connected is refused — the skipped list resets and
+ * the last one with nothing connected is refused - the skipped list resets and
  * both connect buttons come back (typed handle stays an out, and satisfies the
  * gate, since either way we end up with an account to read).
  */
@@ -219,7 +219,7 @@ export async function handleAuthSkip(userId: string, platform: Platform): Promis
   if (await anyConnected(userId)) {
     await sendTelegram(
       userId,
-      "no problem — i've got enough to work with from what's connected. i'll get reading.",
+      "no problem - i've got enough to work with from what's connected. i'll get reading.",
     ).catch(() => {});
     return;
   }
@@ -231,13 +231,13 @@ export async function handleAuthSkip(userId: string, platform: Platform): Promis
   const platforms = PLATFORM_ORDER.filter(authConnectAvailable);
   const kb = new InlineKeyboard();
   for (const p of platforms) kb.url(`🔗 connect ${label(p)}`, authUrl(userId, p)).row();
-  // Name only the platform(s) that actually have a button — a single-platform
+  // Name only the platform(s) that actually have a button - a single-platform
   // instance (e.g. X auth configured, LinkedIn not yet) must not promise a
   // LinkedIn button that isn't there.
   const connectWord = platforms.length ? platforms.map(label).join(" or ") : "an account";
   await sendOffer(
     userId,
-    "here's the thing — everything i do starts from your actual history. no account, no read, and " +
+    "here's the thing - everything i do starts from your actual history. no account, no read, and " +
       "the whole thing runs on the read. you can skip one platform, not both.\n\n" +
       `connect ${connectWord} below, or just drop your @handle / profile url and i'll read it that way.`,
     kb,
@@ -249,7 +249,7 @@ export async function handleAuthSkip(userId: string, platform: Platform): Promis
  * The typed-link fallback for whichever platform ISN'T auth-configured: fires
  * once, right after the other platform connects (via button or typed handle),
  * during onboarding only. Keeps the "X first, then LinkedIn" promise true even
- * on an instance that only has X app credentials — LinkedIn still gets asked
+ * on an instance that only has X app credentials - LinkedIn still gets asked
  * for, just as a plain profile-URL request instead of a connect button.
  * Honors an explicit skip and never repeats (both tracked on connectFlow).
  */
@@ -313,7 +313,7 @@ async function fetchXIdentity(accessToken: string): Promise<XIdentity | null> {
  * X: resolve the verified identity, stamp handle + profile metadata on the
  * account row, and kick the history ingest against the verified handle.
  * LinkedIn: no API post-read exists, so ask for the profile URL to scrape.
- * Then, if we're still in the onboarding hand-off, offer the other platform —
+ * Then, if we're still in the onboarding hand-off, offer the other platform -
  * this is the "LinkedIn after X" leg of the sequence.
  */
 export async function afterOAuthConnected(userId: string, platform: Platform, accessToken: string): Promise<void> {
@@ -348,14 +348,14 @@ export async function afterOAuthConnected(userId: string, platform: Platform, ac
         if (st2.awaitingConnect) await setState(userId, { ...st2, awaitingConnect: false });
         await sendTelegram(
           userId,
-          `that's verified — you're @${who.username} ✅ pulling your x history now, i'll come back once i've actually read it.`,
+          `that's verified - you're @${who.username} ✅ pulling your x history now, i'll come back once i've actually read it.`,
         ).catch(() => {});
       } else if (alreadyRead) {
-        await sendTelegram(userId, `verified — @${who.username} ✅ i've already read your history, so we're set. posting's unlocked too.`).catch(() => {});
+        await sendTelegram(userId, `verified - @${who.username} ✅ i've already read your history, so we're set. posting's unlocked too.`).catch(() => {});
       } else {
         await sendTelegram(
           userId,
-          `verified — @${who.username} ✅ i can't pull post history on this instance though, so type me a handful of your actual takes and i'll read those.`,
+          `verified - @${who.username} ✅ i can't pull post history on this instance though, so type me a handful of your actual takes and i'll read those.`,
         ).catch(() => {});
       }
     } else {
@@ -365,7 +365,7 @@ export async function afterOAuthConnected(userId: string, platform: Platform, ac
       await setState(userId, { ...st2, awaitingConnect: true });
       await sendTelegram(
         userId,
-        "x is connected ✅ couldn't fetch your handle from x just now though — drop your @handle and i'll read your history from it.",
+        "x is connected ✅ couldn't fetch your handle from x just now though - drop your @handle and i'll read your history from it.",
       ).catch(() => {});
     }
   } else {
@@ -383,9 +383,9 @@ export async function afterOAuthConnected(userId: string, platform: Platform, ac
 
   // The sequence leg: X landed → offer LinkedIn (or vice versa if they went
   // LinkedIn-first via /connect). Only mid-onboarding, only if not already
-  // connected/skipped/offered-and-pending — steady-state reconnects stay quiet.
+  // connected/skipped/offered-and-pending - steady-state reconnects stay quiet.
   // When the other platform has no app credentials configured, there's no
-  // button to offer — fall back to the plain typed-link ask so it still gets
+  // button to offer - fall back to the plain typed-link ask so it still gets
   // asked for, just not via OAuth.
   if (inOnboarding) {
     const next = await nextAuthPlatform(userId);

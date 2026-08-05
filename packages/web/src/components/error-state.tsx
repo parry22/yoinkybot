@@ -5,11 +5,11 @@ import panel from "./panel.module.css";
 /**
  * The shared "this page didn't load" surface, in the same visual language as the
  * app's empty states (panel.module.css) rather than Next's bare "Application
- * error" screen — which is what every uncaught page-level DB read used to render:
+ * error" screen - which is what every uncaught page-level DB read used to render:
  * no shell, no explanation, and no way back.
  *
  * `onRetry` is the boundary's own `reset()` where there is one (error.tsx), which
- * re-renders the failed segment without a full reload — the right first move for
+ * re-renders the failed segment without a full reload - the right first move for
  * a transient database or upstream hiccup.
  */
 export function ErrorState({
@@ -44,7 +44,7 @@ export function ErrorState({
             </a>
           </div>
           {/* Next's error digest is the only handle support has on a production
-           *  stack trace, so it has to be on screen — quietly. */}
+           *  stack trace, so it has to be on screen - quietly. */}
           {digest && <p style={{ marginTop: 16, fontSize: 11, color: "var(--ink-500)" }}>reference {digest}</p>}
         </div>
       </div>

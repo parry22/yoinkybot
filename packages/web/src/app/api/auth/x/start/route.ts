@@ -19,7 +19,7 @@ function b64url(buf: Buffer): string {
 export async function GET(req: Request) {
   const origin = new URL(req.url).origin;
   const clientId = process.env.X_CLIENT_ID;
-  // No client id is a deployment problem, not a transient one — send the kind that
+  // No client id is a deployment problem, not a transient one - send the kind that
   // tells the user retrying won't help (see the callback route's `fail`).
   if (!clientId) {
     console.error("x oauth start: X_CLIENT_ID is not set");

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Inline upgrade prompt shown when a paid action is blocked — a 402
+ * Inline upgrade prompt shown when a paid action is blocked - a 402
  * (upgrade_required, free/expired) or 429 (cap_reached, plan limit hit). Links
  * straight to the Dodo checkout for the target plan (default Scale, since caps
  * are what Scale removes). Reused across Buyer Radar, Automations, Scheduled.

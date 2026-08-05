@@ -63,8 +63,8 @@ type Turn = { role: "user" | "assistant"; content: string };
  * of being asked what you actually want posted. People picked a pill, typed one
  * sentence, and got an agent that knew nothing about their angles or their hooks.
  *
- * WHAT IT IS NOW. Yoinky interviews you — what the agent is for, what shape of
- * post, which angles, which hooks, then cadence and delivery — one question at a
+ * WHAT IT IS NOW. Yoinky interviews you - what the agent is for, what shape of
+ * post, which angles, which hooks, then cadence and delivery - one question at a
  * time, with suggested answers that come from YOUR niche and arrive as part of
  * each question rather than sitting in the UI in advance. On the last turn the
  * server builds the agent and runs it once, so you see a real draft before you
@@ -118,7 +118,7 @@ export function Automations({
   }
 
   /**
-   * Send one interview turn. The whole transcript goes with it — the server is
+   * Send one interview turn. The whole transcript goes with it - the server is
    * stateless and re-derives the agent spec from it each time, so a correction
    * three turns later still lands.
    */
@@ -155,7 +155,7 @@ export function Automations({
           }
         },
         onError: (message, status) => {
-          if (status === 402) setPaywall("Auto Agent is a paid feature — upgrade to set one up.");
+          if (status === 402) setPaywall("Auto Agent is a paid feature - upgrade to set one up.");
           else setErr(message);
         },
       },
@@ -172,7 +172,7 @@ export function Automations({
     }).catch(() => {});
   }
 
-  /** "Run now" — streamed, so the pipeline shows its work. */
+  /** "Run now" - streamed, so the pipeline shows its work. */
   async function runNow(a: AutomationView) {
     setErr("");
     setPaywall(null);
@@ -183,7 +183,7 @@ export function Automations({
         onMessage: (content) => setTurns((prev) => [...prev, { role: "assistant", content }]),
         onResult: () => void refreshApprovals(),
         onError: (message, status) => {
-          if (status === 402) setPaywall("Your trial has ended — upgrade to keep the agent running.");
+          if (status === 402) setPaywall("Your trial has ended - upgrade to keep the agent running.");
           else setErr(message);
         },
       },
@@ -200,7 +200,7 @@ export function Automations({
             <div>
               <div className={panel.title}>Auto Agent</div>
               <div className={panel.subtitle}>
-                Tell Yoinky what you want posted — say it however it comes out — and it&apos;ll ask about the angles,
+                Tell Yoinky what you want posted - say it however it comes out - and it&apos;ll ask about the angles,
                 hooks and shape of post from there, then set it running.
                 {/* A cap of 0 is the free plan, not an allowance: "Your plan covers
                  *  0 agent posts a month" read like a broken counter, so the zero
@@ -213,7 +213,7 @@ export function Automations({
           {planCap === 0 && (
             <section className={styles.section}>
               <UpgradeCTA
-                message="Your plan doesn't include agent posts — upgrade and Yoinky starts writing them for you."
+                message="Your plan doesn't include agent posts - upgrade and Yoinky starts writing them for you."
                 plan="growth"
               />
             </section>
@@ -279,7 +279,7 @@ export function Automations({
             </div>
           )}
 
-          {/* One shimmering line of the current action for the whole turn —
+          {/* One shimmering line of the current action for the whole turn -
            *  same indicator as Compose (see agent-shimmer.tsx). */}
           {busy && (
             <AgentShimmer
@@ -298,7 +298,7 @@ export function Automations({
           )}
 
           {/* Suggestions belong to the question that was just asked, so they only
-           *  exist after Yoinky asks something — never as standing UI furniture. */}
+           *  exist after Yoinky asks something - never as standing UI furniture. */}
           {options.length > 0 && !busy && (
             <div className={styles.chips}>
               {options.map((o) => (
@@ -354,7 +354,7 @@ function ApprovalCard({
   onResolved: (runId: string) => void;
   onEdited: (runId: string, draft: string) => void;
   /** Verdicts are paid work (an "edit" re-drafts through the model), so a 402 has
-   *  to surface — silently doing nothing looked like a broken button. */
+   *  to surface - silently doing nothing looked like a broken button. */
   onPaywall: (message: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -385,15 +385,15 @@ function ApprovalCard({
 
       // EVERY failure used to land here and do nothing at all: the button
       // un-greyed and the card sat there unchanged. So an approval that had
-      // EXPIRED (the backend returns a real explanation — "that draft expired, I
+      // EXPIRED (the backend returns a real explanation - "that draft expired, I
       // gave you the post slot back"), an edit that hit the edit cap, a 429 from
       // the burst limiter, and a 500 were all indistinguishable from a dead
       // button. Telegram surfaced these reasons; the web never did.
       if (!res.ok || !data.ok) {
         if (data.capped) {
-          setNote("that's as many edits as I'll do on one draft — approve it or reject it.");
+          setNote("that's as many edits as I'll do on one draft - approve it or reject it.");
         } else {
-          setNote(data.reason ?? data.error ?? "couldn't do that just now — try again.");
+          setNote(data.reason ?? data.error ?? "couldn't do that just now - try again.");
         }
         return;
       }
@@ -408,7 +408,7 @@ function ApprovalCard({
         onResolved(approval.runId);
       }
     } catch {
-      setNote("network dropped — try again.");
+      setNote("network dropped - try again.");
     } finally {
       setBusy(false);
     }

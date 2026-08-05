@@ -32,7 +32,7 @@ export interface ConversationResult {
   capture: boolean;
   offerAngles: boolean;
   /** A tool the brain decided to call this turn; executed by telegram/actions.ts.
-   *  Only set on the legacy single-tool path (no executor passed) — with an
+   *  Only set on the legacy single-tool path (no executor passed) - with an
    *  executor, tools run inside the turn loop and this stays undefined. */
   tool?: ChatTool;
 }
@@ -43,8 +43,8 @@ export interface ConverseOpts {
    * the compact trace fed back to the model. Passing this turns the turn into a
    * bounded multi-tool loop (up to MAX_TOOL_CALLS_PER_TURN); without it, the
    * first tool call ends the turn and is returned for the caller to execute
-   * (the legacy single-tool behavior). Both live callers — typed text
-   * (bot.ts) and voice transcript (transcribe.ts) — pass an executor, so the
+   * (the legacy single-tool behavior). Both live callers - typed text
+   * (bot.ts) and voice transcript (transcribe.ts) - pass an executor, so the
    * single-tool branch is a preserved fallback, not a currently-exercised path;
    * paced onboarding runs through runSessionTurn (session-machine), not here.
    */
@@ -63,7 +63,7 @@ async function loadHistory(userId: string): Promise<Array<{ role: "user" | "assi
  * The working relationship, computed from facts rather than model-written notes:
  * what's been nudged and ignored, how they respond to drafts, how they've been
  * reacting lately. This is what separates a strategist who's been in the room
- * for weeks from a smart stranger — and none of it needs new storage.
+ * for weeks from a smart stranger - and none of it needs new storage.
  */
 export async function relationshipContext(userId: string): Promise<string | null> {
   const [ignoredUnlocks, replyStats, reactions] = await Promise.all([
@@ -95,7 +95,7 @@ export async function relationshipContext(userId: string): Promise<string | null
   const lines: string[] = [];
   if (ignoredUnlocks.length) {
     lines.push(
-      `Ideas you've nudged 2+ times that they still haven't written: ${ignoredUnlocks.map((u) => `"${u.idea}"`).join("; ")} — there may be a real reason; worth asking, not re-nudging.`,
+      `Ideas you've nudged 2+ times that they still haven't written: ${ignoredUnlocks.map((u) => `"${u.idea}"`).join("; ")} - there may be a real reason; worth asking, not re-nudging.`,
     );
   }
   const sent = Number(replyStats?.sent ?? 0);
@@ -104,14 +104,14 @@ export async function relationshipContext(userId: string): Promise<string | null
   if (sent + skipped >= 3) {
     lines.push(
       `Reply drafts: ${sent} sent (${edited} reworked first), ${skipped} skipped${
-        sent > 0 && edited / sent > 0.6 ? " — they usually rewrite your drafts, so voice-match is off somewhere" : ""
+        sent > 0 && edited / sent > 0.6 ? " - they usually rewrite your drafts, so voice-match is off somewhere" : ""
       }.`,
     );
   }
   const fire = Number(reactions?.fire ?? 0);
   const later = Number(reactions?.later ?? 0);
   if (fire + later >= 3) {
-    lines.push(`Recent reactions to what you bring: ${fire}x useful, ${later}x "not now"${later > fire ? " — dial the proactive instinct down, sharpen relevance" : ""}.`);
+    lines.push(`Recent reactions to what you bring: ${fire}x useful, ${later}x "not now"${later > fire ? " - dial the proactive instinct down, sharpen relevance" : ""}.`);
   }
   return lines.length ? lines.join("\n") : null;
 }
@@ -127,7 +127,7 @@ export async function saveTurn(userId: string, role: "user" | "assistant", conte
  *
  * With opts.executeTool set, this is a bounded agent loop (converse.v3): the
  * model may chain up to MAX_TOOL_CALLS_PER_TURN tool calls, each executed
- * immediately and fed back as a compact note — full raw payloads stay out of
+ * immediately and fed back as a compact note - full raw payloads stay out of
  * the loop's own context. Guardrails: hard call cap, and the same tool with the
  * same args twice in one turn is rejected and forces a final reply.
  */
@@ -179,11 +179,11 @@ export async function converseWithUser(
   // Cache affinity (spec §3): all iterations of THIS turn carry one key, so the
   // whole multi-tool turn lands on one server and iterations 2-N replay a warm
   // prefix. `now` is computed ONCE here (not per iteration) so the front of the
-  // user message is byte-identical across the turn's iterations — only the
+  // user message is byte-identical across the turn's iterations - only the
   // appended tool notes at the tail change (spec §2/§6 prefix stability).
   //
   // The key is STABLE PER USER PER DAY. It used to end in `randomUUID()`, which
-  // held affinity inside one turn and threw it away between turns — a new key
+  // held affinity inside one turn and threw it away between turns - a new key
   // every turn means a new upstream server and a cold prefix, so the ~5.7k-token
   // stable header (persona, profile, throughline, positions) was re-billed at the
   // full input rate on every single turn. That is the single biggest reason the
@@ -235,8 +235,8 @@ export async function converseWithUser(
   if (config.AGENT_RUNTIME_CHAT === "sdk" && opts.executeTool && sdkConfigured()) {
     // The user's message is persisted BEFORE the run, unlike the legacy loop
     // which waits for a successful first model call. It has to be: the SDK may
-    // execute a tool — and the executor persists its beat and trace as assistant
-    // turns — before we ever see a result, and a reply landing in history ahead
+    // execute a tool - and the executor persists its beat and trace as assistant
+    // turns - before we ever see a result, and a reply landing in history ahead
     // of the message that prompted it would corrupt the transcript order.
     await saveTurn(userId, "user", message);
     userTurnSaved = true;
@@ -283,7 +283,7 @@ export async function converseWithUser(
     // GLM sometimes wraps the object in an array ([{...}]); coerce before parse.
     const safe = replySchema.safeParse(asObject(res.parsed));
     if (!safe.success) {
-      // Valid JSON, unusable shape. Don't crash the turn with a raw Zod dump —
+      // Valid JSON, unusable shape. Don't crash the turn with a raw Zod dump -
       // degrade to a soft nudge. Anything a tool already ran this turn has
       // already reached the user; we just can't add a final beat.
       console.error("converse: unusable model output", {
@@ -301,7 +301,7 @@ export async function converseWithUser(
     if (call === 0) {
       capture = parsed.capture;
       offerAngles = parsed.offer_angles;
-      // First model call succeeded — the turn is real, persist their message
+      // First model call succeeded - the turn is real, persist their message
       // before any tool output lands so history stays chronological. Guarded:
       // when the SDK path ran first and fell back, it already saved this.
       if (!userTurnSaved) {
@@ -322,7 +322,7 @@ export async function converseWithUser(
       const key = JSON.stringify(tool);
       if (seenCalls.has(key)) {
         // Same tool + same args twice in one turn → reject, force a final reply.
-        toolNotes.push(`(you already called ${tool.name} with those exact args this turn — answer with what you have)`);
+        toolNotes.push(`(you already called ${tool.name} with those exact args this turn - answer with what you have)`);
         forceFinal = true;
         continue;
       }
@@ -332,13 +332,13 @@ export async function converseWithUser(
         trace = await opts.executeTool(tool, reply);
       } catch (err) {
         console.error(`chat tool ${tool.name} failed mid-turn`, err);
-        trace = "tool failed on our end — tell them plainly and carry on without it";
+        trace = "tool failed on our end - tell them plainly and carry on without it";
       }
       toolNotes.push(`${tool.name}(${JSON.stringify({ ...tool, name: undefined })}) → ${trace.slice(0, 700)}`);
       continue;
     }
 
-    // Final pass (no tool, or the model asked past the cap — the ask is dropped).
+    // Final pass (no tool, or the model asked past the cap - the ask is dropped).
     // A turn must carry something: with no tool run and no reply, degrade to a
     // nudge rather than silence.
     const finalReply = reply || (toolNotes.length > 0 ? "" : "Say more?");

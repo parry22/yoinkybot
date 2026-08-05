@@ -15,7 +15,7 @@ import type { Automation } from "./types.js";
 const DOW = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 
 /**
- * The cron interval this tick is scheduled on — every 3 hours, on the hour
+ * The cron interval this tick is scheduled on - every 3 hours, on the hour
  * (jobs/workers.ts, QUEUES.automationTick). Keep in step with that schedule:
  * LAST_TICK_HOUR_UTC below is derived from it.
  */
@@ -28,7 +28,7 @@ const TICK_INTERVAL_HOURS = 3;
  *
  * THE BUG THIS ENCODES. The hour gate was a bare
  * `if (now.getUTCHours() < hour) return false`. For hour 22 or 23 that test is
- * true at every single tick — 21 < 22 — so those automations never ran, ever, and
+ * true at every single tick - 21 < 22 - so those automations never ran, ever, and
  * the next day's date check then reset them to un-run. Nothing logged it; the
  * automation simply sat enabled and silent forever. `hour` came straight from the
  * web form with no validation, so 22 and 23 were both reachable and both dead.
@@ -53,7 +53,7 @@ export function effectiveHourGate(raw: unknown): number | null {
 
 /**
  * Is this automation due right now? At most once per UTC day; weekly honors
- * cadence_meta.days; an optional cadence_meta.hour holds until that hour (UTC —
+ * cadence_meta.days; an optional cadence_meta.hour holds until that hour (UTC -
  * a v1 simplification; quiet hours cover politeness). `manual` is never auto-due.
  */
 export function isDue(a: Automation, now: Date = new Date()): boolean {
@@ -93,12 +93,12 @@ const APPROVAL_TTL_HOURS = 72;
 
 /**
  * Age out unanswered approvals and tell the user it happened. Runs at the top of
- * every tick — before anything is judged due, so the released quota is visible to
+ * every tick - before anything is judged due, so the released quota is visible to
  * this same tick's cap checks rather than the next one.
  *
  * The DM is the whole point of doing this loudly. The failure mode being fixed is
  * SILENT: the cap fills with untouched drafts and the agent just stops, with no
- * message and nothing on screen explaining why. Best-effort per user — a Telegram
+ * message and nothing on screen explaining why. Best-effort per user - a Telegram
  * send that fails (or a user with no Telegram at all; the web Approvals inbox
  * shows the expired verdict either way) must not stop the sweep.
  */

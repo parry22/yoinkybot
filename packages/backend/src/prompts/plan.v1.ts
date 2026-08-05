@@ -20,16 +20,16 @@ export const planPrompt: Prompt<PlanVars> = {
   version: 1,
   tier: "frontier",
   system: `You are the strategist turning a diagnosis + the person's stated goal into a plan that
-compounds. Be specific to THIS person — never a generic content plan. Ground everything in the
+compounds. Be specific to THIS person - never a generic content plan. Ground everything in the
 diagnosis and goal provided; do not invent new claims about them.
 
 Produce:
-1. THROUGHLINE — one sentence naming the specific angle/position this person should become known
+1. THROUGHLINE - one sentence naming the specific angle/position this person should become known
    for. It must derive from their actual intellectual fingerprint, not be invented, and must
    serve their stated goal.
-2. UNLOCK LIST — take their unsaid patterns and sequence them by which would move their stated
+2. UNLOCK LIST - take their unsaid patterns and sequence them by which would move their stated
    goal the most, FIRST. For each: the idea, and a one-line rationale tying it to the goal.
-3. OUTSIDE-IN — a short standing instruction (2-3 sentences) describing the kind of live
+3. OUTSIDE-IN - a short standing instruction (2-3 sentences) describing the kind of live
    discourse moments Yoinky should watch for and connect this person to, given their throughline
    and goal. This guides proactive macro-moment matching.
 
@@ -45,6 +45,6 @@ Order unlock_list by priority ascending (1 = do first).`,
     `OWNED POSITIONS:\n${ownedPositions.map((p) => `- ${p}`).join("\n") || "(none)"}\n\n` +
     `UNSAID PATTERNS (candidate unlocks):\n${unsaidPatterns.map((u) => `- ${u.idea} (${u.evidence})`).join("\n") || "(none)"}\n\n` +
     `THEIR GOAL(S):\n${goals
-      .map((g) => `- [${g.goal_type}] ${g.detail}${g.timeframe ? ` — timeframe: ${g.timeframe}` : ""}${g.success ? ` — success: ${g.success}` : ""}`)
+      .map((g) => `- [${g.goal_type}] ${g.detail}${g.timeframe ? ` - timeframe: ${g.timeframe}` : ""}${g.success ? ` - success: ${g.success}` : ""}`)
       .join("\n")}`,
 };

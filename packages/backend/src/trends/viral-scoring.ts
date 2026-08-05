@@ -34,7 +34,7 @@ function seedQuery(themes: string[]): string {
 
 /**
  * Rank score, all sub-scores normalized 0..1, deterministic:
- *  - relevance (1 − niche distance): most important — it must be something the
+ *  - relevance (1 − niche distance): most important - it must be something the
  *    user would plausibly see on their own feed, not just generically viral.
  *  - breakout (log of views ÷ followers): escaped-its-reach signal.
  *  - reach (log of views within the band): bigger within band is a better example.
@@ -48,7 +48,7 @@ function rankScore(tweet: XTweet, nicheDistance: number): number {
 
 /**
  * The SHARED half of selection: search + view-count BAND filter. The niche seeds
- * are the same across the user base, so this runs ONCE per job run — not once
+ * are the same across the user base, so this runs ONCE per job run - not once
  * per user (that re-ran the identical paid twitterapi search per user, reset the
  * per-call rate pacing each time → self-inflicted 429s, and cost O(users) for
  * identical data). `handleViralBenchmark` fetches this once and passes the pool
@@ -72,7 +72,7 @@ export async function fetchViralPool(themes: string[]): Promise<XTweet[]> {
     return [];
   }
 
-  // View-count BAND filter — the defining gate. No min_views search operator
+  // View-count BAND filter - the defining gate. No min_views search operator
   // exists, so this is where the impression band is actually enforced, on the
   // real viewCount the search returned.
   const banded = new Map<string, XTweet>();
@@ -87,7 +87,7 @@ export async function fetchViralPool(themes: string[]): Promise<XTweet[]> {
 
 /**
  * The PER-USER half: dedup against this user's ledger, niche-gate against their
- * positions, deterministically rank, take one. Reads no provider — works off the
+ * positions, deterministically rank, take one. Reads no provider - works off the
  * shared pool from `fetchViralPool`.
  */
 export async function selectFromPool(userId: string, pool: XTweet[]): Promise<ViralPick | null> {
@@ -104,7 +104,7 @@ export async function selectFromPool(userId: string, pool: XTweet[]): Promise<Vi
     [userId, String(config.VIRAL_AUTHOR_COOLDOWN_DAYS), pool.map((t) => t.id)],
   );
   // Never resend the same tweet (any age). But only COOL an author when a send
-  // actually falls inside the window — an old tweet resurfacing in the candidate
+  // actually falls inside the window - an old tweet resurfacing in the candidate
   // pool (matched by tweet_id, not by window) must not re-block its author past
   // the cooldown, which was silently over-blocking authors indefinitely.
   const sentTweetIds = new Set(sent.map((r) => r.tweet_id));

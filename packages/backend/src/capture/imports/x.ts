@@ -57,7 +57,7 @@ export function parseXArchive(fileContent: string): ImportedPost[] {
   try {
     entries = JSON.parse(jsonText);
   } catch {
-    throw new Error("Could not parse X archive — upload data/tweets.js from your archive zip");
+    throw new Error("Could not parse X archive - upload data/tweets.js from your archive zip");
   }
   if (!Array.isArray(entries)) throw new Error("Unexpected X archive shape");
 
@@ -65,7 +65,7 @@ export function parseXArchive(fileContent: string): ImportedPost[] {
   for (const entry of entries) {
     const t = (entry as { tweet?: Record<string, unknown> }).tweet ?? (entry as Record<string, unknown>);
     const text = String(t["full_text"] ?? t["text"] ?? "").trim();
-    if (!text || text.startsWith("RT @")) continue; // skip retweets — not the user's own thinking
+    if (!text || text.startsWith("RT @")) continue; // skip retweets - not the user's own thinking
     const createdAt = t["created_at"] ? new Date(String(t["created_at"])) : new Date();
     const id = t["id_str"] ? String(t["id_str"]) : undefined;
     posts.push({

@@ -27,7 +27,7 @@ import { runAsUser } from "../byok/context.js";
  * Selection is entirely deterministic (trends/viral-scoring.ts). This handler
  * gates delivery (own once-a-day budget, NOT the shared proactive cadence),
  * computes the facts, runs the bounded composition agent, delivers, and writes
- * the dedup ledger — only on a real send.
+ * the dedup ledger - only on a real send.
  */
 
 const outputSchema = z.object({
@@ -37,7 +37,7 @@ const outputSchema = z.object({
   cited_memory_ids: z.array(z.string()).catch([]),
 });
 
-/** 👍 / 👎 feedback on relevance — the tuning surface. Handled in telegram/bot.ts. */
+/** 👍 / 👎 feedback on relevance - the tuning surface. Handled in telegram/bot.ts. */
 export function viralReactionKeyboard(surfacingId: string): InlineKeyboard {
   return new InlineKeyboard()
     .text("👍 useful", `vbfb:${surfacingId}:useful`)
@@ -46,7 +46,7 @@ export function viralReactionKeyboard(surfacingId: string): InlineKeyboard {
 
 export async function handleViralBenchmark(): Promise<void> {
   // The niche seeds are shared across the user base (same distilled themes the
-  // trend fetch uses — no second seed pipeline). Compute once per run; the
+  // trend fetch uses - no second seed pipeline). Compute once per run; the
   // per-user band/niche/dedup gates do the personalizing.
   const themes = await interestThemes().catch((err) => {
     console.error("viral: interestThemes failed", err);
@@ -54,7 +54,7 @@ export async function handleViralBenchmark(): Promise<void> {
   });
   if (themes.length === 0) return;
 
-  // Fetch the candidate pool ONCE for the whole run — the search is identical
+  // Fetch the candidate pool ONCE for the whole run - the search is identical
   // across users (shared niche seeds), so per-user searching was pure waste and
   // a 429 magnet. Bail before touching the DB if nothing's viral right now.
   const pool = await fetchViralPool(themes);
@@ -94,7 +94,7 @@ export async function viralBenchmarkForUser(
   // gets inspiration to look at right after connecting.
   const seed = opts.seed === true;
   if (!opts.skipGates && !seed) {
-    // Per-plan daily budget (Growth = 1/day, Scale = unlimited) — NOT the shared
+    // Per-plan daily budget (Growth = 1/day, Scale = unlimited) - NOT the shared
     // proactive cadence cap. A different kind of value (an external reference
     // example), so it gets its own slot rather than competing with resurfacing.
     const cap = opts.viralPerDay !== undefined ? opts.viralPerDay : (await entitlementsFor(userId)).viralPerDay;
@@ -130,7 +130,7 @@ export async function viralBenchmarkForUser(
   const executors: Record<string, (args: Record<string, unknown>) => Promise<string>> = {
     get_voice_profile: async () => {
       const profile = await currentVoiceProfile(userId);
-      return profile?.traits ? JSON.stringify(profile.traits).slice(0, 900) : "no voice profile yet — default plain and direct";
+      return profile?.traits ? JSON.stringify(profile.traits).slice(0, 900) : "no voice profile yet - default plain and direct";
     },
     get_content_pillars: async () => {
       const profile = await getProfile(userId);
@@ -175,7 +175,7 @@ export async function viralBenchmarkForUser(
   const angle = output.angle.trim();
   const looksLikeDraft = angle.length > 120 || /[.!?]"?\s/.test(angle);
   const message =
-    `📈 viral in your niche — worth a look at why\n\n` +
+    `📈 viral in your niche - worth a look at why\n\n` +
     `@${tweet.authorHandle} just did ${facts.view_count.toLocaleString()} views (${facts.breakout_ratio}x their following).\n\n` +
     `${casualize(output.breakdown.trim())}\n\n` +
     `💡 your angle:\n${looksLikeDraft ? enforceStyle(angle) : casualize(angle)}` +

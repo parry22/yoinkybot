@@ -13,7 +13,7 @@ import { cosineDistance } from "../drafting/repurpose.js";
 /**
  * Peer benchmarking: a small, explicitly user-chosen set of peers, compared on
  * TERRITORY (theme overlap) and RELATIVE performance (each against their own
- * baseline — raw numbers across different audience sizes are meaningless and
+ * baseline - raw numbers across different audience sizes are meaningless and
  * never surfaced). No positions, no belief graph, no voice profile for peers;
  * that machinery is reserved for the person who opted in.
  */
@@ -28,7 +28,7 @@ const PEER_WINDOW_DAYS = 90;
 
 export interface TerritorySplit {
   shared: string[]; // user's label, matched by the peer
-  userOnly: string[]; // the differentiation evidence — the headline finding
+  userOnly: string[]; // the differentiation evidence - the headline finding
   peerOnly: string[];
   overlapPct: number; // share of the user's territory the peer also covers
 }
@@ -79,7 +79,7 @@ export function relativePerformance(baselineEng: number[], periodEng: number[]):
   return { baseline, periodMedian, ratio };
 }
 
-// ── Peer management (explicit add only — never suggested, never automatic) ───
+// ── Peer management (explicit add only - never suggested, never automatic) ───
 
 export type PeersCommand =
   | { kind: "list" }
@@ -110,7 +110,7 @@ export async function addPeer(
     [userId],
   );
   if (Number(count?.n ?? 0) >= MAX_PEERS) {
-    return `You're already watching ${MAX_PEERS} peers — that's the cap on purpose, this works as a sharp shortlist, not a market scan. Remove one first: /peers remove <handle>`;
+    return `You're already watching ${MAX_PEERS} peers - that's the cap on purpose, this works as a sharp shortlist, not a market scan. Remove one first: /peers remove <handle>`;
   }
   await query(
     `INSERT INTO peer_profiles (user_id, platform, peer_handle, relationship_note, active)
@@ -118,7 +118,7 @@ export async function addPeer(
      ON CONFLICT (user_id, platform, peer_handle) DO UPDATE SET active = true, relationship_note = COALESCE($4, peer_profiles.relationship_note)`,
     [userId, platform, handle, note],
   );
-  return `Watching @${handle} on ${platform === "x" ? "X" : "LinkedIn"}${note ? ` (${note})` : ""}. Their public posts get pulled weekly, and the territory comparison folds into your Monday report. Territory and relative performance only — I don't build a profile on them.`;
+  return `Watching @${handle} on ${platform === "x" ? "X" : "LinkedIn"}${note ? ` (${note})` : ""}. Their public posts get pulled weekly, and the territory comparison folds into your Monday report. Territory and relative performance only - I don't build a profile on them.`;
 }
 
 export async function removePeer(userId: string, handle: string): Promise<string> {
@@ -140,19 +140,19 @@ export async function listPeers(userId: string): Promise<string> {
     return (
       "No peers on the watchlist. Add up to 5 people whose territory is worth comparing against yours:\n" +
       "/peers add @handle optional note on why them\n/peers add linkedin <slug> for LinkedIn\n\n" +
-      "I compare territory and relative performance only — never raw numbers across different audiences, never style."
+      "I compare territory and relative performance only - never raw numbers across different audiences, never style."
     );
   }
   return (
     "Watching:\n" +
     peers
-      .map((p) => `• @${p.peer_handle} (${p.platform})${p.relationship_note ? ` — ${p.relationship_note}` : ""} · ${p.n} posts on record`)
+      .map((p) => `• @${p.peer_handle} (${p.platform})${p.relationship_note ? ` - ${p.relationship_note}` : ""} · ${p.n} posts on record`)
       .join("\n") +
     "\n\n/peers add @handle · /peers remove @handle"
   );
 }
 
-// ── Weekly ingest (cron) — pull, dedupe, batch-classify themes ───────────────
+// ── Weekly ingest (cron) - pull, dedupe, batch-classify themes ───────────────
 
 const themesSchema = z.object({
   themes: z
@@ -160,7 +160,7 @@ const themesSchema = z.object({
       z.object({
         index: z.number(),
         theme: z.string().min(1),
-        // Tolerate a missing/garbled read rather than failing the whole batch —
+        // Tolerate a missing/garbled read rather than failing the whole batch -
         // matches jobs/extract.ts's .catch() precedent for classification fields.
         rhetorical_mode: z.string().catch("").optional(),
         sincerity_register: z
@@ -227,7 +227,7 @@ export async function ingestPeer(peer: {
       const res = await llmCall({
         userId: peer.user_id,
         eventType: "peer_themes",
-        // High-volume, low-stakes tagging — the cheap floor per the model registry.
+        // High-volume, low-stakes tagging - the cheap floor per the model registry.
         tier: "cheap_floor",
         system: classifyPeerThemes.system,
         user: classifyPeerThemes.render({ posts: untagged.map((u, i) => ({ index: i, content: u.content })) }),
@@ -259,7 +259,7 @@ export interface PeerComparison {
 }
 
 /**
- * The rendered COMPUTED PEER COMPARISON block for the Monday report — territory
+ * The rendered COMPUTED PEER COMPARISON block for the Monday report - territory
  * first, everything relative-to-own-baseline. Returns null when the user
  * watches no peers (the report simply omits the section).
  */
@@ -285,7 +285,7 @@ export async function computePeerComparison(
       : null;
 
   const lines: string[] = [
-    `COMPUTED PEER COMPARISON (weekly-ingested public posts · every performance figure is each person vs THEIR OWN baseline — raw cross-account numbers are never comparable and never shown)`,
+    `COMPUTED PEER COMPARISON (weekly-ingested public posts · every performance figure is each person vs THEIR OWN baseline - raw cross-account numbers are never comparable and never shown)`,
     `Your period-vs-baseline: ${userRatio ?? "n/a"}x.`,
   ];
 
@@ -296,7 +296,7 @@ export async function computePeerComparison(
       [peer.id],
     );
     if (rows.length < 5) {
-      lines.push(`@${peer.peer_handle}: only ${rows.length} posts on record so far — too thin to compare honestly this period.`);
+      lines.push(`@${peer.peer_handle}: only ${rows.length} posts on record so far - too thin to compare honestly this period.`);
       continue;
     }
 
@@ -328,7 +328,7 @@ export async function computePeerComparison(
       `@${peer.peer_handle}${peer.relationship_note ? ` (${peer.relationship_note})` : ""}: ${rows.length} posts on record · their period-vs-baseline: ${perf.ratio ?? "n/a"}x` +
         (split
           ? `\n  TERRITORY (theme overlap ${split.overlapPct}% of yours):` +
-            `\n  - yours alone (differentiation evidence): ${split.userOnly.join("; ") || "(none — everything you cover, they cover too)"}` +
+            `\n  - yours alone (differentiation evidence): ${split.userOnly.join("; ") || "(none - everything you cover, they cover too)"}` +
             `\n  - shared ground: ${split.shared.join("; ") || "(none)"}` +
             `\n  - theirs only: ${split.peerOnly.map((t) => (traction.has(t) ? `${t} [getting real traction]` : t)).join("; ") || "(none)"}`
           : `\n  TERRITORY: not enough theme data yet on one side to split honestly.`),

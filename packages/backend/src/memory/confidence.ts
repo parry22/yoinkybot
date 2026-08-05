@@ -1,5 +1,5 @@
 /**
- * Belief confidence + reconciliation decisions — pure functions, no I/O.
+ * Belief confidence + reconciliation decisions - pure functions, no I/O.
  * Confidence is computed lazily at read time (no sweep job): it rises with
  * reinforcement and decays with time since the belief was last affirmed, so a
  * position stated once eight months ago stops outranking last week's thinking.
@@ -12,7 +12,7 @@ export const CONFIDENCE_HALF_LIFE_DAYS = 90;
 export const STALE_CONFIDENCE = 0.15;
 
 /**
- * 0.05..0.95 — base from reinforcement count (how many times they've said it),
+ * 0.05..0.95 - base from reinforcement count (how many times they've said it),
  * halved every 90 days since it was last affirmed.
  */
 export function effectiveConfidence(reinforcement: number, lastAffirmedAt: number, now: number): number {
@@ -35,7 +35,7 @@ export interface ReconcileDecision {
 /**
  * Turn per-candidate judgments into one deterministic decision:
  * - a "same" match wins → reinforce it (never insert a duplicate belief);
- * - every "contradicts" match is superseded — by the reinforced position if
+ * - every "contradicts" match is superseded - by the reinforced position if
  *   there is one, otherwise by the newly inserted statement;
  * - nothing matches → plain insert.
  */

@@ -1,18 +1,18 @@
 /**
- * Shared strategist data shapes — the pure, cross-file types of the onboarding /
+ * Shared strategist data shapes - the pure, cross-file types of the onboarding /
  * diagnosis / plan arc, collected in one place (the same pattern `trends/
  * provider.ts` uses for the trend domain). Types only: no runtime values and no
  * imports from sibling modules, so any strategist file can depend on this
  * without an import cycle.
  *
  * NOTE on what deliberately does NOT live here: types derived from runtime const
- * arrays — `ProfileField` (from PROFILE_FIELDS), `DiagnosisBeat`/`PlanBeat`
- * (from DIAGNOSIS_BEATS/PLAN_BEATS) — stay beside their arrays in profile.ts /
+ * arrays - `ProfileField` (from PROFILE_FIELDS), `DiagnosisBeat`/`PlanBeat`
+ * (from DIAGNOSIS_BEATS/PLAN_BEATS) - stay beside their arrays in profile.ts /
  * state.ts. Moving them would either strand runtime values in a types file or
  * split a `const` from the type derived off it. Only pure interfaces migrate.
  */
 
-/** The persisted brand profile row (brand_profiles) — the user's stated inputs. */
+/** The persisted brand profile row (brand_profiles) - the user's stated inputs. */
 export interface BrandProfile {
   id: string;
   user_id: string;

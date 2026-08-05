@@ -2,16 +2,16 @@
  * Per-user turn serialization with burst merging.
  *
  * Two things break the "talking to a person" illusion without this:
- * 1. Concurrent turns — two quick messages run two LLM turns in parallel,
+ * 1. Concurrent turns - two quick messages run two LLM turns in parallel,
  *    racing chat history and strategist state (the session machine's
  *    read-modify-write on users.strategist_state is not concurrency-safe).
- * 2. Fragment replies — people type one thought as three messages. Answering
+ * 2. Fragment replies - people type one thought as three messages. Answering
  *    each fragment separately reads like a bot; a person waits and answers the
  *    whole thought once.
  *
  * So: one turn runs per user at a time. Anything that arrives mid-turn is
  * buffered and merged (joined with newlines) into a single follow-up turn.
- * In-memory is correct here — the deploy is a single instance by design
+ * In-memory is correct here - the deploy is a single instance by design
  * (see docs/INTERNAL.md §1).
  */
 
@@ -34,7 +34,7 @@ export async function runSerializedTurn<C>(
 ): Promise<void> {
   const slot = running.get(userId) as Slot<C> | undefined;
   if (slot) {
-    // A turn is in flight — buffer this message into the next one.
+    // A turn is in flight - buffer this message into the next one.
     if (!slot.pending) slot.pending = { texts: [], carrier };
     if (slot.pending.texts.length < MAX_MERGED) slot.pending.texts.push(text);
     else console.warn(`turn buffer full for user ${userId}; dropping a fragment`);
@@ -50,7 +50,7 @@ export async function runSerializedTurn<C>(
     for (;;) {
       try {
         // Ambient BYOK identity for the whole turn: every tool the chat brain
-        // reaches for underneath — drafts, searches, scrapes — resolves this
+        // reaches for underneath - drafts, searches, scrapes - resolves this
         // user's own keys rather than ours (byok/context.ts).
         await runAsUser(userId, () => handler(currentText, currentCarrier));
       } catch (err) {

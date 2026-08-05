@@ -1,7 +1,7 @@
 import type { Prompt } from "./types.js";
 import { POST_WRITING_RULES, REACH_PRINCIPLES } from "./style.js";
 
-// NOTE: no CASUAL_VOICE here — this revises a PUBLIC post, stays properly
+// NOTE: no CASUAL_VOICE here - this revises a PUBLIC post, stays properly
 // capitalized, and its output is never passed through casualize().
 
 export interface ReviseDraftVars {

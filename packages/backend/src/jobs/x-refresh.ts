@@ -15,21 +15,21 @@ import { refreshXEngagement } from "../strategist/performance.js";
  * which is gated on `telegram_id IS NOT NULL` **and** an active brand plan. A
  * web-only user therefore had analytics, follower count and voice signal frozen
  * at their connect-day snapshot forever, and the product's own answer was to
- * reconnect — asking someone to rebuild their whole profile to update a number.
+ * reconnect - asking someone to rebuild their whole profile to update a number.
  *
  * WHY THIS IS SAFE TO DO UNPROMPTED. Reads never use the user's OAuth token:
  * every X pull goes through the fleet-wide twitterapi.io key with the public
  * handle as the only per-user input (capture/imports/twitterapi-io.ts). So this
  * can't be broken by an expired user token, and it needs no consent beyond the
- * account already being connected. `refreshXEngagement` is additive — it updates
- * metrics on posts we hold and inserts genuinely new ones — so unlike the full
+ * account already being connected. `refreshXEngagement` is additive - it updates
+ * metrics on posts we hold and inserts genuinely new ones - so unlike the full
  * ingest it can never destroy anything.
  *
  * THE THREE GUARDS, and why each exists:
  *
  * 1. SEQUENTIAL, PLUS AN EXPLICIT INTER-USER PAUSE. `MIN_REQUEST_INTERVAL_MS`
  *    (5.5s) in twitterapi-io.ts is enforced by `lastRequestAt`, which is a
- *    variable local to each `fetchTweets` *call* — so it spaces the pages within
+ *    variable local to each `fetchTweets` *call* - so it spaces the pages within
  *    one user's pull and nothing else. Going sequential is necessary but not
  *    sufficient: the next user's first page would fire the instant the previous
  *    user's DB writes finish, under the provider's floor, and eat a 429. Hence
@@ -40,13 +40,13 @@ import { refreshXEngagement } from "../strategist/performance.js";
  *    success. Keying on success would let a permanently-broken handle sit at
  *    NULL forever and re-run at the front of every sweep for eternity (see the
  *    migration comment). Redeploys also hit the boot nudge, and Railway restarts
- *    often — without this a busy afternoon of deploys re-spends the budget on
+ *    often - without this a busy afternoon of deploys re-spends the budget on
  *    every restart.
  *
  * 3. ENTITLEMENT GATE ON THE EXPENSIVE HALF ONLY. `refreshXEngagement` does two
  *    different things: it UPDATEs metrics on posts we already hold (a plain SQL
  *    write, effectively free, and the reason this job exists), and it ingests
- *    genuinely new posts by fanning them out into QUEUES.extract — one LLM call
+ *    genuinely new posts by fanning them out into QUEUES.extract - one LLM call
  *    per post. `extract` is in CAP_EXEMPT_EVENTS (llm/gateway.ts), so those calls
  *    do not even count against the user's daily budget. Left ungated, this
  *    twice-daily sweep would hand every lapsed free account unmetered LLM
@@ -55,7 +55,7 @@ import { refreshXEngagement } from "../strategist/performance.js";
  *
  * 4. TIME BUDGET. ~28s per user (3 pages + the pause) means the sweep is
  *    O(users) in wall-clock with no natural ceiling. It stops at MAX_RUN_MS and
- *    logs exactly how many accounts it did not reach — least-recently-attempted
+ *    logs exactly how many accounts it did not reach - least-recently-attempted
  *    first, so the ones it skips are the ones the next tick picks up. A silent
  *    truncation here would read as "everyone is fresh" when half the fleet is not.
  */
@@ -67,7 +67,7 @@ async function mayIngestNewPosts(userId: string): Promise<boolean> {
   } catch (err) {
     // Fail CLOSED. A billing lookup that errors must not become a free pass to
     // unmetered extraction; metrics still refresh, which is the job's core value.
-    console.error(`[x.refresh] entitlement check failed for ${userId} — metrics only`, err);
+    console.error(`[x.refresh] entitlement check failed for ${userId} - metrics only`, err);
     return false;
   }
 }
@@ -96,7 +96,7 @@ interface RefreshTarget {
 
 export async function handleXRefresh(): Promise<void> {
   if (!config.TWITTERAPI_IO_KEY) {
-    console.log("[x.refresh] no TWITTERAPI_IO_KEY — skipping");
+    console.log("[x.refresh] no TWITTERAPI_IO_KEY - skipping");
     return;
   }
 
@@ -129,7 +129,7 @@ export async function handleXRefresh(): Promise<void> {
 
   for (const t of targets) {
     if (Date.now() - startedAt > MAX_RUN_MS) {
-      // Loud on purpose — see guard 3.
+      // Loud on purpose - see guard 3.
       console.warn(
         `[x.refresh] time budget reached after ${done}/${targets.length} accounts; ` +
           `${targets.length - done} not refreshed this tick (they sort first next time)`,
@@ -149,7 +149,7 @@ export async function handleXRefresh(): Promise<void> {
       failed++;
       console.error(`[x.refresh] failed for ${t.handle} (${t.user_id})`, err);
     } finally {
-      // Stamped on EVERY outcome — this is what stops a permanently-broken
+      // Stamped on EVERY outcome - this is what stops a permanently-broken
       // account from re-running at the head of every sweep forever (guard 2).
       // Deliberately separate from refreshXEngagement's own success-only write
       // to last_refreshed_at, and best-effort: a failure to record the attempt
@@ -163,7 +163,7 @@ export async function handleXRefresh(): Promise<void> {
   }
 
   console.log(
-    `[x.refresh] refreshed ${ok}/${done} accounts (${failed} failed, ${metricsOnly} metrics-only — no active plan) ` +
+    `[x.refresh] refreshed ${ok}/${done} accounts (${failed} failed, ${metricsOnly} metrics-only - no active plan) ` +
       `in ${Math.round((Date.now() - startedAt) / 1000)}s`,
   );
 }

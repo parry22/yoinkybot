@@ -4,7 +4,7 @@
  *
  * STATELESS BY DESIGN. The whole interview is a pure function of the transcript,
  * which the client sends back each turn. That means no interview table, no
- * resumable-session bookkeeping, no half-finished rows to sweep — and re-deriving
+ * resumable-session bookkeeping, no half-finished rows to sweep - and re-deriving
  * the slots from scratch every turn makes a late correction ("actually, weekly")
  * work for free, where incremental state would have needed an explicit edit path.
  *
@@ -12,7 +12,7 @@
  * the interview is finished are all decided here. The model only extracts what was
  * said and phrases the question it is told to ask (prompts/automation-interview.v1).
  * Without that split, a model that likes wrapping up would build agents with no
- * angles and no hooks — the exact thing the old three-pill form got wrong.
+ * angles and no hooks - the exact thing the old three-pill form got wrong.
  */
 import { z } from "zod";
 import { llmCall } from "../llm/gateway.js";
@@ -58,20 +58,20 @@ export const EMPTY_SPEC: AgentSpec = {
  *
  * Order is deliberate: purpose first because every later option should be shaped
  * by it, then the three that actually determine whether the writing is any good
- * (post types, angles, hooks), then the operational two. `name` is never asked —
+ * (post types, angles, hooks), then the operational two. `name` is never asked -
  * it's inferred, because being interviewed about a label is a waste of a turn.
  */
 const SLOTS: Array<{ key: keyof AgentSpec; brief: string }> = [
   {
     key: "purpose",
     brief:
-      "what this agent is FOR — the job it does for them. Open with something better than " +
+      "what this agent is FOR - the job it does for them. Open with something better than " +
       "'what should it do?': propose a couple of jobs that fit their niche.",
   },
   {
     key: "postTypes",
     brief:
-      "what SHAPE of post it should write — hot takes, teardowns, personal stories, how-tos, " +
+      "what SHAPE of post it should write - hot takes, teardowns, personal stories, how-tos, " +
       "threads, one-liners. Suggest the ones that fit their pillars.",
   },
   {
@@ -83,12 +83,12 @@ const SLOTS: Array<{ key: keyof AgentSpec; brief: string }> = [
   {
     key: "hooks",
     brief:
-      "which HOOK styles suit them — blunt claim, a number, a question, a story open, a " +
+      "which HOOK styles suit them - blunt claim, a number, a question, a story open, a " +
       "'nobody tells you' reveal. Name real examples in their voice.",
   },
   {
     key: "platform",
-    brief: "where it should publish — X or LinkedIn. Explain that the writing will be shaped for that feed.",
+    brief: "where it should publish - X or LinkedIn. Explain that the writing will be shaped for that feed.",
   },
   {
     key: "source",
@@ -99,7 +99,7 @@ const SLOTS: Array<{ key: keyof AgentSpec; brief: string }> = [
   },
   {
     key: "cadence",
-    brief: "how often it runs — daily, weekly, or only when they hit run.",
+    brief: "how often it runs - daily, weekly, or only when they hit run.",
   },
   {
     key: "delivery",
@@ -112,7 +112,7 @@ const SLOTS: Array<{ key: keyof AgentSpec; brief: string }> = [
 /**
  * Brief ceiling. Larger than the old 1000 because the interview's brief is now a
  * structured four-part instruction (purpose + shapes + angles + hooks) rather than
- * one sentence the user typed — truncating it would silently drop the hook rules,
+ * one sentence the user typed - truncating it would silently drop the hook rules,
  * which is exactly the part that makes the agent's writing theirs.
  */
 export const BRIEF_MAX = 2000;
@@ -168,7 +168,7 @@ export interface InterviewTurn {
   options: string[];
   /** Everything pinned down so far. */
   spec: AgentSpec;
-  /** True once every required slot is filled — the caller then builds the agent. */
+  /** True once every required slot is filled - the caller then builds the agent. */
   complete: boolean;
 }
 
@@ -193,7 +193,7 @@ export async function runInterviewTurn(userId: string, messages: InterviewMessag
 
   // Pass 1: extract from the transcript with no next-slot instruction, so we can
   // see what's known BEFORE deciding what to ask. The same call also returns a
-  // reply, which is discarded — the second call writes the one we use.
+  // reply, which is discarded - the second call writes the one we use.
   const extracted = await extract(userId, messages, EMPTY_SPEC, null, "", profile, approvalOnly);
   let spec = extracted.spec;
   // Approval-only plans can't choose hands-off, so code overrides rather than
@@ -202,10 +202,10 @@ export async function runInterviewTurn(userId: string, messages: InterviewMessag
 
   const slot = nextSlot(spec);
   if (!slot) {
-    // Complete — one confirming line, no question.
+    // Complete - one confirming line, no question.
     const done = await extract(userId, messages, spec, null, "", profile, approvalOnly);
     return {
-      reply: casualize(done.reply || "that's everything i need — building it now."),
+      reply: casualize(done.reply || "that's everything i need - building it now."),
       options: [],
       spec,
       complete: true,
@@ -292,17 +292,17 @@ function fallbackQuestion(key: keyof AgentSpec): string {
     case "purpose":
       return "what do you want this agent to do for you?";
     case "postTypes":
-      return "what kind of posts should it write — hot takes, teardowns, personal stories, how-tos?";
+      return "what kind of posts should it write - hot takes, teardowns, personal stories, how-tos?";
     case "angles":
       return "which topics is it allowed to work? name a couple of lanes.";
     case "hooks":
-      return "what kind of opening line lands for you — a blunt claim, a number, a question, a story?";
+      return "what kind of opening line lands for you - a blunt claim, a number, a question, a story?";
     case "platform":
       return "should this agent write for X or LinkedIn?";
     case "source":
       return "should it ride what's trending in your niche, work through your idea backlog, or just follow the brief you gave me?";
     case "cadence":
-      return "how often should it run — daily, weekly, or only when you hit run?";
+      return "how often should it run - daily, weekly, or only when you hit run?";
     case "delivery":
       return "should it check with you before anything goes out, or post on its own?";
     default:

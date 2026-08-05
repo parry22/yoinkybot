@@ -10,23 +10,23 @@ import styles from "./account-switcher.module.css";
  * The account switcher, pinned to the bottom of the sidebar.
  *
  * WHY THIS IS A REAL FEATURE HERE, not just a login menu: a Clerk session maps
- * 1:1 to a `users` row via `clerk_user_id` (lib/session.ts), and everything —
+ * 1:1 to a `users` row via `clerk_user_id` (lib/session.ts), and everything -
  * the connected X account, the memory graph, the diagnosis, the plan, the
- * billing — hangs off that row. So switching accounts switches the entire
+ * billing - hangs off that row. So switching accounts switches the entire
  * workspace. That's the agency/multi-brand case: run your own brand and a
  * client's without signing out and back in.
  *
  * ══════════════════════════════════════════════════════════════════════════
  * PREREQUISITE: the Clerk instance must have multi-session ENABLED.
  * As of writing, production has `single_session_mode: true`, which means Clerk
- * will only ever hold ONE session on the client — `sessions` below always has
+ * will only ever hold ONE session on the client - `sessions` below always has
  * length 1 and there is nothing to switch to. It's a dashboard-only toggle
  * (Clerk exposes no Backend API for it, same as social connections):
  *   Clerk dashboard → Configure → Sessions → "Multi-session handling".
  * Verify with:
  *   curl -s "https://clerk.meetyoinky.com/v1/environment?_clerk_js_version=5" \
  *     -H "Origin: https://app.meetyoinky.com" | jq .auth_config.single_session_mode
- * The component is written to be CORRECT EITHER WAY — with one session it is a
+ * The component is written to be CORRECT EITHER WAY - with one session it is a
  * clean account menu, and it grows the switcher list the moment a second
  * session can exist. Nothing here breaks or misleads while the toggle is off.
  * ══════════════════════════════════════════════════════════════════════════
@@ -75,7 +75,7 @@ export function AccountSwitcher({ onNavigate }: { onNavigate?: () => void }) {
     try {
       await setActive({
         session: sessionId,
-        // A FULL document load, deliberately — not router.push. Switching the
+        // A FULL document load, deliberately - not router.push. Switching the
         // session changes which `users` row every server component reads, and
         // Next's client router cache would happily serve the previous account's
         // rendered output (their drafts, their diagnosis, their plan). Showing
@@ -119,7 +119,7 @@ export function AccountSwitcher({ onNavigate }: { onNavigate?: () => void }) {
             </>
           )}
 
-          {/* Current account, marked — so the menu always answers "who am I?"
+          {/* Current account, marked - so the menu always answers "who am I?"
             * even when there is only one session and nothing to switch to. */}
           <p className={styles.menuLabel}>Signed in as</p>
           <div className={`${styles.menuItem} ${styles.menuItemStatic}`}>

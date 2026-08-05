@@ -20,7 +20,7 @@ import {
 } from "./scoring.js";
 import { runAsUser } from "../byok/context.js";
 
-/** Replies to mentions older than this read as weird — never surface them. */
+/** Replies to mentions older than this read as weird - never surface them. */
 const MAX_MENTION_AGE_DAYS = 7;
 
 /** Reputation alerts override the weekly delivery budget, so cap them separately. */
@@ -32,7 +32,7 @@ const classificationSchema = z.object({
   is_substantive_challenge: z.boolean().catch(false),
 });
 
-// ── Ingestion (cron, every few hours — no delivery here) ─────────────────────
+// ── Ingestion (cron, every few hours - no delivery here) ─────────────────────
 
 /** Sweep all users with a connected X account; public mentions only, DMs never. */
 export async function handleMentionsFetch(): Promise<void> {
@@ -80,7 +80,7 @@ export async function ingestMentionsForUser(userId: string, handle: string): Pro
       const res = await llmCall({
         userId,
         eventType: "classify_mention",
-        // High-volume, low-stakes classification — the cheap floor per the model registry.
+        // High-volume, low-stakes classification - the cheap floor per the model registry.
         tier: "cheap_floor",
         system: classifyMention.system,
         user: classifyMention.render({ content: m.content, authorHandle: m.authorHandle, userHandle: handle, positions }),
@@ -117,7 +117,7 @@ export async function ingestMentionsForUser(userId: string, handle: string): Pro
     stored++;
 
     // Reputation lens: negative sentiment from genuinely high reach is the one
-    // thing that overrides the delivery budget — but at most once a day, and
+    // thing that overrides the delivery budget - but at most once a day, and
     // stated factually, never as a panic.
     if (signals.sentiment === "negative" && reachScore(m.authorReach) >= 0.5) {
       await maybeReputationAlert(userId, {
@@ -133,7 +133,7 @@ export async function ingestMentionsForUser(userId: string, handle: string): Pro
 }
 
 /** Are alerts about comments/mentions on the user's own posts silenced? OFF by
- *  DEFAULT for every user (they're noise most people don't want) — only delivered
+ *  DEFAULT for every user (they're noise most people don't want) - only delivered
  *  when a user explicitly opts in with `/settings mentions on`. */
 async function mentionAlertsSilenced(userId: string): Promise<boolean> {
   const row = await queryOne<{ settings: UserSettings }>(`SELECT settings FROM users WHERE id = $1`, [userId]);
@@ -146,7 +146,7 @@ async function maybeReputationAlert(
 ): Promise<void> {
   if (await mentionAlertsSilenced(userId)) return; // user opted out of comment/mention alerts
   // Reputation alerts are the one message allowed to override the shared weekly
-  // delivery budget — but that override must itself be bounded, or a bad news
+  // delivery budget - but that override must itself be bounded, or a bad news
   // cycle turns into up to seven surprise DMs a week. At most one a day AND at
   // most WEEKLY_REPUTATION_CAP a rolling week.
   const recent = await queryOne<{ day: string; week: string }>(
@@ -182,7 +182,7 @@ async function maybeReputationAlert(
  * Surface at most ONE reply draft: the highest-priority mention above the
  * user's learned threshold (challenges first, then questions, then score).
  * Caller has already cleared the shared proactive budget. Others that also
- * clear the bar simply wait for a future slot — a queue, never a batch.
+ * clear the bar simply wait for a future slot - a queue, never a batch.
  */
 export async function maybeOfferReplyDraft(userId: string): Promise<boolean> {
   if (await mentionAlertsSilenced(userId)) return false; // user opted out of reply-draft offers on their posts
@@ -294,7 +294,7 @@ export async function maybeOfferReplyDraft(userId: string): Promise<boolean> {
     .text("⏭ skip", `rp:${pick.id}:skip`);
   const sent = await sendTelegram(userId, message, undefined, kb);
   if (!sent) {
-    // Delivery failed — don't leave a phantom surfacing row that counts against
+    // Delivery failed - don't leave a phantom surfacing row that counts against
     // the budget and shows as history for a message that never arrived.
     await query(`DELETE FROM surfacings WHERE id = $1`, [surfacing.id]);
     await query(`UPDATE mentions SET reply_status='none', draft_text=NULL, reply_drafted_at=NULL WHERE id = $1`, [pick.id]);
@@ -310,10 +310,10 @@ export type ReplyAction = "sent" | "edited" | "skip";
 /**
  * Record what the user did with a draft. Sent (either way) logs into
  * sent_replies; edited_before_send is the voice-tuning signal, skips are the
- * filtering signal — the two failure modes stay separate. A reply sent AS-IS is
+ * filtering signal - the two failure modes stay separate. A reply sent AS-IS is
  * genuine public output in their voice, so it enters the standard capture
  * pipeline and feeds the voice profile and diagnosis like any original post.
- * (Edited sends aren't captured — we'd be storing OUR text, not what they
+ * (Edited sends aren't captured - we'd be storing OUR text, not what they
  * actually posted.)
  */
 export async function recordReplyOutcome(userId: string, mentionId: string, action: ReplyAction): Promise<string> {
@@ -343,6 +343,6 @@ export async function recordReplyOutcome(userId: string, mentionId: string, acti
     });
   }
   return edited
-    ? "Logged. Noting that you reworked it — that tunes how I draft for you."
+    ? "Logged. Noting that you reworked it - that tunes how I draft for you."
     : "Logged as sent. It'll feed your voice profile like any of your posts.";
 }

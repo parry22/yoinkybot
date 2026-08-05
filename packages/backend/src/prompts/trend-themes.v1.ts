@@ -3,9 +3,9 @@ import type { Prompt } from "./types.js";
 export interface TrendThemesVars {
   /** Stated brand niches + content pillars, when any user has a profile. */
   profileBits: string[];
-  /** Memory-map cluster labels, biggest first — often polluted by personal-life chatter. */
+  /** Memory-map cluster labels, biggest first - often polluted by personal-life chatter. */
   clusterLabels: string[];
-  /** Recent active position statements — the professional belief store. */
+  /** Recent active position statements - the professional belief store. */
   positions: string[];
 }
 
@@ -26,9 +26,9 @@ professional discourse for a content creator, given signals about what they work
 
 Rules:
 - 4 to 6 terms, each 1-3 words, the vocabulary the niche's discourse actually uses
-  (e.g. "AI agents", "openai", "design systems") — not full sentences.
+  (e.g. "AI agents", "openai", "design systems") - not full sentences.
 - Professional territory ONLY. Ignore personal-life signals (travel, food, visas,
-  parties, cities) even if they dominate the input — those are chatter, not niche.
+  parties, cities) even if they dominate the input - those are chatter, not niche.
 - Prefer broad nouns over narrow phrasings: "AI models" finds a model-launch news
   cycle; "my agent workflow setup" finds nothing.
 - Include at least one term naming the niche's key companies/people ONLY if the

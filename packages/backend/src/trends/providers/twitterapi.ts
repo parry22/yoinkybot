@@ -4,13 +4,13 @@ import { buzzScore, distinctAuthorCount, totalEngagement, velocity, type BuzzTwe
 
 /**
  * Volume verification for trend candidates. Trend actors (Apify) give a name
- * and a rough bucket, not real engagement data — this module asks twitterapi.io
+ * and a rough bucket, not real engagement data - this module asks twitterapi.io
  * advanced_search what is ACTUALLY happening around a phrase, in two passes:
  *
  *   Pass 1 (Top, min_faves-gated, replies excluded): engagement + top tweets.
  *   Pass 2 (Latest, replies excluded): recency/velocity over the window.
  *
- * Pagination is capped (TWITTERAPI_SEARCH_PAGE_CAP) — $0.00015/tweet returned
+ * Pagination is capped (TWITTERAPI_SEARCH_PAGE_CAP) - $0.00015/tweet returned
  * is cheap per topic but not free at scale. All scoring is deterministic
  * (trends/scoring.ts); nothing here calls a model.
  */
@@ -29,7 +29,7 @@ export interface VolumeVerification {
     velocity: number;
     inTrendList: boolean;
   };
-  /** Pass-1 tweets, strongest engagement first — the agent's get_top_tweets pool. */
+  /** Pass-1 tweets, strongest engagement first - the agent's get_top_tweets pool. */
   topTweets: XTweet[];
 }
 
@@ -76,13 +76,13 @@ export async function verifyTrendVolume(topic: string, inTrendList: boolean): Pr
 
   const signals = {
     distinctAuthors: distinctAuthorCount(union),
-    // Engagement over the union — not just the min_faves pass — so the signal is
+    // Engagement over the union - not just the min_faves pass - so the signal is
     // real even when the two passes overlap heavily.
     totalEngagement: totalEngagement(union),
     velocity: velocity(latest.map(toBuzzTweet), sinceSec * 1000, nowSec * 1000),
     inTrendList,
   };
-  // The source pool is the UNION of both passes, strongest engagement first —
+  // The source pool is the UNION of both passes, strongest engagement first -
   // NOT just the "Top" pass. Live, a term can clear the buzz gate on authors
   // seen in the "Latest" pass while "Top" (min_faves-gated) returns nothing,
   // which used to leave the agent with zero tweets to cite as the source post.

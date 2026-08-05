@@ -38,7 +38,7 @@ function initialStatus(input: CreateCaptureInput): string {
 }
 
 /**
- * Captures are immutable raw inputs — never updated except for pipeline status.
+ * Captures are immutable raw inputs - never updated except for pipeline status.
  * Returns { capture, created:false } when a clientId dedupes to an existing row.
  */
 export async function createCapture(
@@ -62,7 +62,7 @@ export async function createCapture(
   )) as unknown as Capture | undefined;
 
   if (!inserted) {
-    // Dupe (same user_id + client_id) — return the existing capture, don't re-enqueue.
+    // Dupe (same user_id + client_id) - return the existing capture, don't re-enqueue.
     const existing = (await queryOne(
       `SELECT * FROM captures WHERE user_id = $1 AND client_id = $2`,
       [input.userId, input.clientId],
@@ -78,9 +78,9 @@ export async function createCapture(
       await boss.send(QUEUES.extract, { captureId: inserted.id, userId: input.userId });
     }
   }
-  // Only the user's own dropped thoughts are an activation signal — the bulk
+  // Only the user's own dropped thoughts are an activation signal - the bulk
   // x_import/linkedin_import rows during connect would drown that out, so track
-  // just the telegram-authored captures (no raw text — metadata only).
+  // just the telegram-authored captures (no raw text - metadata only).
   if (input.source === "telegram_text" || input.source === "telegram_voice") {
     track(input.userId, "capture_created", { source: input.source });
   }

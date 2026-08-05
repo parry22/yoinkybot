@@ -4,14 +4,14 @@
  *
  * WHY THIS EXISTS. Compose could only draft from things already in memory. Ask it
  * for a post about a live topic and `hybridSearch` returned nothing, so drafting
- * declined with "capture some thinking on it first" — which reads as the product
+ * declined with "capture some thinking on it first" - which reads as the product
  * refusing the most obvious request you could make of it. The writer already gets
  * `nearbyTrends` (drafting/draft.ts), but that only reads the cached `trends`
  * table, so it is empty for anything the fleet sweep didn't happen to pick up.
  *
  * Three sources, cheapest first, all best-effort:
  *   1. the cached `trends` table (free, already embedded, may be cold)
- *   2. LIVE X search via twitterapi.io (paid per tweet, bounded to one page —
+ *   2. LIVE X search via twitterapi.io (paid per tweet, bounded to one page -
  *      the primary source, because this is a product about X)
  *   3. the news/web provider chain (Brave/Tavily/Apify, whichever is configured)
  *
@@ -45,7 +45,7 @@ export interface TopicResearch {
   posts: ResearchedPost[];
   /** Cached trends + news headlines. */
   headlines: ResearchedHeadline[];
-  /** Which sources actually answered — for honest "I couldn't find anything" copy. */
+  /** Which sources actually answered - for honest "I couldn't find anything" copy. */
   sources: string[];
 }
 
@@ -70,7 +70,7 @@ async function liveTweets(topic: string, limit: number): Promise<ResearchedPost[
 
 const RESEARCH_LOOKBACK_HOURS = 72;
 
-/** Cached fleet trends nearest the topic. Free — one embed and one pgvector hop. */
+/** Cached fleet trends nearest the topic. Free - one embed and one pgvector hop. */
 async function cachedTrends(userId: string, topic: string, limit: number): Promise<ResearchedHeadline[]> {
   const vec = await embedOne(topic.slice(0, 1000), userId);
   const rows = await query<{ topic: string; summary: string | null; url: string | null; source: string }>(
@@ -90,7 +90,7 @@ async function liveHeadlines(topic: string, limit: number): Promise<ResearchedHe
 
 /**
  * Research one topic. Every source is wrapped so a failure in one is invisible to
- * the others — the caller gets whatever came back.
+ * the others - the caller gets whatever came back.
  */
 export async function researchTopic(
   userId: string,
@@ -133,7 +133,7 @@ export async function researchTopic(
   return { topic, posts, headlines, sources };
 }
 
-/** Compact, model-readable rendering of research — the shape tool traces want. */
+/** Compact, model-readable rendering of research - the shape tool traces want. */
 export function renderResearch(research: TopicResearch): string {
   const lines: string[] = [];
   if (research.posts.length > 0) {
@@ -146,11 +146,11 @@ export function renderResearch(research: TopicResearch): string {
     if (lines.length) lines.push("");
     lines.push("IN THE NEWS:");
     for (const h of research.headlines) {
-      lines.push(`- ${h.topic}${h.summary ? ` — ${h.summary.slice(0, 200)}` : ""}`);
+      lines.push(`- ${h.topic}${h.summary ? ` - ${h.summary.slice(0, 200)}` : ""}`);
     }
   }
   if (lines.length === 0) {
-    return `nothing live found on "${research.topic}" — no X conversation in the last ${RESEARCH_LOOKBACK_HOURS}h and no news hits`;
+    return `nothing live found on "${research.topic}" - no X conversation in the last ${RESEARCH_LOOKBACK_HOURS}h and no news hits`;
   }
   return lines.join("\n");
 }

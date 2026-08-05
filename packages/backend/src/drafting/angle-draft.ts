@@ -27,7 +27,7 @@ export interface AngleDraftResult {
 /**
  * Draft a full post from a chosen narrative angle. Unlike cold `generateDraft`,
  * this is grounded by the angle + its source moment/trend, so it does NOT require
- * a mature (50-memory) voice profile — the moment IS the substance. Voice traits
+ * a mature (50-memory) voice profile - the moment IS the substance. Voice traits
  * are used when available, otherwise the model writes in a clean first-person voice.
  */
 export async function draftFromAngle(
@@ -38,7 +38,7 @@ export async function draftFromAngle(
 ): Promise<AngleDraftResult> {
   const ent = await entitlementsFor(userId);
   if (!ent.drafting) {
-    return { ok: false, draft: "", note: "Drafting is a paid feature — upgrade to have Yoinky write it for you.", mediaSuggestion: "" };
+    return { ok: false, draft: "", note: "Drafting is a paid feature - upgrade to have Yoinky write it for you.", mediaSuggestion: "" };
   }
 
   const angle = await queryOne<{
@@ -73,18 +73,18 @@ export async function draftFromAngle(
   // Pull any supporting memories on the angle's topic (may be empty for new users).
   const memories = await hybridSearch(userId, `${angle.angle} ${angle.hook}`, 8);
   const grounding = [
-    { id: `angle:${angle.id}`, content: `ANGLE — ${angle.label}: ${angle.angle}\nHook: ${angle.hook}`, kind: "angle" },
+    { id: `angle:${angle.id}`, content: `ANGLE - ${angle.label}: ${angle.angle}\nHook: ${angle.hook}`, kind: "angle" },
     ...(anchor ? [{ id: `moment:${angle.moment_id ?? angle.trend_id}`, content: anchor, kind: "source" }] : []),
     ...memories.map((m) => ({ id: m.id, content: m.content, kind: m.kind })),
   ];
 
   const [profile, evidence] = await Promise.all([
     currentVoiceProfile(userId),
-    // Same measured evidence the main draft path gets — an angle-draft is still a
+    // Same measured evidence the main draft path gets - an angle-draft is still a
     // post going out under their name, so it should know what lands for them.
     draftEvidence(userId).catch(() => EMPTY_EVIDENCE),
   ]);
-  const voiceTraits = profile?.traits ?? { note: "No voice profile yet — write in a clear, natural first-person voice; avoid generic AI phrasing." };
+  const voiceTraits = profile?.traits ?? { note: "No voice profile yet - write in a clear, natural first-person voice; avoid generic AI phrasing." };
 
   const res = await llmCall({
     userId,

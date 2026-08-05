@@ -9,20 +9,20 @@ import type { Channel } from "../telegram/actions.js";
  * The seam is the existing `Channel`. `collectingChannel()` pushes what the agent
  * says into an array; `streamingChannel()` hands each utterance to a callback the
  * moment it happens. Nothing in `converseWithUser` / `runDraft` /
- * `runAutomationOnce` changes — they already talk to a Channel.
+ * `runAutomationOnce` changes - they already talk to a Channel.
  *
  * IMPORTANT (learned the hard way in the SDK migration): the labels are OURS, not
  * the model's. Under enforced structured output the model does not reliably narrate
  * between tool calls, which is why the chat layer needs deterministic `TOOL_BEATS`
- * at all. So every stage label here is written by code — never parsed out of model
- * output — and is therefore always present and always accurate about *which* step
+ * at all. So every stage label here is written by code - never parsed out of model
+ * output - and is therefore always present and always accurate about *which* step
  * is running.
  */
 
 export type AgentEvent =
   /** A step the agent has just started. Render as an activity row. */
   | { type: "stage"; label: string }
-  /** Something the agent said to the user — a real transcript message. */
+  /** Something the agent said to the user - a real transcript message. */
   | { type: "message"; text: string }
   /** Terminal success, with whatever payload the caller needs. */
   | { type: "result"; data?: unknown }
@@ -72,7 +72,7 @@ export function toolLabel(name: string): string {
 const DRAFT_STAGE_LABELS: Record<string, string> = {
   voice: "Loading your voice profile",
   memory: "Retrieving relevant memories",
-  research: "Nothing of yours on this — searching X for what's live",
+  research: "Nothing of yours on this - searching X for what's live",
   evidence: "Reading what's actually worked for you",
   context: "Checking what's live on X right now",
   writing: "Writing the draft",

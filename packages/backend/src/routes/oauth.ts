@@ -8,7 +8,7 @@ import { readConnectTicket } from "../lib/connect-tickets.js";
 import type { Platform } from "../lib/types.js";
 
 /**
- * The user-context OAuth flow — the ONLY place Yoinky asks the user to
+ * The user-context OAuth flow - the ONLY place Yoinky asks the user to
  * authorize their account. It serves two purposes with one consent:
  *   - onboarding connect (telegram/connect-auth.ts): proves account ownership,
  *     resolves the verified X handle via users.read, and gates the history read
@@ -24,7 +24,7 @@ import type { Platform } from "../lib/types.js";
  * (X_CLIENT_ID/SECRET with a paid X tier for tweet.write; LINKEDIN_CLIENT_ID/
  * SECRET with an approved w_member_social app). Without them every route here
  * returns 503. The flow follows the platforms' documented OAuth 2.0 exactly,
- * but has not been exercised against the live providers — verify end-to-end
+ * but has not been exercised against the live providers - verify end-to-end
  * once credentials exist before relying on it.
  *
  * PKCE verifier + which-user are held in an in-memory map keyed by the opaque
@@ -38,13 +38,13 @@ interface PendingAuth {
   platform: Platform;
   verifier: string;
   expiresAt: number;
-  /** Web caller's return URL (only ever set when it matched WEB_APP_URL — see
+  /** Web caller's return URL (only ever set when it matched WEB_APP_URL - see
    *  `safeReturnTo`). Undefined for the Telegram-only flow, which keeps the
    *  original static "return to Telegram" page. */
   returnTo?: string;
 }
 
-/** Only ever honor a `redirect` that's on the web app's own trusted origin —
+/** Only ever honor a `redirect` that's on the web app's own trusted origin -
  *  this is a browser redirect target after OAuth, so an unbounded value here
  *  would be an open-redirect vector.
  *
@@ -100,7 +100,7 @@ export function buildAuthUrl(userId: string, platform: Platform, returnTo?: stri
       // media.write is what lets a scheduled post carry an image or video
       // (social/media.ts). Tokens minted BEFORE this scope was added don't have
       // it, so an existing connection can post text but will fail on media until
-      // the user reconnects — the scheduler says so rather than failing silently.
+      // the user reconnects - the scheduler says so rather than failing silently.
       //
       // offline.access is what returns a refresh token. X's access tokens last
       // ~2 hours, so without renewal almost every scheduled post would fire
@@ -112,7 +112,7 @@ export function buildAuthUrl(userId: string, platform: Platform, returnTo?: stri
       code_challenge: challenge,
       code_challenge_method: "S256",
     });
-    // X migrated off twitter.com — the old twitter.com/i/oauth2/authorize path
+    // X migrated off twitter.com - the old twitter.com/i/oauth2/authorize path
     // now 404s. x.com is the live consent endpoint.
     return `https://x.com/i/oauth2/authorize?${params}`;
   }
@@ -209,7 +209,7 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
     async (req, reply) => {
       const platform = req.params.platform as Platform;
       if (platform !== "x" && platform !== "linkedin") return reply.code(404).send("unknown platform");
-      // Identity comes from a minted ticket, never from the query string — see
+      // Identity comes from a minted ticket, never from the query string - see
       // the ConnectTicket comment above for what `?u=<user id>` allowed.
       const userId = readConnectTicket(req.query.t, platform);
       if (!userId) {
@@ -235,7 +235,7 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
       const pend = pending.get(state);
       pending.delete(state);
       if (!pend || pend.platform !== platform || pend.expiresAt < Date.now()) {
-        return reply.type("text/html").send(DONE_HTML("That link expired — start the connect again from the bot."));
+        return reply.type("text/html").send(DONE_HTML("That link expired - start the connect again from the bot."));
       }
 
       let accessToken: string;
@@ -259,12 +259,12 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
         return reply.type("text/html").send(DONE_HTML("Something went wrong connecting your account. Try again from the bot."));
       }
       // Follow-through happens in Telegram (verify identity, kick the history
-      // ingest, offer the next platform) — failures there must never turn a
+      // ingest, offer the next platform) - failures there must never turn a
       // stored token into an error page, so it runs detached from this response.
       void afterOAuthConnected(pend.userId, platform, accessToken).catch((err) =>
         req.log.error({ err }, "oauth follow-through failed"),
       );
-      // A web caller gets bounced straight back to its own origin (Settings) —
+      // A web caller gets bounced straight back to its own origin (Settings) -
       // the Telegram-flavored static page below is only for the bot's own flow.
       if (pend.returnTo) {
         const back = new URL(pend.returnTo);

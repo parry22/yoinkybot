@@ -10,17 +10,17 @@ import type { Trend } from "./provider.js";
  * Same-day X trend discovery, cluster-first (2026-07-12).
  *
  * The old model stored each hot tweet as a "trend" with its verbatim text as the
- * topic — so volume verification searched that exact sentence and found only the
+ * topic - so volume verification searched that exact sentence and found only the
  * original tweet (buzz ~0.15, nothing ever fired). This instead does what a
  * trend actually is:
  *   1. Pull RECENT (last 24h) high-engagement tweets around the user base's
- *      interest terms — the raw same-day material.
+ *      interest terms - the raw same-day material.
  *   2. LLM-cluster them into the distinct topics multiple accounts are on right
  *      now (trend-clusters.v1), each labeled with a SEARCHABLE term + the single
  *      driving tweet.
  *   3. Verify each term's live volume deterministically (verifyTrendVolume →
  *      buzzScore over the last 24h). Only clusters that genuinely clear the buzz
- *      bar survive — real "everyone's talking about this today", not one tweet.
+ *      bar survive - real "everyone's talking about this today", not one tweet.
  * Each surviving cluster becomes a Trend whose topic is the term (so downstream
  * verification actually works), url is the driving tweet (the source post the
  * user engages with), and observed_at is that tweet's time (freshness).
@@ -60,7 +60,7 @@ export async function discoverXTrends(themes: string[], limit: number): Promise<
   const sinceSec = nowSec - HOURS * 3600;
 
   // 1. Same-day raw material: recent tweets on the interest terms. queryType
-  //    "Latest" (NOT "Top" — twitterapi's "Top" returns nothing for windowed
+  //    "Latest" (NOT "Top" - twitterapi's "Top" returns nothing for windowed
   //    queries); min_faves keeps it to tweets with some traction, and we rank by
   //    engagement in code below.
   let seed: XTweet[] = [];
@@ -87,7 +87,7 @@ export async function discoverXTrends(themes: string[], limit: number): Promise<
   if (topSeed.length > 0) {
     try {
       const res = await llmCall({
-        userId: null, // system job — exempt from per-user caps
+        userId: null, // system job - exempt from per-user caps
         eventType: "trend_clusters",
         tier: trendClusters.tier,
         system: trendClusters.system,
@@ -105,7 +105,7 @@ export async function discoverXTrends(themes: string[], limit: number): Promise<
       console.error("discoverXTrends: clustering failed, falling back to theme terms", err);
     }
   }
-  // Always add the interest terms as reliable fallback candidates — they're
+  // Always add the interest terms as reliable fallback candidates - they're
   // already searchable, and their top same-day tweet is a real driving post.
   for (const th of themes) {
     const key = th.toLowerCase();
@@ -116,7 +116,7 @@ export async function discoverXTrends(themes: string[], limit: number): Promise<
   //    ground it in its freshest driving tweet. Keep those clearing the buzz bar,
   //    strongest first, up to `limit`.
   const scored: Array<{ trend: Trend; buzz: number }> = [];
-  // Cap verified terms per run — each is ~6 rate-limited twitterapi requests.
+  // Cap verified terms per run - each is ~6 rate-limited twitterapi requests.
   // Cluster terms come first (Map preserves insertion order), so the specific
   // same-day topics are verified before the broad theme fallbacks.
   for (const c of [...candidates.values()].slice(0, 6)) {

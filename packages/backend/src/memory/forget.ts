@@ -1,7 +1,7 @@
 import { withTransaction } from "../db/pool.js";
 
 /**
- * Forget is REAL deletion, immediately and irreversibly — the product's trust
+ * Forget is REAL deletion, immediately and irreversibly - the product's trust
  * foundation. Removes the memory, its links (FK cascade), scrubs it from
  * surfacing records, and removes positions that were sourced solely from it.
  */
@@ -34,7 +34,7 @@ export async function forgetMemory(userId: string, memoryId: string): Promise<bo
        WHERE user_id = $1 AND $2 = ANY(memory_ids)`,
       [userId, memoryId],
     );
-    // Drafts cite the memories they were built from — scrub the reference so a
+    // Drafts cite the memories they were built from - scrub the reference so a
     // forgotten memory can't resurface as a draft's lineage.
     await client.query(
       `UPDATE drafts SET source_memory_ids = array_remove(source_memory_ids, $2)
@@ -47,7 +47,7 @@ export async function forgetMemory(userId: string, memoryId: string): Promise<bo
     // The real source content is the capture's raw_text. If this memory was the
     // last thing derived from that capture, delete the capture too so nothing of
     // the forgotten thought survives (cascades its moments). If siblings remain
-    // (a multi-idea import post), the capture stays — the user forgot one idea,
+    // (a multi-idea import post), the capture stays - the user forgot one idea,
     // not the whole post.
     if (captureId) {
       const siblings = await client.query(

@@ -13,7 +13,7 @@ import { dmChannel, withTyping } from "../telegram/bot.js";
  *
  * For Telegram voice notes it then closes the conversational loop: the
  * transcript runs through the same chat brain as typed text and the reply is
- * DM'd back. Before this, a voice note was a dead end — "Got it, filing" —
+ * DM'd back. Before this, a voice note was a dead end - "Got it, filing" -
  * so a question asked out loud was silently swallowed instead of answered.
  */
 export async function handleTranscribe(job: TranscribeJob): Promise<void> {
@@ -54,7 +54,7 @@ export async function handleTranscribe(job: TranscribeJob): Promise<void> {
 
   // Conversational close for voice notes. Best-effort: the capture pipeline
   // above already succeeded, so a failed reply must not fail (and retry) the
-  // job — that would re-transcribe and re-extract the same capture.
+  // job - that would re-transcribe and re-extract the same capture.
   if (capture.source === "telegram_voice" && text.trim()) {
     try {
       const user = await queryOne<User>(`SELECT * FROM users WHERE id = $1`, [job.userId]);

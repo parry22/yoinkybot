@@ -12,7 +12,7 @@ export const maxDuration = 300;
 /**
  * The chat turn as Server-Sent Events, so the UI can show what the agent is
  * doing while it works instead of a silent spinner. Same brain, same tools, same
- * paywall as `/api/chat` — that non-streaming route stays for any caller that
+ * paywall as `/api/chat` - that non-streaming route stays for any caller that
  * just wants the messages as one blob.
  *
  * Streaming works on the Node runtime (Fluid Compute); no `edge` needed.
@@ -35,7 +35,7 @@ export async function POST(req: Request) {
       await runWebChatTurnStreaming(user, text, emit as (e: AgentEvent) => void);
     } catch (err) {
       console.error("streamed chat turn failed", err);
-      emit({ type: "error", message: "That turn failed on our side — try again." });
+      emit({ type: "error", message: "That turn failed on our side - try again." });
     }
   });
 }

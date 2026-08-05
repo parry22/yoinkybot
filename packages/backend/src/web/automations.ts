@@ -106,7 +106,7 @@ const CADENCE_KINDS: CadenceKind[] = ["daily", "weekly", "manual"];
 const CADENCE_DAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 
 /**
- * `cadence_meta` used to be written straight from the form body — whatever JSON
+ * `cadence_meta` used to be written straight from the form body - whatever JSON
  * object arrived, unvalidated. automations/tick.ts reads exactly two keys from
  * it, and an out-of-range `hour` there is not a cosmetic problem: an automation
  * whose hour the tick can never reach never runs at all, silently and forever.
@@ -114,7 +114,7 @@ const CADENCE_DAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
  * rather than persisting fields nothing reads.
  *
  * NOTE: `hour` is UTC, not the user's local time (a documented v1 simplification
- * in tick.ts — quiet hours are what keep delivery polite).
+ * in tick.ts - quiet hours are what keep delivery polite).
  */
 function sanitizeCadenceMeta(raw: unknown): Record<string, unknown> {
   const meta: Record<string, unknown> = {};
@@ -135,11 +135,11 @@ function sanitizeCadenceMeta(raw: unknown): Record<string, unknown> {
   return meta;
 }
 
-/** An automation name is a label, not a body — a headline's worth is plenty. */
+/** An automation name is a label, not a body - a headline's worth is plenty. */
 const NAME_MAX = 120;
 
 function sanitize(input: AutomationFormInput): AutomationInput {
-  // Bounded like `brief` below — an automation name is rendered in the UI, sent
+  // Bounded like `brief` below - an automation name is rendered in the UI, sent
   // in approval DMs, and pasted into prompts, so an unbounded one is both a
   // layout problem and a token bill.
   const name = typeof input.name === "string" ? input.name.trim().slice(0, NAME_MAX) : "";
@@ -153,7 +153,7 @@ function sanitize(input: AutomationFormInput): AutomationInput {
     : null;
   const brief = typeof input.brief === "string" ? input.brief.trim().slice(0, BRIEF_MAX) : "";
   if (brief) assertClean(brief); // the free-text brief goes through the same gate
-  // A 'custom' automation is defined entirely by its brief — reject an empty one.
+  // A 'custom' automation is defined entirely by its brief - reject an empty one.
   if (sourceType === "custom" && !brief) {
     throw new ModerationError("Describe what this automation should do.");
   }
@@ -178,7 +178,7 @@ export async function saveAutomationFromWeb(userId: string, input: AutomationFor
   // so the web route's existing 400 handler shows the reason.
   const ent = await entitlementsFor(userId);
   if (clean.delivery_mode === "auto" && !ent.autoAgent) {
-    throw new ModerationError("Hands-off auto mode is a Scale feature — pick “Asks you first”, or upgrade to Scale.");
+    throw new ModerationError("Hands-off auto mode is a Scale feature - pick “Asks you first”, or upgrade to Scale.");
   }
   // Clamp the per-automation "Cap / month" to the plan ceiling so the form can
   // never promise more than the plan will actually deliver. The run pipeline
@@ -220,8 +220,8 @@ export async function saveAutomationStreaming(
   emit({
     type: "message",
     text: id
-      ? `Updated **${view.name}** — ${DELIVERY_COPY[view.deliveryMode]}, ${CADENCE_COPY[view.cadenceKind]}, up to ${view.monthlyCap} posts a month.`
-      : `**${view.name}** is live — ${DELIVERY_COPY[view.deliveryMode]}, ${CADENCE_COPY[view.cadenceKind]}, up to ${view.monthlyCap} posts a month. Run it now, or leave it to its schedule.`,
+      ? `Updated **${view.name}** - ${DELIVERY_COPY[view.deliveryMode]}, ${CADENCE_COPY[view.cadenceKind]}, up to ${view.monthlyCap} posts a month.`
+      : `**${view.name}** is live - ${DELIVERY_COPY[view.deliveryMode]}, ${CADENCE_COPY[view.cadenceKind]}, up to ${view.monthlyCap} posts a month. Run it now, or leave it to its schedule.`,
   });
   emit({ type: "result", data: { automation: view } });
 }
@@ -233,7 +233,7 @@ export async function saveAutomationStreaming(
  * user had said anything (see automations/interview.ts for why that was the
  * problem). It is stateless: the client sends the whole transcript back each turn.
  *
- * When the interview completes, this does the last two things in one go — builds
+ * When the interview completes, this does the last two things in one go - builds
  * the agent AND runs it once immediately. That matters: an agent you have to
  * remember to go and press "run" on is a config screen, not an agent. The first
  * run also surfaces a real draft while the user is still on the page, so a
@@ -265,13 +265,13 @@ export async function runAutomationInterviewStreaming(
       return;
     }
     console.error("automation interview save failed", err);
-    emit({ type: "error", message: "Couldn't set that agent up — try again." });
+    emit({ type: "error", message: "Couldn't set that agent up - try again." });
     return;
   }
 
   emit({
     type: "message",
-    text: `**${view.name}** is live — ${describeSpec(turn.spec)}, up to ${view.monthlyCap} posts a month.`,
+    text: `**${view.name}** is live - ${describeSpec(turn.spec)}, up to ${view.monthlyCap} posts a month.`,
   });
 
   // Fire it once now. A failure here is NOT a setup failure: the agent exists and
@@ -290,12 +290,12 @@ export async function runAutomationInterviewStreaming(
     } else {
       emit({
         type: "message",
-        text: `Agent's set up. Its first run found nothing to post yet${res.reason ? ` (${res.reason})` : ""} — it'll pick things up on its schedule.`,
+        text: `Agent's set up. Its first run found nothing to post yet${res.reason ? ` (${res.reason})` : ""} - it'll pick things up on its schedule.`,
       });
     }
   } catch (err) {
     console.error("automation interview first run failed", err);
-    emit({ type: "message", text: "Agent's set up. Its first run didn't complete — hit Run now to retry." });
+    emit({ type: "message", text: "Agent's set up. Its first run didn't complete - hit Run now to retry." });
   }
 
   emit({ type: "result", data: { complete: true, automation: view, spec: turn.spec } });
@@ -324,7 +324,7 @@ export async function runAutomationOnceStreaming(userId: string, id: string, emi
     onStage: (s) => emit({ type: "stage", label: automationStageLabel(s) }),
   });
   if (res.status === "awaiting_approval") {
-    emit({ type: "message", text: "Drafted — it's waiting in your approvals." });
+    emit({ type: "message", text: "Drafted - it's waiting in your approvals." });
   } else if (res.status === "scheduled") {
     emit({ type: "message", text: "Drafted and queued to post." });
   } else {

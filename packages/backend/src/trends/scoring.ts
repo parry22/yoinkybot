@@ -1,5 +1,5 @@
 /**
- * Deterministic buzz scoring for trend candidates — pure functions, no I/O,
+ * Deterministic buzz scoring for trend candidates - pure functions, no I/O,
  * no model. A single LLM call can't tell real buzz from noise and can't verify
  * volume itself, so whether a trend is REAL is computed here from verified
  * tweet data (twitterapi.io advanced_search) and gated in code before any
@@ -15,14 +15,14 @@ export interface BuzzTweet {
   createdAtMs: number;
 }
 
-/** Spec weights — components are normalized 0..1 before combining. */
+/** Spec weights - components are normalized 0..1 before combining. */
 const W_AUTHORS = 0.35;
 const W_ENGAGEMENT = 0.3;
 const W_VELOCITY = 0.2;
 const W_TREND_RANK = 0.15;
 
 /**
- * Distinct authors matter more than raw tweet count — one account posting 50
+ * Distinct authors matter more than raw tweet count - one account posting 50
  * times looks like a trend and isn't.
  */
 export function distinctAuthorCount(tweets: BuzzTweet[]): number {
@@ -34,7 +34,7 @@ export function totalEngagement(tweets: BuzzTweet[]): number {
 }
 
 /**
- * 2nd-half-window tweet count over 1st-half — >1 means accelerating. An empty
+ * 2nd-half-window tweet count over 1st-half - >1 means accelerating. An empty
  * first half with activity in the second reads as max acceleration; a dead
  * window reads as 0.
  */
@@ -54,7 +54,7 @@ export function velocity(tweets: BuzzTweet[], windowStartMs: number, windowEndMs
 export interface BuzzSignals {
   distinctAuthors: number;
   totalEngagement: number;
-  /** velocity() output — 1.0 is steady, 2.0 saturates the component. */
+  /** velocity() output - 1.0 is steady, 2.0 saturates the component. */
   velocity: number;
   /** The topic also appears in the provider trend list (Apify). */
   inTrendList: boolean;

@@ -15,12 +15,12 @@ export interface XConnectStatus {
   /**
    * A usable X connection: the account row exists AND its history read hasn't
    * failed. This used to be a bare `Boolean(row)`, which counted a `failed` row
-   * as fully connected — the web gate then didn't fire and the user sat in an
+   * as fully connected - the web gate then didn't fire and the user sat in an
    * empty app forever with nothing telling them the read had died.
    */
   connected: boolean;
   status: string | null; // pending | ingesting | ingested | failed | null
-  /** The history read is queued or running — connected, but there's no data yet. */
+  /** The history read is queued or running - connected, but there's no data yet. */
   reading: boolean;
   /** The history read failed (private/near-empty account, bad handle, or the pull errored). */
   failed: boolean;

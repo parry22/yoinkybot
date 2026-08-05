@@ -4,14 +4,14 @@ import styles from "./topbar.module.css";
 /**
  * Subtle trial pill that lives in the top nav bar (not a full-width strip).
  * While the trial runs it invites the user to add a card ("keep going after your
- * trial") — card capture happens here, inside the app, not at signup. Once the
+ * trial") - card capture happens here, inside the app, not at signup. Once the
  * trial has ended it firms up into an upgrade prompt. A healthy paying
  * subscription renders nothing.
  *
  * A payment problem reads as a payment problem. The pill used to render the
  * single "expired" bucket for every non-active state, so a customer who had been
  * paying for months and whose card bounced was told "Trial ended" and pointed at
- * a fresh checkout — which is how they ended up with two subscriptions. They now
+ * a fresh checkout - which is how they ended up with two subscriptions. They now
  * get "Payment failed" and go to the customer portal to fix the card.
  */
 export function TrialPill({ trial }: { trial: TrialInfo }) {
@@ -32,7 +32,7 @@ export function TrialPill({ trial }: { trial: TrialInfo }) {
         className={`${styles.trialPill} ${styles.trialPillExpired}`}
         title={
           trial.accessUntil
-            ? `We couldn't charge your card. Update it to keep your plan — access continues until ${formatDay(trial.accessUntil)}.`
+            ? `We couldn't charge your card. Update it to keep your plan - access continues until ${formatDay(trial.accessUntil)}.`
             : "We couldn't charge your card. Update it to restore your plan."
         }
       >
@@ -62,7 +62,7 @@ export function TrialPill({ trial }: { trial: TrialInfo }) {
       <a
         href={`/api/billing/checkout${planQ}`}
         className={`${styles.trialPill} ${styles.trialPillExpired}`}
-        title="Your plan has ended — resubscribe to get Yoinky and the Telegram agent back."
+        title="Your plan has ended - resubscribe to get Yoinky and the Telegram agent back."
       >
         <span className={styles.trialDot} aria-hidden="true" />
         <span className={styles.trialText}>Plan ended</span>
@@ -82,7 +82,7 @@ export function TrialPill({ trial }: { trial: TrialInfo }) {
       className={`${styles.trialPill} ${expired ? styles.trialPillExpired : ""}`}
       title={
         expired
-          ? "Your free trial has ended — upgrade to keep Yoinky and the Telegram agent."
+          ? "Your free trial has ended - upgrade to keep Yoinky and the Telegram agent."
           : "Add a card now and you won't be charged until your trial ends."
       }
     >
@@ -93,7 +93,7 @@ export function TrialPill({ trial }: { trial: TrialInfo }) {
   );
 }
 
-/** "12 Mar" — short enough for a nav pill, unambiguous enough for a billing date. */
+/** "12 Mar" - short enough for a nav pill, unambiguous enough for a billing date. */
 function formatDay(iso: string): string {
   const d = new Date(iso);
   return Number.isFinite(d.getTime())

@@ -8,7 +8,7 @@ import { handleDodoEvent } from "../billing/dodo.js";
 /**
  * Webhook routes. The Dodo route needs the raw body string (Standard Webhooks
  * signature verification), while the Telegram route needs the default parsed
- * JSON body — so the raw-body parser is confined to a nested scope around the
+ * JSON body - so the raw-body parser is confined to a nested scope around the
  * Dodo route only.
  */
 export async function webhookRoutes(app: FastifyInstance): Promise<void> {
@@ -35,7 +35,7 @@ export async function webhookRoutes(app: FastifyInstance): Promise<void> {
       });
       if (!ok) return reply.code(401).send({ error: "bad signature" });
       // The signed id and timestamp were verified and then thrown away. They are
-      // the handler's idempotency key and its ordering clock — a retried delivery
+      // the handler's idempotency key and its ordering clock - a retried delivery
       // used to be applied twice, and a late-arriving event could overwrite a
       // newer one. Both only work because the signature check above proves these
       // headers came from Dodo.
@@ -45,11 +45,11 @@ export async function webhookRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // Only wire the webhook route when we actually intend to run in webhook mode
-  // (see index.ts) — grammY's Bot instance can't be consumed by both a webhook
+  // (see index.ts) - grammY's Bot instance can't be consumed by both a webhook
   // route and bot.start() (long polling) at once.
   //
   // The route acks Telegram IMMEDIATELY and processes the update detached.
-  // grammY's webhookCallback awaits the full handler with a 10s timeout — but a
+  // grammY's webhookCallback awaits the full handler with a 10s timeout - but a
   // real turn (retrieval + LLM, worst case with retries) can run well past
   // that, and an unacked/failed webhook makes Telegram REDELIVER the update:
   // the whole turn replays and the user sees duplicate or ghost replies.
@@ -81,7 +81,7 @@ export async function webhookRoutes(app: FastifyInstance): Promise<void> {
       const update = req.body as Update | undefined;
       const id = update?.update_id;
       if (typeof id !== "number") return { ok: true };
-      if (seen.has(id)) return { ok: true }; // redelivery — already handled
+      if (seen.has(id)) return { ok: true }; // redelivery - already handled
       seen.add(id);
       seenOrder.push(id);
       if (seenOrder.length > SEEN_MAX) seen.delete(seenOrder.shift()!);

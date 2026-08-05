@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
  *
  * A scan composes an outreach reply per gated candidate, and with
  * AGENT_RUNTIME_BUYER=sdk each of those spawns a Claude Code subprocess that
- * needs a real filesystem — which a serverless function is not. So the work runs
+ * needs a real filesystem - which a serverless function is not. So the work runs
  * on the Railway backend via pg-boss and this route only starts it and reports
  * progress. That also retires the old 300s-ceiling race against several paid
  * searches plus a handful of composition loops.
@@ -23,13 +23,13 @@ export const dynamic = "force-dynamic";
 export async function POST() {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  // Paid-only — a scan spends real twitterapi.io + LLM budget. The per-plan
+  // Paid-only - a scan spends real twitterapi.io + LLM budget. The per-plan
   // monthly cap (Growth 25 / Scale ∞) is enforced inside the scan itself.
   if (!(await requirePaid(user)))
     return NextResponse.json({ error: "upgrade_required" }, { status: 402 });
   // Burst guard. A scan is the single most expensive thing a user can trigger
   // (several paid searches + a composition loop per gated candidate), and the
-  // monthly cap is enforced inside the scan — i.e. AFTER the spend starts. This
+  // monthly cap is enforced inside the scan - i.e. AFTER the spend starts. This
   // bounds how many can be kicked off in a window.
   const limited = await rateLimited(user.id, "buyer_scan");
   if (limited) return limited;

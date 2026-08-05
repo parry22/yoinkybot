@@ -6,7 +6,7 @@ export interface UsageEvent {
   tokensIn: number;
   tokensOut: number;
   /** Subset of tokensIn served from the prompt cache (~4x cheaper). Undefined =
-   *  unknown for this transport (recorded as NULL, not 0 — 0 would claim a cold cache). */
+   *  unknown for this transport (recorded as NULL, not 0 - 0 would claim a cold cache). */
   cachedInputTokens?: number;
   model: string;
   cost: number;

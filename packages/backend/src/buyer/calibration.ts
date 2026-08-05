@@ -1,7 +1,7 @@
 /**
  * Per-user threshold recalibration for Buyer Radar (§3j feedback loop). The
  * user's verdicts on surfaced signals are the training signal, re-derived into
- * per-user overrides of the global gates — deterministically, not by an LLM
+ * per-user overrides of the global gates - deterministically, not by an LLM
  * (mirrors memory/corrections.ts). The doctrine: code tunes the gates from real
  * feedback; the model never touches selection.
  *
@@ -44,7 +44,7 @@ export function baseThresholds(): BuyerThresholds {
 
 /**
  * Pure: derive per-user thresholds from the recent verdict mix. Deterministic
- * and bounded — recalibration nudges (±0.03/verdict, capped), never swings.
+ * and bounded - recalibration nudges (±0.03/verdict, capped), never swings.
  */
 export function buildCalibration(counts: VerdictCounts, base: BuyerThresholds): BuyerThresholds {
   const { not_a_fit: nf, skipped: sk, replied: rep } = counts;

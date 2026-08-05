@@ -28,7 +28,7 @@ export async function GET() {
       },
       { status: 402 },
     );
-  // Burst guard — each call is a billed twitterapi.io timeline read.
+  // Burst guard - each call is a billed twitterapi.io timeline read.
   const limited = await rateLimited(user.id, "analytics_replies");
   if (limited) return limited;
   try {

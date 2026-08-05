@@ -109,7 +109,7 @@ export function gapBeatsCovered(covered: DiagnosisBeat[]): number {
   return covered.filter((b) => b !== "whats_working").length;
 }
 
-/** unsaid_patterns is the trust-gated finale — only after working + 2 gaps. */
+/** unsaid_patterns is the trust-gated finale - only after working + 2 gaps. */
 export function unsaidUnlocked(covered: DiagnosisBeat[]): boolean {
   return covered.includes("whats_working") && gapBeatsCovered(covered) >= 2;
 }
@@ -151,7 +151,7 @@ export function classifyGoalType(draft: StrategistState["goalDraft"]): string {
  * that both answers and advances is deterministic.
  *
  * `reaction` is the classifier's read of the user's latest reply, used ONLY to
- * gate leaving diagnosis_dialogue once every beat has been revealed — real
+ * gate leaving diagnosis_dialogue once every beat has been revealed - real
  * pushback keeps the conversation open instead of getting steamrolled by a
  * fixed one-turn advance. Undefined behaves like "closing" (fail-open): a
  * classifier outage should never trap someone in the dialogue phase forever.
@@ -170,7 +170,7 @@ export function applyActions(state: StrategistState, actions: Action[], reaction
 
   const has = (t: Action["type"]) => actions.some((a) => a.type === t);
 
-  // 1. beat_covered — dedup + enforce the trust gate even if revealed early.
+  // 1. beat_covered - dedup + enforce the trust gate even if revealed early.
   for (const a of actions) {
     if (a.type === "beat_covered" && !covered.includes(a.beat)) {
       if (a.beat === "unsaid_patterns" && !unsaidUnlocked(covered)) continue;
@@ -178,17 +178,17 @@ export function applyActions(state: StrategistState, actions: Action[], reaction
     }
   }
 
-  // 1b. plan_beat_covered — same dedup pattern, paces the plan presentation.
+  // 1b. plan_beat_covered - same dedup pattern, paces the plan presentation.
   for (const a of actions) {
     if (a.type === "plan_beat_covered" && !planCovered.includes(a.beat)) planCovered.push(a.beat);
   }
 
-  // 2. goal_field — accumulate the draft.
+  // 2. goal_field - accumulate the draft.
   for (const a of actions) {
     if (a.type === "goal_field") goalDraft[a.field] = a.value;
   }
 
-  // 3. cadence — record on the draft plan (needs a plan).
+  // 3. cadence - record on the draft plan (needs a plan).
   for (const a of actions) {
     if (a.type === "cadence" && state.planId) {
       effects.push({ kind: "setCadence", perWeek: a.perWeek, note: a.note });
@@ -215,7 +215,7 @@ export function applyActions(state: StrategistState, actions: Action[], reaction
     const allRevealed = remainingBeats(covered).length === 0;
     const gateMet = canAdvanceDiagnosis(covered);
     if (allRevealed) {
-      // Everything's been shown — this is the "pause" beat. Only actually leave
+      // Everything's been shown - this is the "pause" beat. Only actually leave
       // on a genuine closing signal; real pushback gets a real conversation
       // instead of being treated the same as "yeah, fair". The watchdog is
       // still the backstop so an endless back-and-forth eventually resolves.
@@ -226,7 +226,7 @@ export function applyActions(state: StrategistState, actions: Action[], reaction
       nextPhase = "goals";
     }
   } else if (phase === "goals") {
-    // Capture the moment the draft is complete — don't wait on the model's flag.
+    // Capture the moment the draft is complete - don't wait on the model's flag.
     if (goalDraftComplete(goalDraft)) {
       effects.push({
         kind: "captureGoal",
@@ -313,7 +313,7 @@ export function nextProfileField(cursor: ProfileCursor | undefined): ProfileFiel
 
 /**
  * An explicit request to skip/pass the current question. Different from the
- * "push once on vagueness" flow — this is an unambiguous decline, and a real
+ * "push once on vagueness" flow - this is an unambiguous decline, and a real
  * strategist honors it immediately, not by re-asking. Matched deterministically
  * (not left to the model) because a model that fails to recognize "skip this"
  * as a skip just re-asks the same question, which is the exact bug this exists
@@ -395,7 +395,7 @@ export function applyProfileActions(
 /**
  * "Skip onboarding" escape hatch. Marks every still-uncaptured intake field
  * unresolved, finalizes the (thinner) profile, and jumps straight to the connect
- * hand-off. Same end state as answering — or skipping — every question one by
+ * hand-off. Same end state as answering - or skipping - every question one by
  * one, so the diagnosis still runs; it just works off whatever was stated.
  */
 export async function skipAllIntake(userId: string): Promise<void> {
@@ -476,7 +476,7 @@ async function runProfilingTurn(userId: string, message: string, state: Strategi
   const turnsInPhase = state.phase === phase ? (state.turnsInPhase ?? 0) : 0;
 
   // A plain, deterministic fallback so a transient LLM/DB hiccup never dead-ends
-  // the intake — the machine already knows the next field, so just ask it.
+  // the intake - the machine already knows the next field, so just ask it.
   // OAuth-first when configured: the connect button (sent by the bot right
   // after this reply) is the primary action; the typed handle stays the out.
   const authConnect = publishConfigured("x") || publishConfigured("linkedin");
@@ -488,7 +488,7 @@ async function runProfilingTurn(userId: string, message: string, state: Strategi
         : "Drop your X handle (like @yourname) or your LinkedIn profile URL and I'll read your history from here.";
 
   // Context loads are best-effort: a DB hiccup on any of them must NOT kill the
-  // turn (that was the loop bug — a failed getProfile threw before the LLM ran,
+  // turn (that was the loop bug - a failed getProfile threw before the LLM ran,
   // so nothing was ever captured and the same field was re-asked forever). The
   // LLM turn is what drives the conversation, so it always runs.
   const [history, relevant, profileRow] = await Promise.all([
@@ -507,7 +507,7 @@ async function runProfilingTurn(userId: string, message: string, state: Strategi
       system: strategistProfiling.system,
       user: strategistProfiling.render({
         phase,
-        // Include the message they just sent — it's not persisted until the end
+        // Include the message they just sent - it's not persisted until the end
         // of this turn, so without this the model can't see what it's answering
         // and re-asks the same question a turn late (the "not listening" bug).
         history: [...history, { role: "user", content: message }],
@@ -537,18 +537,18 @@ async function runProfilingTurn(userId: string, message: string, state: Strategi
     actions = parsed.actions;
   } catch (err) {
     // Keep the deterministic fallback question (set above) rather than a generic
-    // "lost my thread" dead-end — the conversation still moves forward. But a
+    // "lost my thread" dead-end - the conversation still moves forward. But a
     // failed LLM turn is never normal: page the admin (hourly-throttled) with
     // the real error so a dead key/model config can't hide behind fallbacks.
     console.error("profiling turn failed; falling back to the plain field question", err);
     void import("../lib/alerts.js").then(({ alertAdmin }) =>
-      alertAdmin("llm:profiling-turn", `Profiling turn LLM call failed — users are getting fallback questions. Error: ${err instanceof Error ? err.message : String(err)}`),
+      alertAdmin("llm:profiling-turn", `Profiling turn LLM call failed - users are getting fallback questions. Error: ${err instanceof Error ? err.message : String(err)}`),
     );
   }
 
   // Deterministic skip: an explicit "skip/pass/next question" must ALWAYS
   // advance, on the first try, whether or not the model recognized it (a model
-  // that misses it just re-asks the same question — that's the bug this fixes).
+  // that misses it just re-asks the same question - that's the bug this fixes).
   if (phase === "profiling" && field && detectSkipIntent(message)) {
     const modelCapturedIt = actions.some((a) => a.type === "profile_field" && a.field === field);
     if (!modelCapturedIt) {
@@ -584,7 +584,7 @@ async function runProfilingTurn(userId: string, message: string, state: Strategi
     }
   } catch (err) {
     console.error("profiling effect failed; will retry next turn", err);
-    // Don't advance out of profiling if persistence failed — reask next turn.
+    // Don't advance out of profiling if persistence failed - reask next turn.
     if (finalState.phase === "connect_transition" && reduced.effects.some((e) => e.kind === "finalizeProfile")) {
       finalState = { ...finalState, phase: "profiling", awaitingConnect: false };
     }
@@ -636,7 +636,7 @@ async function runProfilingTurn(userId: string, message: string, state: Strategi
 export async function runSessionTurn(userId: string, message: string): Promise<SessionResult> {
   const state = await getState(userId);
 
-  // The Stage 1-7 intake runs before any diagnosis exists — its own path.
+  // The Stage 1-7 intake runs before any diagnosis exists - its own path.
   if (state.phase === "profiling" || state.phase === "connect_transition") {
     return runProfilingTurn(userId, message, state);
   }
@@ -648,7 +648,7 @@ export async function runSessionTurn(userId: string, message: string): Promise<S
     ? await diagnosisById(userId, state.diagnosisId)
     : ((await currentDiagnosis(userId))?.dimensions ?? null);
   if (!diag) {
-    // No diagnosis to ground the session — shouldn't happen; degrade gracefully.
+    // No diagnosis to ground the session - shouldn't happen; degrade gracefully.
     const reply = "give me a sec, still reading through your stuff. try me again in a moment.";
     await saveTurn(userId, "user", message);
     await saveTurn(userId, "assistant", reply);
@@ -665,7 +665,7 @@ export async function runSessionTurn(userId: string, message: string): Promise<S
   const planCovered = state.planCovered ?? [];
   const turnsInPhase = state.phase === phase ? (state.turnsInPhase ?? 0) : 0;
 
-  // Only true on the exact turn every diagnosis beat has already been shown —
+  // Only true on the exact turn every diagnosis beat has already been shown -
   // i.e. the "pause" from the reveal. That's the one case where whether to
   // leave diagnosis_dialogue depends on reading the reply, not just pacing.
   const awaitingReactionSignal =
@@ -740,7 +740,7 @@ export async function runSessionTurn(userId: string, message: string): Promise<S
           timeframe: eff.goal.timeframe,
           success: eff.goal.success,
         });
-        // The goal just landed — a natural moment to ask about the OTHER
+        // The goal just landed - a natural moment to ask about the OTHER
         // platform, once, if they've only connected the one so far.
         offerSecondPlatform = Boolean(await otherUnconnectedPlatform(userId).catch(() => null));
         await generatePlanDraft(userId); // creates the draft plan + unlock items
@@ -759,7 +759,7 @@ export async function runSessionTurn(userId: string, message: string): Promise<S
     }
   } catch (err) {
     console.error("session effect failed; reconciling state", err);
-    // A thrown commit means confirmPlan's transaction rolled back — the plan is
+    // A thrown commit means confirmPlan's transaction rolled back - the plan is
     // still a draft, so step back to plan_build (keeping planId) rather than
     // stranding the user "active" on an uncommitted plan.
     if (finalState.phase === "active") {
@@ -801,7 +801,7 @@ async function concludeAfterDiagnosis(userId: string): Promise<void> {
     `SELECT telegram_id FROM users WHERE id = $1`,
     [userId],
   );
-  await setState(userId, {}); // leave the onboarding arc — there's no plan phase to enter
+  await setState(userId, {}); // leave the onboarding arc - there's no plan phase to enter
   if (await isPaidOrExempt({ id: userId, telegram_id: row?.telegram_id ?? null })) {
     await setStage(userId, "active");
     await sendTelegramSequence(userId, [ONBOARDING_DONE_ACTIVE]);
@@ -879,7 +879,7 @@ const GAP_FALLBACK =
  * Stage 10: the gap analysis. Fired after connect+diagnosis when a completed
  * brand profile exists. Computes the deterministic stated-vs-actual gap, has the
  * model narrate it as a paced multi-message reveal, and leaves the session in
- * gap_analysis with the diagnosis pinned — the user's next message is their
+ * gap_analysis with the diagnosis pinned - the user's next message is their
  * reaction, and the machine advances to the three-month plan from there.
  */
 export async function openGapSession(
@@ -910,7 +910,7 @@ export async function openGapSession(
       user: gapAnalysis.render({
         profileSummary: profileSummaryForPrompt(profile),
         diagnosis: dimensions,
-        gap: gap?.text ?? "(gap computation unavailable — work from the diagnosis and stated profile alone)",
+        gap: gap?.text ?? "(gap computation unavailable - work from the diagnosis and stated profile alone)",
         sampleMemories: samples.map((s) => s.content),
         memoryCount: Number(countRow?.n ?? samples.length),
       }),
@@ -926,7 +926,7 @@ export async function openGapSession(
   }
   if (messages.length === 0) messages = [GAP_FALLBACK];
 
-  // The gap analysis is the brand diagnosis and the last free step — no
+  // The gap analysis is the brand diagnosis and the last free step - no
   // three-month plan follows. Send it, then conclude onboarding.
   await saveTurn(userId, "assistant", messages[messages.length - 1]!);
   await sendTelegramSequence(userId, messages);
@@ -971,7 +971,7 @@ export async function openPlanSession(userId: string, gapText?: string): Promise
   await setState(userId, {
     phase: "plan_build",
     planId: plan.planId,
-    planCovered: [...PLAN_BEATS], // fully presented — the plan_build turn just confirms
+    planCovered: [...PLAN_BEATS], // fully presented - the plan_build turn just confirms
     cadenceSet: true,
     turnsInPhase: 0,
   });

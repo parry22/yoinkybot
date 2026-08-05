@@ -1,5 +1,5 @@
 /**
- * custom selector — the govork-style "define it freely" source. There's no
+ * custom selector - the govork-style "define it freely" source. There's no
  * external search or LLM here: the user's own brief IS the seed handed to the
  * draft path. Deterministic (returns null only when there's no brief to work
  * from). Cost profile: free_local.

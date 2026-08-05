@@ -1,11 +1,11 @@
 /**
- * Deterministic intent scoring — the doctrinal spine of Buyer Radar. Pure, no
+ * Deterministic intent scoring - the doctrinal spine of Buyer Radar. Pure, no
  * I/O, no LLM (sibling of trends/scoring.ts#buzzScore and engagement/heuristics.ts).
  * Code decides who is a buyer; the composition model only researches, drafts, and
  * may DECLINE. It never widens the candidate set.
  *
  * A deliberate inversion lives here: unlike buzzScore, where a high reply count is
- * signal, for a prospect tweet a high reply count is a PENALTY — the user is late
+ * signal, for a prospect tweet a high reply count is a PENALTY - the user is late
  * to a crowded thread and will be buried. We prefer fresh + low-reply. See the
  * `crowding` component.
  */
@@ -76,7 +76,7 @@ export interface IntentCandidate {
   authorFollowers: number;
   replyCount: number;
   createdAt: Date;
-  /** Which discovery bucket surfaced it — deterministic, known before scoring. */
+  /** Which discovery bucket surfaced it - deterministic, known before scoring. */
   provenance: IntentType;
 }
 
@@ -84,7 +84,7 @@ export interface IcpScoringContext {
   competitorTerms: string[];
   /** Per-user pain phrasings, folded into the strong-marker lexicon. */
   painSignals: string[];
-  /** Contexts that are NOT the buyer — any hit hard-drops the candidate. */
+  /** Contexts that are NOT the buyer - any hit hard-drops the candidate. */
   exclusions: string[];
   /** Recency decays over this window (from config.BUYER_LOOKBACK_HOURS). */
   lookbackHours: number;
@@ -114,7 +114,7 @@ const has = (hay: string, needle: string): boolean => needle.length > 0 && hay.i
 const round3 = (n: number): number => Math.round(n * 1000) / 1000;
 
 /**
- * Follower "sweet spot" band — NOT monotonic. A mid-size real account beats both
+ * Follower "sweet spot" band - NOT monotonic. A mid-size real account beats both
  * a 12-follower egg and a 500k-follower account tweeting rhetorically. Buyers
  * with genuine reach-to-convert sit in the middle.
  */
@@ -146,7 +146,7 @@ function questionScore(text: string): number {
 function recencyScore(createdAt: Date, lookbackHours: number, now: number): number {
   const ageHours = (now - createdAt.getTime()) / 3_600_000;
   const base = Math.max(0, 1 - ageHours / Math.max(1, lookbackHours));
-  return base * base; // steep decay — a stale "looking for" is likely resolved
+  return base * base; // steep decay - a stale "looking for" is likely resolved
 }
 
 function crowdingScore(replyCount: number): number {

@@ -61,7 +61,7 @@ export async function runShowScheduled(user: User, channel: Channel): Promise<st
 /**
  * Queue a post for later. Validates the resolved time, saves it, and confirms
  * with the absolute time echoed back (so a mis-parsed "tomorrow" is obvious).
- * Warns — but still schedules — when the account isn't connected for posting,
+ * Warns - but still schedules - when the account isn't connected for posting,
  * since the write-OAuth may be completed before the post is due.
  */
 export async function runSchedulePost(
@@ -75,10 +75,10 @@ export async function runSchedulePost(
   const scheduledFor = new Date(when);
   const res = await schedulePost(user.id, { platform, content, scheduledFor, mediaIds });
   if (!res.ok) {
-    // "give me a clear time" only makes sense for a time-parse failure — a link
+    // "give me a clear time" only makes sense for a time-parse failure - a link
     // rejection or empty-content reason already says exactly what's wrong.
     const hint = Number.isNaN(scheduledFor.getTime()) ? ` give me a clear time like "tomorrow 9am" or "friday 6pm".` : "";
-    const msg = `couldn't schedule that — ${res.reason}.${hint}`;
+    const msg = `couldn't schedule that - ${res.reason}.${hint}`;
     await channel.say(msg);
     return msg;
   }
@@ -102,7 +102,7 @@ export async function runSchedulePost(
  * Where a turn's output goes. Live chat wraps grammY's ctx; async paths (the
  * voice-note reply after transcription) wrap sendTelegram. Keeping the executor
  * channel-based means every capability works identically from a typed message,
- * a voice note, or a button — one code path per feature, many entry points.
+ * a voice note, or a button - one code path per feature, many entry points.
  */
 export interface Channel {
   say(text: string, keyboard?: InlineKeyboard): Promise<void>;
@@ -132,7 +132,7 @@ export async function connectAccount(
     return msg;
   }
   await startConnect(user.id, platform, handle);
-  // Handle received — stop treating bare words as handle answers.
+  // Handle received - stop treating bare words as handle answers.
   const st = await getState(user.id);
   if (st.awaitingConnect) await setState(user.id, { ...st, awaitingConnect: false });
   const msg =
@@ -179,7 +179,7 @@ export async function runDraft(
       await channel.say(msg);
       return msg;
     }
-    // Otherwise fall through and generate — this is a free taste.
+    // Otherwise fall through and generate - this is a free taste.
   }
   const res = await generateDraft(user.id, topic, platform, { onStage: progress.onDraftStage });
   if (!res.ok) {
@@ -216,7 +216,7 @@ export async function deliverRepurposed(
   const kb = result.id
     ? new InlineKeyboard().text("✅ posted it", `rpu:${result.id}:used`).text("⏭ not this one", `rpu:${result.id}:skip`)
     : undefined;
-  // The reshaped post is content — leave it exactly as written, notes stay lowercase.
+  // The reshaped post is content - leave it exactly as written, notes stay lowercase.
   const text = `♻️ here's the reshaped version:\n\n${result.output}${result.notes ? `\n\n(${result.notes})` : ""}`;
   await channel.say(text, kb);
   return text;
@@ -285,7 +285,7 @@ export async function statusText(user: User): Promise<string> {
 /**
  * Execute one chat tool through the same code path its slash command uses.
  * Returns a short trace of what was delivered so the caller can persist it as
- * an assistant turn — next turn, the brain remembers what it actually did.
+ * an assistant turn - next turn, the brain remembers what it actually did.
  */
 export async function executeChatTool(
   user: User,
@@ -335,7 +335,7 @@ export async function executeChatTool(
       const research = await researchTopic(user.id, tool.topic);
       if (research.posts.length === 0 && research.headlines.length === 0) {
         const msg =
-          `couldn't find anything live on "${tool.topic}" — no x conversation in the last few days, ` +
+          `couldn't find anything live on "${tool.topic}" - no x conversation in the last few days, ` +
           `no news hits either. either it's quieter than it feels or i'm searching the wrong words. ` +
           `want me to try a different phrasing?`;
         await channel.say(msg);
@@ -345,7 +345,7 @@ export async function executeChatTool(
       // trace is the same material, so it can draft from it without re-searching.
       const top = research.posts.slice(0, 4);
       const lines: string[] = [`here's what's live on "${tool.topic}":`];
-      for (const p of top) lines.push(`• @${p.handle} (${p.likes} likes) — ${p.text.slice(0, 200)}`);
+      for (const p of top) lines.push(`• @${p.handle} (${p.likes} likes) - ${p.text.slice(0, 200)}`);
       for (const h of research.headlines.slice(0, 3)) lines.push(`• ${h.topic}`);
       await channel.say(lines.join("\n\n"));
       return renderResearch(research);
@@ -436,12 +436,12 @@ export async function executeChatTool(
       for (const m of matches) kb.text(`🗑 ${m.content.slice(0, 40)}…`, `cf:${m.id}`).row();
       kb.text("Cancel", "cf:cancel");
       await channel.say("which one? this is permanent.", kb);
-      return "(offered forget choices — waiting on their pick)";
+      return "(offered forget choices - waiting on their pick)";
     }
 
     case "correct_classification": {
       const matches = await hybridSearch(user.id, tool.query, 5);
-      // Correction is capture-level (memory/classification.ts) — a search can
+      // Correction is capture-level (memory/classification.ts) - a search can
       // return several memory units split from the same post, so collapse to
       // one candidate per capture before presenting choices.
       const byCapture = new Map<string, (typeof matches)[number]>();
@@ -455,7 +455,7 @@ export async function executeChatTool(
         return msg;
       }
       // A single clear match, or a value that can't be compactly encoded into a
-      // button (only possible for rhetorical_mode) — apply directly to the best match.
+      // button (only possible for rhetorical_mode) - apply directly to the best match.
       if (candidates.length === 1 || !code) {
         const [captureId] = candidates[0]!;
         const result = await recordCorrection(user.id, captureId, tool.field, tool.correctedValue);
@@ -467,11 +467,11 @@ export async function executeChatTool(
       for (const [captureId, m] of candidates) kb.text(`✏️ ${m.content.slice(0, 40)}…`, `corr:${captureId}:${code}`).row();
       kb.text("Cancel", "cf:cancel");
       await channel.say("which one? that'll flip its reading.", kb);
-      return "(offered correction choices — waiting on their pick)";
+      return "(offered correction choices - waiting on their pick)";
     }
 
     case "clear_everything": {
-      // Never wipes directly — same clr:confirm/clr:cancel callback data the
+      // Never wipes directly - same clr:confirm/clr:cancel callback data the
       // old /clear command used, handled in telegram/bot.ts's callback_query
       // listener (deletes the visible chat, then resetUserData, then restarts
       // onboarding). This only surfaces the confirmation.
@@ -481,7 +481,7 @@ export async function executeChatTool(
         "and deletes every message in this chat, mine and yours. you'll start over from scratch. " +
         "can't be undone.\n\nsure?";
       await channel.say(msg, kb);
-      return "(offered the wipe-everything confirmation — waiting on their tap)";
+      return "(offered the wipe-everything confirmation - waiting on their tap)";
     }
   }
 }
@@ -497,7 +497,7 @@ export interface TurnOutput {
  * The mid-turn tool executor for the conversational loop (converse.v3): sends
  * the brain's short beat ("on it, checking that first"), runs the tool through
  * the same code path its slash command uses, and persists both as assistant
- * turns — a 3-tool turn shows up as its fragments in history, not one opaque
+ * turns - a 3-tool turn shows up as its fragments in history, not one opaque
  * blob. Returns the trace the loop feeds back to the model.
  */
 export function chatToolExecutor(user: User, channel: Channel, progress: ToolProgress = {}) {
@@ -527,7 +527,7 @@ export function onboardingSkipKeyboard(): InlineKeyboard {
 /**
  * Shared tail for every conversational entry point (typed text, voice-note
  * transcript, the paced session): file a genuine thought, send the reply,
- * offer angles, then execute the tool the brain called — and persist what the
+ * offer angles, then execute the tool the brain called - and persist what the
  * tool actually delivered so the next turn's history reflects reality.
  */
 export async function deliverTurnOutput(

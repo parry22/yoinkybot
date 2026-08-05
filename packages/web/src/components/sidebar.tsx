@@ -47,7 +47,7 @@ export function Sidebar({
   trial,
   onNavigate,
 }: {
-  /** Mobile drawer state — a no-op class on desktop, where the sidebar is always visible. */
+  /** Mobile drawer state - a no-op class on desktop, where the sidebar is always visible. */
   open: boolean;
   /** Shown as a mobile-only pill (the persistent top bar covers Telegram there instead). */
   trial: TrialInfo | null;
@@ -139,7 +139,7 @@ export function Sidebar({
         {renderGroup("Account", ACCOUNT_NAV, feedbackItem)}
       </nav>
 
-      {/* Pinned to the floor of the sidebar via `margin-top: auto` — switching
+      {/* Pinned to the floor of the sidebar via `margin-top: auto` - switching
         * here swaps the whole workspace (a Clerk session maps 1:1 to a `users`
         * row), which is why it sits apart from the nav groups rather than
         * inside "Account". */}

@@ -63,7 +63,7 @@ const PLANTED_POSITIONS: Array<{ statement: string; postIndex: number }> = [
   { statement: "Raising venture money forces a growth curve most founders don't want.", postIndex: 2 },
   { statement: "Technical founders underrate storytelling.", postIndex: 6 },
   { statement: "Founders should build an audience before they need one.", postIndex: 9 },
-  // The reversal — reconciliation should supersede the 2025-10 venture position.
+  // The reversal - reconciliation should supersede the 2025-10 venture position.
   { statement: "Venture speed is the only way to win my market, which is why I'm raising.", postIndex: 15 },
 ];
 
@@ -100,7 +100,7 @@ async function main(): Promise<void> {
     }
     console.log(`seeded ${SEED.length} memories`);
 
-    // Positions in chronological order — exercises live reconciliation.
+    // Positions in chronological order - exercises live reconciliation.
     for (const p of PLANTED_POSITIONS) {
       const change = await upsertPosition(userId, p.statement, memoryIds[p.postIndex]!);
       console.log(`position "${p.statement.slice(0, 50)}…" → ${change.action}${change.replaced.length ? ` (replaced: ${change.replaced.map((r) => r.slice(0, 40)).join("; ")})` : ""}`);

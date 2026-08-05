@@ -162,7 +162,7 @@ export async function saveBuyerIcp(userId: string, input: IcpInput): Promise<Buy
   }
   // …then BOUND it. Every one of these fields is read back into the scan prompt
   // and turned into paid twitterapi.io queries, and the list fields were
-  // unbounded in both item length AND item count — a thousand "pain signals"
+  // unbounded in both item length AND item count - a thousand "pain signals"
   // would have been carried into every scan from then on.
   const icp = await saveIcp(userId, boundIcp(input));
   return {
@@ -189,7 +189,7 @@ export interface ScanResponse {
  * Turn the funnel counts into one honest sentence.
  *
  * The gates backfill now, so an empty radar means discovery genuinely found
- * nothing — the reasons narrowed accordingly, and they name the search itself
+ * nothing - the reasons narrowed accordingly, and they name the search itself
  * (which words were tried, how far back it looked) rather than the thresholds,
  * because the thresholds can no longer be the cause.
  */
@@ -204,12 +204,12 @@ function emptyReason(result: ScanResult): string | null {
     const tried = words.length ? ` I searched for ${words.map((w) => `"${w}"`).join(", ")}.` : "";
     return (
       `Nobody on X has posted anything matching your category in the last few weeks.${tried} ` +
-      `If those aren't the words your buyers use, edit targeting — describing the problem they have ` +
+      `If those aren't the words your buyers use, edit targeting - describing the problem they have ` +
       `finds more people than describing what you sell.`
     );
   }
   if (!s.hasIcpVector) {
-    return "Your targeting hasn't been indexed yet — open Edit targeting and save it once to fix this.";
+    return "Your targeting hasn't been indexed yet - open Edit targeting and save it once to fix this.";
   }
   if (s.intentConsidered === 0) {
     return "Found people in your category, but every one of them was in your 'not my buyer' list. Loosen those exclusions in Edit targeting.";
@@ -221,12 +221,12 @@ function emptyReason(result: ScanResult): string | null {
 function stretchNote(result: ScanResult): string | null {
   if (result.surfaced === 0 || result.stages.backfilled === 0) return null;
   const n = result.stages.backfilled;
-  return `${n} of these ${n === 1 ? "is a stretch" : "are stretches"} — a quiet round, so I widened the net rather than show you an empty screen. Mark the misses "Not a fit" and I'll tighten it.`;
+  return `${n} of these ${n === 1 ? "is a stretch" : "are stretches"} - a quiet round, so I widened the net rather than show you an empty screen. Mark the misses "Not a fit" and I'll tighten it.`;
 }
 
 /**
  * The scan itself. Called by the pg-boss worker on the BACKEND, never from a
- * Vercel route — see `enqueueBuyerScan` for why.
+ * Vercel route - see `enqueueBuyerScan` for why.
  */
 export async function scanBuyerSignals(userId: string): Promise<ScanResponse> {
   const result = await scanForUser(userId);
@@ -260,7 +260,7 @@ export interface BuyerScanProgress {
  * Enqueue an on-demand scan and hand back a ticket to poll (docs/INTERNAL §3n).
  *
  * WHY NOT SYNCHRONOUS ANY MORE: with `AGENT_RUNTIME_BUYER=sdk`, composing an
- * outreach reply spawns a Claude Code subprocess that needs a real filesystem —
+ * outreach reply spawns a Claude Code subprocess that needs a real filesystem -
  * something a Vercel serverless function does not have, so the old in-request
  * scan simply cannot run in SDK mode. Moving it to pg-boss also retires a problem
  * the synchronous version always had: several paid searches plus a handful of
@@ -268,7 +268,7 @@ export interface BuyerScanProgress {
  *
  * The web app runs domain code in-process but never starts pg-boss, so
  * `ensureBoss()` lazily starts the engine in enqueue-only mode (it registers no
- * workers — the backend still consumes).
+ * workers - the backend still consumes).
  */
 export async function enqueueBuyerScan(userId: string): Promise<BuyerScanTicket> {
   const { ensureBoss, QUEUES } = await import("../jobs/boss.js");
@@ -277,7 +277,7 @@ export async function enqueueBuyerScan(userId: string): Promise<BuyerScanTicket>
   // Re-attach to an in-flight scan rather than starting a second one. This is
   // the PRIMARY duplicate guard, not a nicety: a scan spends real twitterapi.io
   // + LLM budget and burns the user's monthly signal cap, so an impatient second
-  // click must not buy a second scan. It also covers the case pg-boss cannot —
+  // click must not buy a second scan. It also covers the case pg-boss cannot -
   // `short` policy's unique index only applies while a job is still `created`,
   // so once the first scan goes `active` only this check stops a duplicate.
   const inFlight = await findActiveBuyerScan(userId);
@@ -288,12 +288,12 @@ export async function enqueueBuyerScan(userId: string): Promise<BuyerScanTicket>
     { userId },
     // Dedupes concurrent clicks atomically, which the check above cannot: two
     // simultaneous requests can both pass it, but only one row survives the
-    // unique index. Requires the `short` queue policy set in boss.ts — on the
+    // unique index. Requires the `short` queue policy set in boss.ts - on the
     // default `standard` policy pg-boss ignores singletonKey entirely.
     { singletonKey: `buyer-scan:${userId}`, retryLimit: 0 },
   );
   if (!jobId) {
-    // Lost the race on the unique index — the winner is the scan to report.
+    // Lost the race on the unique index - the winner is the scan to report.
     const existing = await findActiveBuyerScan(userId);
     if (existing) return { jobId: existing };
     throw new Error("could not enqueue buyer scan");
@@ -301,7 +301,7 @@ export async function enqueueBuyerScan(userId: string): Promise<BuyerScanTicket>
   return { jobId };
 }
 
-/** The in-flight scan for this user, if any — used to recover a dropped ticket. */
+/** The in-flight scan for this user, if any - used to recover a dropped ticket. */
 async function findActiveBuyerScan(userId: string): Promise<string | null> {
   const row = await queryOne<{ id: string }>(
     `SELECT id::text FROM pgboss.job
@@ -374,7 +374,7 @@ export async function setBuyerSignalVerdict(userId: string, id: string, verdict:
   );
   if (!row) return { ok: false };
   // A corrective verdict recalibrates the user's gates immediately (not_a_fit is
-  // the highest-signal correction and tightens the niche gate). Best-effort — a
+  // the highest-signal correction and tightens the niche gate). Best-effort - a
   // recalibration failure must not fail the verdict write. The monthly sweep
   // (buyer/calibration.ts) is the backstop.
   if (verdict === "not_a_fit" || verdict === "skipped") {

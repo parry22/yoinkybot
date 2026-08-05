@@ -16,7 +16,7 @@ export async function POST(req: Request) {
   const action = body.action === "approve" || body.action === "reject" || body.action === "edit" ? body.action : null;
   if (!runId || !action) return NextResponse.json({ error: "runId and action required" }, { status: 400 });
   // Approving/rejecting an agent draft is the paid Auto Agent loop, and "edit"
-  // re-drafts through the model — so the whole route is gated, like every other
+  // re-drafts through the model - so the whole route is gated, like every other
   // route that spends money (buyers-radar, inspiration, chat). An expired user
   // who still has approvals pending gets a 402 rather than free re-drafts.
   if (!(await requirePaid(user)))

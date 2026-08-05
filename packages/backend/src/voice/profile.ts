@@ -32,13 +32,13 @@ export async function buildVoiceProfile(
   if (memoryCount < VOICE_MIN_MEMORIES) {
     return {
       ok: false,
-      reason: `Not enough memory yet to sound like you (${memoryCount}/${VOICE_MIN_MEMORIES}). Keep capturing — a thin profile would just produce generic output.`,
+      reason: `Not enough memory yet to sound like you (${memoryCount}/${VOICE_MIN_MEMORIES}). Keep capturing - a thin profile would just produce generic output.`,
       memoryCount,
     };
   }
 
   // Published imports carry the public voice; raw captures carry the thinking
-  // voice. Only the published branch is sincerity-filtered — a shitpost risks
+  // voice. Only the published branch is sincerity-filtered - a shitpost risks
   // skewing the modeled PUBLIC voice, but a private chat capture should still
   // train voice regardless of register (it was never posted; nothing to weight
   // against). NULL-tolerant, mirrors memory/classification.ts#isSincereEnough.
@@ -79,7 +79,7 @@ export async function buildVoiceProfile(
 /**
  * Nightly voice sweep. Two cases, both automatic:
  * - FIRST build for anyone who crossed the memory floor and has no profile yet
- *   (previously nothing ever built the first one — /draft silently declined
+ *   (previously nothing ever built the first one - /draft silently declined
  *   for every new user until they found the manual /voice build);
  * - rebuild when memory volume has grown ~30% past the last build.
  */

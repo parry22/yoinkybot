@@ -11,7 +11,7 @@ import { LOCKDOWN, PROTOCOL_OVERRIDE, sdkEnv } from "./sdk-options.js";
  *
  * WHY THIS IS NOT `runAgentLoop`. The five bounded loops are pure: tools return
  * text, nothing reaches the user until the loop produces its final object. The
- * chat turn is not — each tool call has a SIDE EFFECT mid-turn. `executeTool`
+ * chat turn is not - each tool call has a SIDE EFFECT mid-turn. `executeTool`
  * says a short beat to the user ("on it, checking that first"), runs the tool
  * through the same code path its slash command uses, persists both as assistant
  * turns, and returns a trace. A 3-tool turn is meant to appear in history as its
@@ -27,13 +27,13 @@ import { LOCKDOWN, PROTOCOL_OVERRIDE, sdkEnv } from "./sdk-options.js";
  *
  * The complete `assistant` message (text + tool_use together) is NO USE here.
  * The SDK dispatches the tool from inside its own processing, so our `for await`
- * cannot advance until the handler returns — a handler that waits for that
+ * cannot advance until the handler returns - a handler that waits for that
  * message deadlocks against itself. Measured: `withBeat=0`, plus a full timeout
  * of dead latency on every tool call. Do not reintroduce a wait here.
  *
  * `includePartialMessages` is the channel that works. Text deltas stream as the
  * model generates them, which is BEFORE the tool_use block is complete and
- * therefore before dispatch — so the consumer has already banked the text while
+ * therefore before dispatch - so the consumer has already banked the text while
  * it was still free to pump. The handler then reads it without blocking.
  * Parallel tool calls in one message share the beat: the first consumes it, the
  * rest correctly get "" so the narration is said once, not once per tool. If no
@@ -43,7 +43,7 @@ import { LOCKDOWN, PROTOCOL_OVERRIDE, sdkEnv } from "./sdk-options.js";
  */
 
 /**
- * KNOWN LIMITATION — the beat does not survive this runtime, and that is why
+ * KNOWN LIMITATION - the beat does not survive this runtime, and that is why
  * AGENT_RUNTIME_CHAT should stay `legacy` for now.
  *
  * Three attempts, each ruling something out:
@@ -55,7 +55,7 @@ import { LOCKDOWN, PROTOCOL_OVERRIDE, sdkEnv } from "./sdk-options.js";
  *      demonstrably works (`toolBlocks=3` observed) but the text buffer is STILL
  *      empty: `toolCalls=2 withBeat=0`.
  *
- * So the beat is not lost in transit — it is never generated. The most likely
+ * So the beat is not lost in transit - it is never generated. The most likely
  * cause is `outputFormat: json_schema` below: enforcing structured output
  * constrains what the assistant may emit, which leaves no room for free-text
  * narration between tool calls. The untried remedy is to drop `outputFormat` for
@@ -77,14 +77,14 @@ handful of words, in your normal voice, and never repeat it after the tool.`;
 
 /**
  * The actual fix for the silence, given the model will not narrate: say it in
- * code. A tool call that produces no beat is not allowed to be silent — the
+ * code. A tool call that produces no beat is not allowed to be silent - the
  * user sees one of these instead, phrased per tool so it reads as Yoinky doing
  * the specific thing rather than a generic "working…" spinner.
  *
  * Lowercase on purpose: this goes through the same casual-voice register as the
  * rest of the DM (see prompts/style.ts CASUAL_VOICE). The model's own beat is
  * still preferred when there is one, so this becomes dead weight the day the
- * structured-output constraint is lifted — which is the intended direction, not
+ * structured-output constraint is lifted - which is the intended direction, not
  * a permanent substitute.
  */
 const TOOL_BEATS: Record<string, string> = {
@@ -110,7 +110,7 @@ const TOOL_BEATS: Record<string, string> = {
  * Never let a tool run silently. Model beat first, canned beat otherwise.
  *
  * `previous` guards the one way canned beats read worse than silence: two calls
- * to the same tool in one turn (different args — identical ones are refused by
+ * to the same tool in one turn (different args - identical ones are refused by
  * the ledger) would otherwise say the same sentence twice in a row, which reads
  * like a stuck bot rather than a working one.
  */
@@ -130,11 +130,11 @@ const chatOutputSchema = z.object({
 export interface AgentChatTurnRequest {
   userId: string;
   system: string;
-  /** Fully rendered user message. Tool notes are empty — the SDK holds the
+  /** Fully rendered user message. Tool notes are empty - the SDK holds the
    *  conversation state that the legacy loop rebuilt by re-rendering. */
   user: string;
   maxToolCalls: number;
-  /** The feature's tool contract (chatToolSchema — a discriminated union). */
+  /** The feature's tool contract (chatToolSchema - a discriminated union). */
   toolSchema: z.ZodTypeAny;
   /** Delivers the beat, runs the tool, returns the trace. Same executor the
    *  legacy loop uses, so both runtimes share one tool code path. */
@@ -145,12 +145,12 @@ export interface AgentChatTurnResult {
   reply: string;
   capture: boolean;
   offerAngles: boolean;
-  /** Tools actually executed this turn — for the caller's logging/trail. */
+  /** Tools actually executed this turn - for the caller's logging/trail. */
   toolCalls: number;
 }
 
 export async function runAgentChatTurn(req: AgentChatTurnRequest): Promise<AgentChatTurnResult> {
-  /** Text deltas seen since the last tool call — the next beat, in progress. */
+  /** Text deltas seen since the last tool call - the next beat, in progress. */
   let textBuffer = "";
   let toolCalls = 0;
   let seenToolUseBlocks = 0;
@@ -158,7 +158,7 @@ export async function runAgentChatTurn(req: AgentChatTurnRequest): Promise<Agent
   const seen = new Set<string>();
   let approved = 0;
 
-  /** Take the narration banked before this tool call. Never blocks — see the
+  /** Take the narration banked before this tool call. Never blocks - see the
    *  deadlock note above. */
   function claimBeat(): string {
     const beat = textBuffer.trim();
@@ -200,10 +200,10 @@ export async function runAgentChatTurn(req: AgentChatTurnRequest): Promise<Agent
         env: sdkEnv(),
         systemPrompt: req.system + PROTOCOL_OVERRIDE + BEAT_INSTRUCTION,
         // Budget lives in the hook (a deny the model can recover from), not in
-        // maxTurns (a kill it cannot) — see run-agent-loop.ts for the incident.
+        // maxTurns (a kill it cannot) - see run-agent-loop.ts for the incident.
         maxTurns: req.maxToolCalls + 3,
         maxBudgetUsd: config.AGENT_MAX_BUDGET_USD,
-        // The ONLY channel that delivers the beat in time — see the note above.
+        // The ONLY channel that delivers the beat in time - see the note above.
         includePartialMessages: true,
         ...LOCKDOWN,
         allowedTools: derived.map((d) => d.qualifiedName),
@@ -228,7 +228,7 @@ export async function runAgentChatTurn(req: AgentChatTurnRequest): Promise<Agent
                 const key = JSON.stringify({ name: d.name, ...(tool_input ?? {}) });
                 if (seen.has(key)) {
                   return deny(
-                    `You already called ${d.name} with those exact arguments this turn — ` +
+                    `You already called ${d.name} with those exact arguments this turn - ` +
                       `answer with what you have.`,
                   );
                 }
@@ -256,7 +256,7 @@ export async function runAgentChatTurn(req: AgentChatTurnRequest): Promise<Agent
           seenToolUseBlocks++;
         }
       }
-      // The final assistant message carries the reply, not a beat — drop any
+      // The final assistant message carries the reply, not a beat - drop any
       // trailing text so it cannot be said twice.
       if (message.type === "assistant") {
         const blocks = (message as any).message?.content ?? [];
@@ -273,7 +273,7 @@ export async function runAgentChatTurn(req: AgentChatTurnRequest): Promise<Agent
 
     const memDelta = memBefore != null ? (sampleUsedMb() ?? memBefore) - memBefore : null;
     console.log(
-      `agent-runtime [converse] sdk ok — tools=${toolCalls} toolBlocks=${seenToolUseBlocks} ms=${Date.now() - started} ` +
+      `agent-runtime [converse] sdk ok - tools=${toolCalls} toolBlocks=${seenToolUseBlocks} ms=${Date.now() - started} ` +
         `memΔ=${memDelta == null ? "n/a" : `${memDelta}MB`}`,
     );
 

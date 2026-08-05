@@ -1,7 +1,7 @@
 /**
  * The web app's entry point into the backend. `packages/web` imports domain
  * functions from here (`@yoink/backend/web`) and calls them in-process, sharing
- * the same Postgres. This barrel keeps that surface explicit — nothing here
+ * the same Postgres. This barrel keeps that surface explicit - nothing here
  * starts the Fastify server or the Telegram bot (that's `index.ts`).
  */
 
@@ -36,7 +36,7 @@ export {
 } from "./billing/entitlements.js";
 export { createCheckout, createCustomerPortal, type BuyablePlan } from "./billing/dodo.js";
 
-// BYOK — the lifetime plan brings its own LLM + scraper keys, so their spend
+// BYOK - the lifetime plan brings its own LLM + scraper keys, so their spend
 // bills their account. `byokStatus().complete` is the gate the app checks before
 // letting a lifetime user do anything (see web/src/lib/byok-gate.ts).
 export {
@@ -77,7 +77,7 @@ export {
   type ProfileFormFields,
 } from "./web/onboarding-form.js";
 
-// Inspiration feed (Trends & Virals — read models over delivered surfacings)
+// Inspiration feed (Trends & Virals - read models over delivered surfacings)
 export {
   listTrendInspiration,
   listViralInspiration,
@@ -113,7 +113,7 @@ export type { Diagnosis } from "./strategist/diagnosis.js";
 export { getPlan } from "./strategist/plan.js";
 export type { PlanView } from "./strategist/plan.js";
 
-// Growth — gamified board fusing diagnosis + plan into next-best-actions
+// Growth - gamified board fusing diagnosis + plan into next-best-actions
 export {
   getGrowthState,
   type GrowthState,

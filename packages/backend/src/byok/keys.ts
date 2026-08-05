@@ -7,9 +7,9 @@
  * scrapers so their traffic bills their account instead of ours.
  *
  * Three providers:
- *   openrouter  — every generation call (llm/gateway.ts, llm/embeddings.ts)
- *   twitterapi  — X reads (capture/imports/twitterapi-io.ts)
- *   apify       — X/LinkedIn scrapes + trends (lib/apify.ts)
+ *   openrouter  - every generation call (llm/gateway.ts, llm/embeddings.ts)
+ *   twitterapi  - X reads (capture/imports/twitterapi-io.ts)
+ *   apify       - X/LinkedIn scrapes + trends (lib/apify.ts)
  * `twitterapi` OR `apify` satisfies the scraper requirement; the gate wants one
  * of the two, not both, because either one can serve the X data path.
  *
@@ -36,7 +36,7 @@ interface KeyRow {
 /**
  * Decrypted keys, cached in-process.
  *
- * Without this every model call would do a DB round trip plus an AES decrypt —
+ * Without this every model call would do a DB round trip plus an AES decrypt -
  * and the chat tool loop alone makes several per turn. Single-instance backend
  * (docs/INTERNAL.md §1), so a plain Map is the right cache; the TTL bounds how
  * long a rotated or deleted key keeps working. `invalidate` clears it on write
@@ -65,7 +65,7 @@ async function loadKeys(userId: string): Promise<Partial<Record<KeyProvider, str
       keys[r.provider] = open({ ciphertext: r.ciphertext, iv: r.iv, authTag: r.auth_tag } satisfies Sealed);
     } catch (err) {
       // A key that won't decrypt (rotated BYOK_ENCRYPTION_KEY, corrupted row) is
-      // treated as absent rather than crashing the caller's turn — the caller
+      // treated as absent rather than crashing the caller's turn - the caller
       // then falls back or fails with a clear "no key" message.
       console.error(`byok: failed to decrypt ${r.provider} key for user ${userId}`, err);
     }
@@ -84,7 +84,7 @@ export async function isByokUser(userId: string): Promise<boolean> {
  * The key this user's calls should run on, or null to use ours.
  *
  * Returns null for everyone who isn't on lifetime, so the global config key
- * keeps serving every other plan unchanged — this is deliberately a narrow
+ * keeps serving every other plan unchanged - this is deliberately a narrow
  * override, not a new default path.
  */
 export async function keyForUser(userId: string | null, provider: KeyProvider): Promise<string | null> {
@@ -124,7 +124,7 @@ export interface ByokStatus {
 
 /**
  * What the setup gate and Settings both read. `complete` is the single source of
- * truth for "may this user use the app" — see web/src/lib/byok-gate.ts.
+ * truth for "may this user use the app" - see web/src/lib/byok-gate.ts.
  */
 export async function byokStatus(userId: string): Promise<ByokStatus> {
   const required = await isByokUser(userId);
@@ -160,7 +160,7 @@ export async function validateKey(provider: KeyProvider, key: string): Promise<{
       return { ok: true };
     }
     if (provider === "twitterapi") {
-      // No dedicated whoami endpoint — a 1-result search is the cheapest call
+      // No dedicated whoami endpoint - a 1-result search is the cheapest call
       // that still exercises auth.
       const res = await fetch("https://api.twitterapi.io/twitter/tweet/advanced_search?query=hello&queryType=Latest", {
         headers: { "x-api-key": key },
@@ -175,7 +175,7 @@ export async function validateKey(provider: KeyProvider, key: string): Promise<{
     if (!res.ok) return { ok: false, reason: `Apify returned ${res.status}.` };
     return { ok: true };
   } catch (err) {
-    return { ok: false, reason: `Couldn't reach ${provider} to check that key — try again.` };
+    return { ok: false, reason: `Couldn't reach ${provider} to check that key - try again.` };
   }
 }
 
@@ -215,7 +215,7 @@ export async function deleteKey(userId: string, provider: KeyProvider): Promise<
   return { ok: true };
 }
 
-/** Count of users holding a given provider key — operator visibility only. */
+/** Count of users holding a given provider key - operator visibility only. */
 export async function byokKeyCount(): Promise<number> {
   const row = await queryOne<{ n: string }>(`SELECT count(DISTINCT user_id)::text n FROM user_api_keys`);
   return Number(row?.n ?? 0);

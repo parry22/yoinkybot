@@ -6,7 +6,7 @@ import { activePositions } from "../memory/positions.js";
 /**
  * Computed evidence for the Brand Diagnosis. The diagnosis spec demands method
  * ("cluster idea/claim memories, recurring 3+ times across periods", "state the
- * ratio as a number", "sample the sentence length distribution") — a single LLM
+ * ratio as a number", "sample the sentence length distribution") - a single LLM
  * pass over raw posts cannot be trusted to actually do that arithmetic. This
  * module does it deterministically; the model's job shrinks to interpretation.
  */
@@ -15,7 +15,7 @@ export interface ThemeCluster {
   size: number;
   monthSpread: number; // distinct months the theme appears in
   span: string; // "2025-02..2026-05"
-  recurring: boolean; // 3+ items across 2+ months — candidate owned position
+  recurring: boolean; // 3+ items across 2+ months - candidate owned position
   samples: string[]; // up to 3 dated examples
 }
 
@@ -59,7 +59,7 @@ export interface ComputedEvidence {
 // clusters (owned-position candidates) and the outside-in ratio, so both
 // queries below join captures and exclude anything that isn't confidently
 // sincere. NULL-tolerant (memories.capture_id is nullable in practice, and
-// captures classified before this feature existed have no register at all) —
+// captures classified before this feature existed have no register at all) -
 // see memory/classification.ts#isSincereEnough for the exact predicate this mirrors.
 const SINCERE_FILTER = `(c.sincerity_register IS NULL OR (c.sincerity_register = 'sincere' AND c.sincerity_confidence >= 0.5))`;
 
@@ -105,7 +105,7 @@ export async function computeEvidence(userId: string): Promise<ComputedEvidence>
     const clusters = summarizeClusters(items, assignments, k);
     recurringThemes = clusters.filter((c) => c.recurring).length;
     blocks.push(
-      `THEME CLUSTERS (k-means over ${items.length} idea/claim memories; "recurring" = 3+ items across 2+ months — only recurring clusters qualify as owned positions):\n` +
+      `THEME CLUSTERS (k-means over ${items.length} idea/claim memories; "recurring" = 3+ items across 2+ months - only recurring clusters qualify as owned positions):\n` +
         clusters
           .slice(0, 8)
           .map(
@@ -115,10 +115,10 @@ export async function computeEvidence(userId: string): Promise<ComputedEvidence>
           .join("\n"),
     );
   } else {
-    blocks.push(`THEME CLUSTERS: only ${ideaClaims.length} idea/claim memories — too few to cluster meaningfully.`);
+    blocks.push(`THEME CLUSTERS: only ${ideaClaims.length} idea/claim memories - too few to cluster meaningfully.`);
   }
 
-  // 2. Inside-out vs outside-in — a counted ratio, not an impression.
+  // 2. Inside-out vs outside-in - a counted ratio, not an impression.
   const counts = Object.fromEntries(orientationRows.map((r) => [r.orientation, Number(r.n)]));
   const insideOut = counts["inside_out"] ?? 0;
   const outsideIn = counts["outside_in"] ?? 0;
@@ -127,10 +127,10 @@ export async function computeEvidence(userId: string): Promise<ComputedEvidence>
   if (classified >= 10) {
     ratio = { insideOut, outsideIn, classified };
     blocks.push(
-      `OUTSIDE-IN RATIO (counted over ${classified} classified public posts): ${insideOut} inside-out vs ${outsideIn} outside-in — ${Math.round((100 * insideOut) / classified)}% about themselves/their work. USE THESE EXACT NUMBERS.`,
+      `OUTSIDE-IN RATIO (counted over ${classified} classified public posts): ${insideOut} inside-out vs ${outsideIn} outside-in - ${Math.round((100 * insideOut) / classified)}% about themselves/their work. USE THESE EXACT NUMBERS.`,
     );
   } else {
-    blocks.push(`OUTSIDE-IN RATIO: only ${classified} classified posts — too few to state a ratio; say so honestly.`);
+    blocks.push(`OUTSIDE-IN RATIO: only ${classified} classified posts - too few to state a ratio; say so honestly.`);
   }
 
   // 3. Position recurrence from the belief store (counts + date spans are facts).
@@ -141,7 +141,7 @@ export async function computeEvidence(userId: string): Promise<ComputedEvidence>
           .slice(0, 12)
           .map((p) => {
             const n = p.source_memory_ids.length;
-            return `- "${p.statement}" — stated ${n} time${n === 1 ? "" : "s"}, ${p.first_stated_at.slice(0, 10)} to ${p.last_affirmed_at.slice(0, 10)}, confidence ${Math.round(p.confidence * 100)}%`;
+            return `- "${p.statement}" - stated ${n} time${n === 1 ? "" : "s"}, ${p.first_stated_at.slice(0, 10)} to ${p.last_affirmed_at.slice(0, 10)}, confidence ${Math.round(p.confidence * 100)}%`;
           })
           .join("\n"),
     );

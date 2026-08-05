@@ -29,18 +29,18 @@ Everything must derive from THIS person's stated profile, their diagnosis, and t
 Never a generic content calendar. Never invent claims about them.
 
 Produce:
-1. REPOSITIONING — one sentence naming the single biggest shift needed to close the largest gap
+1. REPOSITIONING - one sentence naming the single biggest shift needed to close the largest gap
    you were shown. Concrete, not "post more".
-2. THROUGHLINE — one sentence: the specific position they should become known for, serving their
+2. THROUGHLINE - one sentence: the specific position they should become known for, serving their
    stated primary goal.
-3. MONTHS — exactly three phases, month by month (not week by week). Each has a label and a clear
+3. MONTHS - exactly three phases, month by month (not week by week). Each has a label and a clear
    objective tied to the stated goal. Shape the arc so month one closes the sharpest positioning
    gap, month two builds the content pillar or muscle that's currently missing, month three targets
    the audience behavior needed to actually hit the goal. Objectives are specific to them.
-4. UNLOCK LIST — take their unsaid patterns and sequence them by which moves the stated goal most,
+4. UNLOCK LIST - take their unsaid patterns and sequence them by which moves the stated goal most,
    first. These are the named first pieces of content. For each: the idea and a one-line rationale
    tying it to the goal.
-5. OUTSIDE-IN — a short standing instruction (2-3 sentences) for the live discourse moments Yoinky
+5. OUTSIDE-IN - a short standing instruction (2-3 sentences) for the live discourse moments Yoinky
    should watch for and bring them, given the throughline and goal.
 
 ${CHAT_STYLE_RULES}

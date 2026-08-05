@@ -175,7 +175,7 @@ export async function evolvePosition(userId: string, positionId: string, newStat
 }
 
 export interface WeightedPosition extends Position {
-  /** 0.05..0.95 — reinforcement-boosted, decayed by time since last affirmation. */
+  /** 0.05..0.95 - reinforcement-boosted, decayed by time since last affirmation. */
   confidence: number;
 }
 

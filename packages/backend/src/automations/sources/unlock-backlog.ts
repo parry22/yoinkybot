@@ -1,5 +1,5 @@
 /**
- * unlock_backlog selector — subsumes the old single autopilot. The source is the
+ * unlock_backlog selector - subsumes the old single autopilot. The source is the
  * user's own plan backlog (`topPendingUnlock`); consumption (`markUnlockDeveloped`)
  * happens in the run pipeline after a successful draft, exactly as runAgentCycle
  * did. No LLM, no external search. Cost profile: free_local.

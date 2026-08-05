@@ -16,7 +16,7 @@ export const maxDuration = 60;
  * DELETE → ?provider=…        remove one
  *
  * There is deliberately NO endpoint that returns a stored key. Once saved a key
- * can be replaced or deleted, never read back — `last4` is the only fragment
+ * can be replaced or deleted, never read back - `last4` is the only fragment
  * that ever leaves the database, so a compromised session can't exfiltrate the
  * user's live provider credentials.
  */

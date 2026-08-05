@@ -31,7 +31,7 @@ export async function POST(req: Request) {
       await runAutomationOnceStreaming(user.id, id, emit as (e: AgentEvent) => void);
     } catch (err) {
       console.error("streamed automation run failed", err);
-      emit({ type: "error", message: "Couldn't run that agent — try again." });
+      emit({ type: "error", message: "Couldn't run that agent - try again." });
     }
   });
 }

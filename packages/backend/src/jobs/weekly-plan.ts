@@ -12,7 +12,7 @@ const schema = z.object({ message: z.string().min(1) });
 /**
  * Monday working rhythm: propose THIS week's specific posts from the unlock
  * list, sized to committed cadence. Plan-driven service like the progress
- * report — its own weekly gate, outside the shared proactive budget. Every
+ * report - its own weekly gate, outside the shared proactive budget. Every
  * ingredient (unlocks, angles, cadence) already exists; this is the retained-
  * agency move of actually opening the week with them.
  */
@@ -42,7 +42,7 @@ export async function maybeWeeklyPlan(userId: string): Promise<boolean> {
   const plan = await getPlan(userId);
   if (!plan || plan.status !== "active") return false;
   const pending = plan.unlock.filter((u) => u.status === "pending").slice(0, 2);
-  if (pending.length === 0) return false; // nothing left to propose — the progress report handles that story
+  if (pending.length === 0) return false; // nothing left to propose - the progress report handles that story
 
   const pendingAngles = await queryOne<{ n: string }>(
     `SELECT count(*)::text n FROM surfacings

@@ -3,7 +3,7 @@ import { query, queryOne } from "../db/pool.js";
 import type { Platform } from "../lib/types.js";
 
 /**
- * Publishing — the write half of the social integration. Everything else in
+ * Publishing - the write half of the social integration. Everything else in
  * this codebase READS platforms (Apify / twitterapi.io scrape by handle, no
  * auth). This posts on the user's behalf, which needs a user-context OAuth
  * token stored on connected_accounts by the write-scope OAuth flow
@@ -36,7 +36,7 @@ export interface PublishResult {
   externalId?: string;
   url?: string;
   error?: string;
-  /** The platform answered 401 — the credential is dead, not the request. The
+  /** The platform answered 401 - the credential is dead, not the request. The
    *  caller marks the connection as needing re-consent so the UI can say so. */
   authExpired?: boolean;
 }
@@ -49,7 +49,7 @@ export function publishConfigured(platform: Platform): boolean {
 }
 
 /**
- * Load the stored write token as-is — no expiry check, no refresh. This is the
+ * Load the stored write token as-is - no expiry check, no refresh. This is the
  * "has this account ever been connected for posting?" read (the Telegram
  * scheduling confirmation uses it to warn up front). Anything that is about to
  * actually call a platform API must use `ensureWriteAuth` instead.
@@ -76,7 +76,7 @@ export async function resolveWriteAuth(userId: string, platform: Platform): Prom
 //
 // LinkedIn is different on purpose. Its access tokens last 60 days and its
 // refresh grant is only issued to approved partner apps, so there is no renewal
-// path to attempt here — an expired LinkedIn token can only be replaced by the
+// path to attempt here - an expired LinkedIn token can only be replaced by the
 // user re-consenting, and that is exactly what `needs_reauth` reports.
 
 export type WriteAuthResolution =
@@ -85,7 +85,7 @@ export type WriteAuthResolution =
   | { ok: false; reason: "not_connected"; detail: string }
   /** Was connected; the credential died and only the user can restore it. */
   | { ok: false; reason: "needs_reauth"; detail: string }
-  /** The token endpoint itself was unreachable/5xx — worth retrying later. */
+  /** The token endpoint itself was unreachable/5xx - worth retrying later. */
   | { ok: false; reason: "refresh_failed"; detail: string };
 
 /** Connection state for the UI: is posting wired up, and is it broken? */
@@ -102,7 +102,7 @@ export async function writeAuthState(userId: string, platform: Platform): Promis
   );
   return {
     connected: !!row?.post_access_token,
-    // A live token supersedes the flag — see markWriteAuthDead for why the two
+    // A live token supersedes the flag - see markWriteAuthDead for why the two
     // can never both be true for a credential that actually works.
     needsReauth: !row?.post_access_token && !!row?.post_reauth_required_at,
   };
@@ -176,7 +176,7 @@ async function refreshXToken(refreshToken: string): Promise<XRefreshOutcome> {
   if (!res.ok || !body.access_token) {
     const detail = body.error_description ?? body.error ?? `token endpoint ${res.status}`;
     // 4xx means the grant itself was refused (revoked, already-rotated, or the
-    // app's access changed). 5xx/429 is X having a bad minute — don't throw away
+    // app's access changed). 5xx/429 is X having a bad minute - don't throw away
     // a working credential over that.
     return { ok: false, permanent: res.status >= 400 && res.status < 500 && res.status !== 429, detail };
   }
@@ -214,7 +214,7 @@ export async function ensureWriteAuth(userId: string, platform: Platform): Promi
 
   if (!row?.post_access_token) {
     return row?.post_reauth_required_at
-      ? { ok: false, reason: "needs_reauth", detail: `${label} connection expired — reconnect ${label} to publish` }
+      ? { ok: false, reason: "needs_reauth", detail: `${label} connection expired - reconnect ${label} to publish` }
       : { ok: false, reason: "not_connected", detail: `${label} not connected for posting` };
   }
   // A stored token alongside a set flag means the user reconnected after we gave
@@ -237,7 +237,7 @@ export async function ensureWriteAuth(userId: string, platform: Platform): Promi
     return {
       ok: false,
       reason: "needs_reauth",
-      detail: `${label} connection expired — reconnect ${label} to publish`,
+      detail: `${label} connection expired - reconnect ${label} to publish`,
     };
   }
 
@@ -250,7 +250,7 @@ export async function ensureWriteAuth(userId: string, platform: Platform): Promi
     return {
       ok: false,
       reason: "needs_reauth",
-      detail: `${label} connection expired — reconnect ${label} to publish (${refreshed.detail})`,
+      detail: `${label} connection expired - reconnect ${label} to publish (${refreshed.detail})`,
     };
   }
 
@@ -318,7 +318,7 @@ async function publishToLinkedIn(
   media: PublishMedia[],
 ): Promise<PublishResult> {
   if (!auth.authorUrn) {
-    return { ok: false, error: "LinkedIn author URN missing — reconnect the account for posting." };
+    return { ok: false, error: "LinkedIn author URN missing - reconnect the account for posting." };
   }
   try {
     const postContent =

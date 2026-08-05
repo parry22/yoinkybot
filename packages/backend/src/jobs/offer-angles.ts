@@ -122,14 +122,14 @@ export async function maybeOfferAngles(
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
       [job.userId, surfacing.id, moment.id, i + 1, a.label, a.angle, a.hook, a.why_it_lands],
     );
-    // Callback data is capped at 64 bytes by Telegram — reference the angle by
+    // Callback data is capped at 64 bytes by Telegram - reference the angle by
     // slot (1-3), not its UUID, so `ang:<surfacingId>:<slot>` stays well under.
     keyboard.text(`write #${i + 1}`, `ang:${surfacing.id}:${i + 1}`);
   }
   keyboard.row().text("💤 not now", `angfb:${surfacing.id}:later`);
 
   // The offer now exists (surfacing + angles recorded, visible in the web
-  // dashboard too), so mark the moment angled regardless of Telegram delivery —
+  // dashboard too), so mark the moment angled regardless of Telegram delivery -
   // otherwise the hourly tick would regenerate angles and burn LLM calls.
   await query(`UPDATE moments SET verdict = 'angled' WHERE id = $1`, [moment.id]);
 

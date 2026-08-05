@@ -20,7 +20,7 @@ export const maxDuration = 300;
  *
  * STATELESS: the client posts the whole transcript each turn and the server
  * re-derives the spec from it (backend automations/interview.ts). That means a
- * late correction — "actually, weekly" — is picked up without an edit path, and
+ * late correction - "actually, weekly" - is picked up without an edit path, and
  * there's no half-finished interview state to store or sweep.
  *
  * The transcript is user-authored either way, so it carries no more trust than a
@@ -58,7 +58,7 @@ export async function POST(req: Request) {
         return;
       }
       console.error("automation interview turn failed", err);
-      emit({ type: "error", message: "That turn broke on my side — try again." });
+      emit({ type: "error", message: "That turn broke on my side - try again." });
     }
   });
 }

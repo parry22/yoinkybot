@@ -74,14 +74,14 @@ export async function listTrendInspiration(userId: string, limit = 20): Promise<
  * spam paid search.
  *
  * THE GUARD KEYS ON ATTEMPT, NOT SUCCESS. It used to read
- * `max(delivered_at) FROM surfacings` — a timestamp that only exists once the
+ * `max(delivered_at) FROM surfacings` - a timestamp that only exists once the
  * pipeline actually delivered something. A user whose niche matches no trend and
  * whose viral pool comes back empty writes no surfacing at all, so the guard read
  * NULL forever and the billed twitterapi.io search re-ran on EVERY page load. The
  * accounts that got nothing out of it were the ones paying for it most often.
  *
  * `users.inspiration_refresh_attempt_at` is stamped before the pipeline runs and
- * regardless of what it finds — the same reasoning as
+ * regardless of what it finds - the same reasoning as
  * `connected_accounts.last_refresh_attempt_at` in jobs/x-refresh.ts (migration
  * 0030), where keying on success left a permanently-barren account at the head of
  * every sweep for eternity. Stamped BEFORE rather than after so a pipeline that

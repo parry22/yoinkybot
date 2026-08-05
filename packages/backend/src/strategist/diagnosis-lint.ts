@@ -13,7 +13,7 @@ export interface Violation {
   detail: string;
 }
 
-/** Hedges are flagged only in the strategist's own prose (read/headline fields) — quoted user posts may legitimately contain "I think". */
+/** Hedges are flagged only in the strategist's own prose (read/headline fields) - quoted user posts may legitimately contain "I think". */
 const HEDGES = ["it seems like", "it seems that", "i think you", "just wanted to", "you might have", "perhaps you", "it appears"];
 
 const DATE_TOKEN = /\b20\d{2}\b|\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b/i;
@@ -49,7 +49,7 @@ export function lintDiagnosis(d: Diagnosis): Violation[] {
   ];
 
   for (const [path, text] of everything) {
-    if (text.includes("—")) v.push({ path, rule: "no-em-dash", detail: "contains an em dash" });
+    if (text.includes("\u2014")) v.push({ path, rule: "no-em-dash", detail: "contains an em dash" });
     if (/(^|\s)#\w/.test(text)) v.push({ path, rule: "no-hashtag", detail: "contains a hashtag" });
   }
   for (const [path, text] of prose) {
@@ -99,7 +99,7 @@ export function lintDiagnosis(d: Diagnosis): Violation[] {
   });
   d.unsaid_patterns.forEach((u, i) => {
     if (u.evidence.trim().length < 15) {
-      v.push({ path: `unsaid_patterns[${i}].evidence`, rule: "needs-evidence", detail: "unsaid pattern has no real evidence — cut it rather than force it" });
+      v.push({ path: `unsaid_patterns[${i}].evidence`, rule: "needs-evidence", detail: "unsaid pattern has no real evidence - cut it rather than force it" });
     }
   });
 

@@ -56,7 +56,7 @@ export function Inspiration({ trends, virals }: { trends: Trend[]; virals: Viral
     setFill("filling");
     fetch("/api/inspiration/refresh", { method: "POST" })
       .then((res) => {
-        // A rejected fetch is a network failure — a 402 or a 500 RESOLVES. The
+        // A rejected fetch is a network failure - a 402 or a 500 RESOLVES. The
         // old `.then(() => router.refresh()).catch(() => {})` therefore swallowed
         // the paywall whole: a free user was told "Nothing here yet. Check back
         // soon." forever, with nothing on screen suggesting an upgrade was the
@@ -64,7 +64,7 @@ export function Inspiration({ trends, virals }: { trends: Trend[]; virals: Viral
         if (res.status === 402) return setFill("paywalled");
         // 429 is the burst limiter, not a breakage. This fill fires
         // AUTOMATICALLY whenever the feed is empty, so a user bouncing in and
-        // out of the page trips it without doing anything wrong — "something
+        // out of the page trips it without doing anything wrong - "something
         // went wrong reaching X" would be a lie.
         if (res.status === 429) return setFill("throttled");
         if (!res.ok) return setFill("failed");
@@ -209,7 +209,7 @@ function EmptyFeed({
     return (
       <div className={panel.empty}>
         <div className={panel.emptyTitle}>Catching my breath.</div>
-        <p>You&apos;ve asked for a few scans in a row. Give it a minute and reload — nothing is broken.</p>
+        <p>You&apos;ve asked for a few scans in a row. Give it a minute and reload - nothing is broken.</p>
       </div>
     );
   }

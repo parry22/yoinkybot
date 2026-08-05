@@ -3,13 +3,13 @@
  * onto the platform at publish time.
  *
  * SHAPE OF THE FLOW. The web route uploads the file to Vercel Blob and inserts a
- * `scheduled_post_media` row holding the URL — no bytes ever land in Postgres.
+ * `scheduled_post_media` row holding the URL - no bytes ever land in Postgres.
  * At publish time this module fetches that URL (a plain public GET, so the
  * Railway publisher needs no storage credential) and pushes it to the platform's
  * media endpoint, then hands the resulting media ids to the post call.
  *
  * X's rules are the binding constraint and are enforced here rather than trusted
- * from the UI: up to 4 images, OR exactly 1 video, OR 1 GIF — never mixed.
+ * from the UI: up to 4 images, OR exactly 1 video, OR 1 GIF - never mixed.
  */
 import { config } from "../config.js";
 import { query, queryOne } from "../db/pool.js";
@@ -76,10 +76,10 @@ export function validateMediaSet(items: Array<{ kind: MediaKind }>): MediaSetPro
   const gifs = items.filter((i) => i.kind === "gif").length;
 
   if (videos > 0 && (images > 0 || gifs > 0)) {
-    return { reason: "a video can't be posted alongside images — pick one or the other" };
+    return { reason: "a video can't be posted alongside images - pick one or the other" };
   }
   if (gifs > 0 && images > 0) {
-    return { reason: "a GIF can't be posted alongside images — pick one or the other" };
+    return { reason: "a GIF can't be posted alongside images - pick one or the other" };
   }
   if (videos > MEDIA_LIMITS.maxVideos) return { reason: "only one video per post" };
   if (gifs > MEDIA_LIMITS.maxGifs) return { reason: "only one GIF per post" };
@@ -195,7 +195,7 @@ export interface MediaUploadResult {
   ok: boolean;
   mediaIds: string[];
   error?: string;
-  /** The upload was refused with 401 — the write credential is dead, not the
+  /** The upload was refused with 401 - the write credential is dead, not the
    *  file. Carried up so the publisher marks the connection for re-consent
    *  rather than reporting a media problem the user can't act on. */
   authExpired?: boolean;
@@ -334,7 +334,7 @@ async function uploadToX(auth: WriteAuth, item: ScheduledMedia): Promise<string>
   }
 
   // Video and GIF transcode asynchronously. Posting before it finishes fails, so
-  // poll the state X tells us to wait for — bounded, then give up honestly.
+  // poll the state X tells us to wait for - bounded, then give up honestly.
   let info = finBody.data?.processing_info;
   const deadline = Date.now() + 5 * 60_000;
   while (info && (info.state === "pending" || info.state === "in_progress") && Date.now() < deadline) {
@@ -352,7 +352,7 @@ async function uploadToX(auth: WriteAuth, item: ScheduledMedia): Promise<string>
     }
   }
   if (info && info.state !== "succeeded" && info.state !== undefined) {
-    throw new Error("X was still processing the video after 5 minutes — it didn't go out");
+    throw new Error("X was still processing the video after 5 minutes - it didn't go out");
   }
   return mediaId;
 }
@@ -367,7 +367,7 @@ function linkedInHeaders(auth: WriteAuth, json = true): Record<string, string> {
 }
 
 async function uploadLinkedInImage(auth: WriteAuth, item: ScheduledMedia): Promise<string> {
-  if (!auth.authorUrn) throw new Error("LinkedIn author URN missing — reconnect the account for posting");
+  if (!auth.authorUrn) throw new Error("LinkedIn author URN missing - reconnect the account for posting");
   const init = await fetch("https://api.linkedin.com/rest/images?action=initializeUpload", {
     method: "POST",
     headers: linkedInHeaders(auth),
@@ -397,7 +397,7 @@ async function uploadLinkedInImage(auth: WriteAuth, item: ScheduledMedia): Promi
 }
 
 async function uploadLinkedInVideo(auth: WriteAuth, item: ScheduledMedia): Promise<string> {
-  if (!auth.authorUrn) throw new Error("LinkedIn author URN missing — reconnect the account for posting");
+  if (!auth.authorUrn) throw new Error("LinkedIn author URN missing - reconnect the account for posting");
   const bytes = await fetchMediaBytes(item.url);
   const init = await fetch("https://api.linkedin.com/rest/videos?action=initializeUpload", {
     method: "POST",
@@ -482,7 +482,7 @@ export async function uploadMediaFor(
 
   const mediaIds: string[] = [];
   for (const item of items) {
-    // Already uploaded on an earlier attempt — reuse rather than re-push bytes.
+    // Already uploaded on an earlier attempt - reuse rather than re-push bytes.
     if (item.externalMediaId) {
       mediaIds.push(item.externalMediaId);
       continue;
@@ -517,7 +517,7 @@ export function mediaUploadConfigured(platform: Platform): boolean {
  * Whether the user's stored X token actually carries `media.write`.
  *
  * Tokens minted before that scope was added to the consent URL (routes/oauth.ts)
- * do not have it, and X rejects the upload rather than the post — so without this
+ * do not have it, and X rejects the upload rather than the post - so without this
  * check a returning user would attach an image, wait for the scheduled time, and
  * only then find out. Checked at SCHEDULE time so they're told immediately.
  */

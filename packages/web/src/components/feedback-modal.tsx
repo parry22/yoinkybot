@@ -82,12 +82,12 @@ export function FeedbackModal({ open, onClose }: { open: boolean; onClose: () =>
         // cap) both explain WHY and when to come back; the generic "please try
         // again" told a capped user to do the one thing that cannot work.
         const data = (await res.json().catch(() => ({}))) as { error?: string };
-        setErr(data.error ?? "Couldn't send that — please try again.");
+        setErr(data.error ?? "Couldn't send that - please try again.");
         return;
       }
       setDone(true);
     } catch {
-      setErr("Couldn't send that — please try again.");
+      setErr("Couldn't send that - please try again.");
     } finally {
       setBusy(false);
     }
@@ -97,7 +97,7 @@ export function FeedbackModal({ open, onClose }: { open: boolean; onClose: () =>
     <Modal open={open} onClose={close}>
       {done ? (
         <div className={styles.doneWrap}>
-          <div className={styles.doneTitle}>Thanks — got it.</div>
+          <div className={styles.doneTitle}>Thanks - got it.</div>
           <p className={styles.doneBody}>
             Your {TYPE_LABEL[type].toLowerCase()} is in front of the team. We read every one.
           </p>

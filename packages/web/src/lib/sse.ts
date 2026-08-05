@@ -4,7 +4,7 @@ import type { AgentEvent } from "@yoink/backend/web";
 /**
  * Wrap a producer in a Server-Sent Events response.
  *
- * One event per line-pair (`data: {...}\n\n`), which is all the client needs —
+ * One event per line-pair (`data: {...}\n\n`), which is all the client needs -
  * we're pushing discrete JSON events, not token deltas, so there's no need for
  * event names or ids. The producer gets a synchronous `emit` and is awaited; the
  * stream closes when it resolves.

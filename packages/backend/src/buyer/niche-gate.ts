@@ -1,12 +1,12 @@
 /**
- * Semantic niche gate — the second doctrinal gate. After deterministic intent
+ * Semantic niche gate - the second doctrinal gate. After deterministic intent
  * scoring, embed each candidate tweet and cosine-compare it against the ICP
  * vector. This kills domain-mismatched intent (a loud "looking for a CRM" when
  * the user sells a fitness app). Only candidates clearing BOTH the intent gate
  * and this one reach the composition agent.
  *
  * Mirrors trends/viral-scoring.ts: batch-embed, then reject when the cosine
- * distance is >= threshold (or the ICP has no vector — fail closed, since without
+ * distance is >= threshold (or the ICP has no vector - fail closed, since without
  * a domain vector we can't assert domain fit). The ICP vector is fetched ONCE and
  * the distance computed in-process: pgvector's `<=>` per candidate meant one DB
  * round-trip per tweet for what is arithmetic.
@@ -23,7 +23,7 @@ export interface GatedCandidate extends BuyerCandidate {
 
 export interface NicheGateResult {
   passed: GatedCandidate[];
-  /** False when the ICP has no embedding — the gate rejected everything by design. */
+  /** False when the ICP has no embedding - the gate rejected everything by design. */
   hasVector: boolean;
 }
 
@@ -60,7 +60,7 @@ function parseVector(raw: string | null | undefined): number[] | null {
  * distance (verified live 2026-07-24: every on-topic candidate sat just above
  * the old 0.55 cutoff, so ZERO signals ever surfaced). So: everything under
  * `threshold` passes outright, and when that leaves fewer than `minKeep` the
- * nearest remaining candidates are pulled in — first under BUYER_NICHE_CEILING,
+ * nearest remaining candidates are pulled in - first under BUYER_NICHE_CEILING,
  * and if the radar is still empty, the nearest of what's left regardless.
  *
  * That last step is deliberate and is new. Domain similarity is a RANKING signal

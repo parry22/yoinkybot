@@ -7,7 +7,7 @@ import { useTelegramLink } from "./use-telegram-link";
 import styles from "./mobile-header.module.css";
 
 /**
- * The mobile top bar (hidden entirely on desktop — see the CSS module):
+ * The mobile top bar (hidden entirely on desktop - see the CSS module):
  * logo icon on the left, then a Telegram icon that's ALWAYS visible (opens the
  * bot directly, no need to open the menu first), the Clerk account button, then
  * the hamburger that toggles the sidebar drawer. Everything else that used to
@@ -15,7 +15,7 @@ import styles from "./mobile-header.module.css";
  * inside the drawer itself.
  *
  * The account button is here because the only other one is in the desktop top
- * bar, which is `display: none` under 1000px — so on a phone there was no way to
+ * bar, which is `display: none` under 1000px - so on a phone there was no way to
  * manage the account or sign out at all.
  */
 export function MobileHeader({ open, onToggle }: { open: boolean; onToggle: () => void }) {

@@ -28,7 +28,7 @@ export async function handleEmbedLink(job: EmbedLinkJob): Promise<void> {
     `SELECT id, content FROM memories WHERE id = $1 AND status = 'active'`,
     [job.memoryId],
   );
-  if (!memory) return; // forgotten before processing — nothing to do
+  if (!memory) return; // forgotten before processing - nothing to do
 
   const embedding = await embedOne(memory.content, job.userId);
   await query(`UPDATE memories SET embedding = $2::vector WHERE id = $1`, [memory.id, toVector(embedding)]);

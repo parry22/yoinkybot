@@ -6,21 +6,21 @@ import { z } from "zod";
  *
  * WHY HAND-ROLLED: the repo is on zod 3. zod 3.25 does ship a `zod/v4` subpath
  * whose `z.toJSONSchema()` would do this for us, but it only understands v4
- * schema internals — it cannot walk the v3 schemas every prompt in `src/prompts`
+ * schema internals - it cannot walk the v3 schemas every prompt in `src/prompts`
  * is already written against. Rewriting those to v4 to gain a converter is a much
  * larger, riskier change than the ~100 lines here. Adding `zod-to-json-schema`
  * would also work; this avoids the dependency for a well-bounded need.
  *
- * SCOPE: exactly the constructs the five agent output schemas use — object,
+ * SCOPE: exactly the constructs the five agent output schemas use - object,
  * string, number (with min/max), boolean, array, enum, literal, union,
  * discriminated union, record, and the optional/nullable/default/catch wrappers.
  * Anything unrecognised degrades to `{}` (permissive) rather than throwing, so a
- * new construct can never hard-fail a production loop — it just loses
+ * new construct can never hard-fail a production loop - it just loses
  * enforcement for that one field. `assertFullySupported` (used by the tests)
  * is the strict counterpart that DOES throw, so drift is caught in CI instead.
  *
  * REQUIREDNESS: a key is omitted from `required` when the model is allowed to
- * leave it out. That includes `.catch(...)` fields — `z.string().catch("")`
+ * leave it out. That includes `.catch(...)` fields - `z.string().catch("")`
  * treats a missing key as a parse error and substitutes the fallback, so from the
  * model's side it is optional. Marking it required would make grok fabricate a
  * value where the callsite was happy with the default.

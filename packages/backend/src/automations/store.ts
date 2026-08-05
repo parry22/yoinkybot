@@ -15,7 +15,7 @@ export async function getAutomation(id: string, userId: string): Promise<Automat
   return (await queryOne<Automation>(`SELECT * FROM automations WHERE id = $1 AND user_id = $2`, [id, userId])) ?? null;
 }
 
-/** All enabled automations across all users — the cron's work list. */
+/** All enabled automations across all users - the cron's work list. */
 export async function enabledAutomations(): Promise<Automation[]> {
   return query<Automation>(`SELECT * FROM automations WHERE enabled = true`);
 }
@@ -113,7 +113,7 @@ export async function monthlyRunCount(automationId: string): Promise<number> {
   return Number(row?.n ?? 0);
 }
 
-/** Posts across ALL a user's automations this calendar month — the PLAN-level Auto
+/** Posts across ALL a user's automations this calendar month - the PLAN-level Auto
  *  Agent ceiling (`entitlements.automationPostsPerMonth`: Growth 5, Scale 90). */
 export async function userMonthlyRunCount(userId: string): Promise<number> {
   const row = await queryOne<{ n: string }>(
@@ -212,7 +212,7 @@ export interface ExpiredApproval {
 
 /**
  * Age out approvals nobody answered. Fleet-wide, one statement, called from the
- * automation tick — no new queue for something this cheap.
+ * automation tick - no new queue for something this cheap.
  *
  * WHY THIS HAS TO EXIST. `awaiting_approval` counts against
  * entitlements.automationPostsPerMonth (Growth = 5) and `stampRun` has already
@@ -236,7 +236,7 @@ export async function expireStaleApprovals(maxAgeHours: number): Promise<Expired
         AND r.status = 'awaiting_approval'
         AND r.created_at < now() - make_interval(hours => $1::int)
       RETURNING r.id, r.user_id, a.name AS automation_name, r.draft_body`,
-    [maxAgeHours, `expired unanswered after ${maxAgeHours}h — the monthly Auto Agent slot was released`],
+    [maxAgeHours, `expired unanswered after ${maxAgeHours}h - the monthly Auto Agent slot was released`],
   );
 }
 

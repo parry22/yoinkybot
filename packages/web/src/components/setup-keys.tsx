@@ -10,7 +10,7 @@ import styles from "./setup-keys.module.css";
  *
  * Two requirements, deliberately framed as what they DO rather than as vendor
  * names: one key that writes (the model) and one that reads X (the scraper).
- * Either scraper satisfies the second — the user picks whichever account they
+ * Either scraper satisfies the second - the user picks whichever account they
  * already have rather than being told to go open a specific one.
  *
  * Each key is validated against its provider on save, so "Saved" here means
@@ -37,7 +37,7 @@ const SCRAPERS: { provider: KeyProvider; label: string; hint: string; placeholde
   {
     provider: "apify",
     label: "Apify",
-    hint: "Alternative reader — use this if you already have an Apify account.",
+    hint: "Alternative reader - use this if you already have an Apify account.",
     placeholder: "apify_api_…",
     url: "https://console.apify.com/account/integrations",
   },
@@ -54,7 +54,7 @@ export function SetupKeys({ initial }: { initial: ByokStatus }) {
         <div className={styles.kicker}>Lifetime · BYOK</div>
         <h1 className={styles.title}>Add your keys to get started</h1>
         <p className={styles.lede}>
-          You bought the lifetime deal, so Yoinky runs on your own keys — no caps, no subscription, and the usage
+          You bought the lifetime deal, so Yoinky runs on your own keys - no caps, no subscription, and the usage
           bills straight to you at cost. Add both and you&apos;re in.
         </p>
 
@@ -66,7 +66,7 @@ export function SetupKeys({ initial }: { initial: ByokStatus }) {
         />
 
         <div className={styles.groupLabel}>
-          Reader key <span className={styles.groupNote}>— either one is enough</span>
+          Reader key <span className={styles.groupNote}>- either one is enough</span>
         </div>
         {SCRAPERS.map((s) => (
           <KeyField key={s.provider} {...s} done={saved.has(s.provider)} onSaved={setStatus} />
@@ -88,7 +88,7 @@ export function SetupKeys({ initial }: { initial: ByokStatus }) {
         </div>
 
         <p className={styles.fine}>
-          Keys are encrypted before they&apos;re stored and are never shown back to you — you can replace or remove
+          Keys are encrypted before they&apos;re stored and are never shown back to you - you can replace or remove
           them any time in Settings.
         </p>
       </div>
@@ -146,7 +146,7 @@ function KeyField({
       setValue("");
       onSaved(data.status);
     } catch {
-      setErr("Network dropped — try again.");
+      setErr("Network dropped - try again.");
     } finally {
       setBusy(false);
     }
@@ -171,7 +171,7 @@ function KeyField({
           type="password"
           autoComplete="off"
           spellCheck={false}
-          placeholder={done ? "Saved — paste a new one to replace it" : placeholder}
+          placeholder={done ? "Saved - paste a new one to replace it" : placeholder}
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && save()}

@@ -45,11 +45,11 @@ async function maybeResurfaceUnlock(userId: string, opts?: { coldStart?: boolean
   if (!surfacing) return false;
 
   // Angle-offering folds into resurfacing itself now (the old standalone hourly
-  // scan had nothing left to scan since ambient capture was removed) — every
+  // scan had nothing left to scan since ambient capture was removed) - every
   // resurfaced idea gets its own moment so "turn into angles" is one tap away.
   const momentId = await createIdeaMoment(userId, unlock.idea, unlock.rationale || unlock.idea);
   const sent = await sendTelegram(userId, composed.message, surfacing.id, resurfaceKeyboard(surfacing.id, momentId));
-  // A surfacing row is history AND a budget charge — don't keep one for a DM
+  // A surfacing row is history AND a budget charge - don't keep one for a DM
   // that never landed.
   if (!sent) await query(`DELETE FROM surfacings WHERE id = $1`, [surfacing.id]);
   return sent;
@@ -58,7 +58,7 @@ async function maybeResurfaceUnlock(userId: string, opts?: { coldStart?: boolean
 /**
  * Cold-start fallback: reflect back the freshest real memory with genuine
  * observation, even though it wouldn't clear a normal competitive pass. Relaxed
- * on purpose — no 12h age gate, no scoring contest — because in this window a
+ * on purpose - no 12h age gate, no scoring contest - because in this window a
  * modest real message beats an empty inbox.
  */
 async function resurfaceFreshest(userId: string): Promise<boolean> {
@@ -123,7 +123,7 @@ export async function handleSurfaceTick(): Promise<void> {
 export async function maybeResurfaceUser(userId: string, settings: UserSettings): Promise<boolean> {
   const now = new Date();
 
-  // COLD START — the mandatory first touch. If the plan went live and the user
+  // COLD START - the mandatory first touch. If the plan went live and the user
   // has heard nothing since, silence is never the answer in this window: find
   // the most interesting thing available, however modest, and send it. Exempt
   // from the weekly budget (it IS the minimum viable presence, not a bonus),
@@ -140,7 +140,7 @@ export async function maybeResurfaceUser(userId: string, settings: UserSettings)
   if (!cadence.ok) return false;
 
   // The slot's priority function, explicit rather than cron-order accident:
-  // a reply-worthy mention (substantive challenges first, then questions —
+  // a reply-worthy mention (substantive challenges first, then questions -
   // ordered inside maybeOfferReplyDraft) beats everything else time-sensitive,
   // then the plan's own unlock nudges, then generic resurfacing as steady state,
   // then a structural nudge before concluding there's genuinely nothing.

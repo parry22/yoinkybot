@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * The chat brain's tool contract. Schemas only — no imports from the rest of
+ * The chat brain's tool contract. Schemas only - no imports from the rest of
  * the telegram layer, so both the conversation parser and the executor can
  * depend on this file without creating a module cycle.
  *
@@ -31,7 +31,7 @@ export const chatToolSchema = z.discriminatedUnion("name", [
   }),
   z.object({ name: z.literal("search_memory"), question: z.string().min(1) }),
   // What's happening RIGHT NOW on a topic: live X search + cached trends + news.
-  // The counterpart to search_memory — that one looks inward at what the user has
+  // The counterpart to search_memory - that one looks inward at what the user has
   // said, this one looks outward at what the world is saying.
   z.object({ name: z.literal("find_trends"), topic: z.string().min(1) }),
   // Two-three ways they could take a topic, grounded in live research + their own
@@ -56,11 +56,11 @@ export const chatToolSchema = z.discriminatedUnion("name", [
     /** Set after repurpose_x_post so its staged source media is scheduled too. */
     repurposedContentId: z.string().uuid().optional(),
     // Resolved to an absolute ISO instant by the model, using the CURRENT TIME
-    // injected into its context — never a relative phrase like "tomorrow 9am".
+    // injected into its context - never a relative phrase like "tomorrow 9am".
     when: z.string().min(1),
   }),
   // User is correcting how a past post was read ("that was a joke", "that
-  // wasn't sincere") — the model resolves WHICH field and the corrected value
+  // wasn't sincere") - the model resolves WHICH field and the corrected value
   // from what they said; the executor resolves WHICH post via search.
   z.object({
     name: z.literal("correct_classification"),

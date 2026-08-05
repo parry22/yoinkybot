@@ -3,8 +3,8 @@ import "server-only";
 /**
  * Input bounds for free-text that reaches a model.
  *
- * The Telegram side is bounded for free — Telegram itself caps a message at 4096
- * characters — so nothing in the shared brain ever had to think about length.
+ * The Telegram side is bounded for free - Telegram itself caps a message at 4096
+ * characters - so nothing in the shared brain ever had to think about length.
  * The web routes had no such ceiling: `/api/chat` and `/api/chat/stream` took
  * `body.text` of any size and put it straight into the prompt. With input billed
  * per token, a handful of multi-megabyte turns is real money, and the burst

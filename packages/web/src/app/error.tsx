@@ -17,7 +17,7 @@ export default function RootError({ error, reset }: { error: Error & { digest?: 
   return (
     <ErrorState
       title="Something went wrong."
-      message="That page didn't load. It's usually momentary — try again, and if it keeps happening we'd like to hear about it."
+      message="That page didn't load. It's usually momentary - try again, and if it keeps happening we'd like to hear about it."
       digest={error.digest}
       onRetry={reset}
     />

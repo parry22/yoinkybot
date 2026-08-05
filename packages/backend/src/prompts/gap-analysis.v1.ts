@@ -12,7 +12,7 @@ export interface GapAnalysisVars {
 
 /**
  * Stage 10 delivery: the gap analysis. Unlike the cold diagnosis reveal, every
- * finding is measured against the profile the user STATED in Stages 1-7 — the
+ * finding is measured against the profile the user STATED in Stages 1-7 - the
  * point is the gap between stated intent and evidenced output. The computed gap
  * block (positioning %, goal mix, tone deltas, audience fit, baseline) and the
  * 5-dimension diagnosis are both handed in; this turns them into a paced,
@@ -60,7 +60,7 @@ DELIVER AS SEPARATE MESSAGES, IN THIS ORDER (adjust to which findings are actual
    whether the content mix serves their stated goal (the inside-out % vs what the goal needs).
 4. TONE + AUDIENCE: the selected tones vs the measured voice (with the numbers), and whether the
    writing meets the stated audience and addresses their stated pain point.
-5. THE UNSAID (💎): last, as the payoff — the ideas clearly in their thinking that never became
+5. THE UNSAID (💎): last, as the payoff - the ideas clearly in their thinking that never became
    content. Each as a bullet with evidence. This should make them feel truly seen.
 6. A short close: state the starting point plainly (their real audience size + cadence as the
    baseline), then PAUSE and invite reaction. Ask what landed or didn't. Do NOT jump to the plan.
@@ -74,11 +74,11 @@ ${CASUAL_VOICE}
 Respond with ONLY valid JSON: {"messages": ["message 1", "message 2", ...]}`,
   render: ({ profileSummary, diagnosis: d, gap, sampleMemories, memoryCount }) => {
     const lines: string[] = [];
-    lines.push(`MEMORY COUNT: ${memoryCount}${memoryCount < 40 ? " — THIN read; hedge honestly." : ""}`);
+    lines.push(`MEMORY COUNT: ${memoryCount}${memoryCount < 40 ? " - THIN read; hedge honestly." : ""}`);
     lines.push(`THEIR STATED PROFILE (what to measure against):\n${profileSummary}`);
-    lines.push(`COMPUTED GAP (real numbers — use these exactly, never invent):\n${gap}`);
+    lines.push(`COMPUTED GAP (real numbers - use these exactly, never invent):\n${gap}`);
     lines.push(
-      `DIAGNOSIS — the cold read of their actual writing:\n` +
+      `DIAGNOSIS - the cold read of their actual writing:\n` +
         `Headline: ${d.headline}\n` +
         `Fingerprint: ${d.intellectual_fingerprint.read}\n` +
         `Owned: ${d.intellectual_fingerprint.owned_positions.join("; ") || "(none)"}\n` +

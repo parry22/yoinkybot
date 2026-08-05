@@ -2,14 +2,14 @@ import { PostHog } from "posthog-node";
 import { config } from "../config.js";
 
 /**
- * Product analytics — server-side PostHog. This is a Telegram-native backend
+ * Product analytics - server-side PostHog. This is a Telegram-native backend
  * with no web frontend, so there is no browser snippet or autocapture: every
  * event is captured explicitly at a product choke point (see the callers of
  * `track`), keyed by the internal user id (`users.id`), which is stable across
  * a user's whole lifetime unlike the Telegram id.
  *
  * Gated on POSTHOG_API_KEY: with no key, the client is never constructed and
- * `track`/`identify` are silent no-ops — same graceful-degradation contract as
+ * `track`/`identify` are silent no-ops - same graceful-degradation contract as
  * every other optional integration here. Nothing user-facing ever depends on
  * analytics succeeding, so every call is wrapped and swallows its own errors:
  * a metrics outage must never break a product action.
@@ -33,14 +33,14 @@ function getClient(): PostHog | null {
   return client;
 }
 
-/** Whether analytics is actually wired (key present) — for /health, not gating. */
+/** Whether analytics is actually wired (key present) - for /health, not gating. */
 export function analyticsEnabled(): boolean {
   return !!config.POSTHOG_API_KEY;
 }
 
 /**
  * Record a product event. `distinctId` is the internal user id. `properties`
- * must be metadata only (platform, source, plan, counts) — never raw user
+ * must be metadata only (platform, source, plan, counts) - never raw user
  * content (post text, captured thoughts): those don't belong in an analytics
  * store. No-op + swallow on any failure.
  */
@@ -70,7 +70,7 @@ export function identify(distinctId: string, properties: Record<string, unknown>
  * "delete everything" promise also covers PostHog, not just our own DB. Uses the
  * async bulk-delete API (deletes the person AND all their events). Best-effort
  * and config-gated: a no-op unless a personal API key + project id are set, and
- * it swallows every failure — a wipe must never fail because analytics erasure
+ * it swallows every failure - a wipe must never fail because analytics erasure
  * did. Keyed by the same internal user id used as distinctId in `track`.
  */
 export async function deletePerson(distinctId: string): Promise<void> {

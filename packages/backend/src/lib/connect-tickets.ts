@@ -1,5 +1,5 @@
 /**
- * Connect tickets — the thing that replaced `?u=<user id>` on
+ * Connect tickets - the thing that replaced `?u=<user id>` on
  * `/oauth/:platform/start`.
  *
  * WHY. That route is UNAUTHENTICATED by necessity: it's the first hop of a

@@ -3,8 +3,8 @@
  *
  * The web route puts the file into Vercel Blob (it holds the token; the backend
  * never does) and then calls `stageMedia` here with the resulting URL. That
- * inserts a `scheduled_post_media` row with a NULL scheduled_post_id — staged,
- * not yet attached — because the user picks a file while they're still writing the
+ * inserts a `scheduled_post_media` row with a NULL scheduled_post_id - staged,
+ * not yet attached - because the user picks a file while they're still writing the
  * text, so the post row doesn't exist yet. `schedulePost` binds them on save.
  *
  * Validation lives HERE rather than in the route so the size/type rules are the
@@ -64,11 +64,11 @@ function mb(bytes: number): string {
 export async function stageMedia(userId: string, input: StageMediaInput): Promise<StageMediaResult> {
   const kind = kindForMime(input.mimeType);
   if (!kind) {
-    return { ok: false, reason: `${input.mimeType} isn't a format X accepts — use JPEG, PNG, WebP, GIF or MP4` };
+    return { ok: false, reason: `${input.mimeType} isn't a format X accepts - use JPEG, PNG, WebP, GIF or MP4` };
   }
   const max = maxBytesFor(kind);
   if (input.byteSize > max) {
-    return { ok: false, reason: `that ${kind} is ${mb(input.byteSize)} — the limit is ${mb(max)}` };
+    return { ok: false, reason: `that ${kind} is ${mb(input.byteSize)} - the limit is ${mb(max)}` };
   }
   if (input.byteSize <= 0) return { ok: false, reason: "that file came through empty" };
 
@@ -125,7 +125,7 @@ export async function mediaReadiness(userId: string, platform: "x" | "linkedin" 
     warning: ok
       ? null
       : platform === "x"
-        ? "Reconnect your X account in Settings to attach images or video — the permission to upload media was added after you connected."
+        ? "Reconnect your X account in Settings to attach images or video - the permission to upload media was added after you connected."
         : `Connect ${label} for posting in Settings before scheduling images or video.`,
   };
 }
@@ -168,7 +168,7 @@ export async function mediaForScheduledPosts(
 }
 
 /**
- * Validate a staged set before the post is saved — same rule the publisher uses,
+ * Validate a staged set before the post is saved - same rule the publisher uses,
  * so "4 images max, no mixing video with images" is refused at schedule time
  * rather than at publish time.
  */
@@ -180,7 +180,7 @@ export async function validateStagedSet(userId: string, mediaIds: string[]): Pro
     [userId, mediaIds],
   );
   if (rows.length !== mediaIds.length) {
-    return { ok: false, reason: "one of those attachments is no longer available — re-upload it" };
+    return { ok: false, reason: "one of those attachments is no longer available - re-upload it" };
   }
   const problem = validateMediaSet(rows);
   return problem ? { ok: false, reason: problem.reason } : { ok: true };

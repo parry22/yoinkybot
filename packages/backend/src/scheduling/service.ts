@@ -6,10 +6,10 @@ import { attachMediaToPost } from "../social/media.js";
 import { writeAuthState } from "../social/publish.js";
 
 /**
- * A link ANYWHERE in a scheduled post's body is refused outright — not stripped,
+ * A link ANYWHERE in a scheduled post's body is refused outright - not stripped,
  * not warned-and-allowed. Both platforms' algorithms suppress reach on posts
  * that route traffic off-platform (the same reach doctrine already baked into
- * REACH_PRINCIPLES for generated drafts — see prompts/style.ts — but a scheduled
+ * REACH_PRINCIPLES for generated drafts - see prompts/style.ts - but a scheduled
  * post can also be raw pasted text that never went through drafting, so it needs
  * its own hard gate here). Matches http(s):// URLs and bare www./domain-style
  * links; a stray "e.g." or a version number like "5.2" won't false-positive.
@@ -32,7 +32,7 @@ export const MAX_SCHEDULE_AHEAD_MS = 365 * 24 * 60 * 60 * 1000;
 /**
  * The scheduling layer. Queuing a post inserts a row and hands pg-boss a job
  * with startAfter = the target time (pg-boss accepts an absolute Date), so the
- * scheduler is the queue we already run — no cron polling. The job re-reads
+ * scheduler is the queue we already run - no cron polling. The job re-reads
  * status at fire time, so cancel is a pure status flip here (scheduled-post.ts).
  */
 
@@ -68,12 +68,12 @@ export async function schedulePost(
 ): Promise<ScheduleResult> {
   const content = input.content.trim();
   const mediaIds = input.mediaIds ?? [];
-  // A post carrying media needs no text — an image on its own is a valid tweet.
+  // A post carrying media needs no text - an image on its own is a valid tweet.
   if (!content && mediaIds.length === 0) return { ok: false, reason: "nothing to post" };
   if (containsLink(content)) {
     return {
       ok: false,
-      reason: "links aren't allowed in scheduled posts — they tank reach on both platforms. drop the link and post it as the first reply once this goes out",
+      reason: "links aren't allowed in scheduled posts - they tank reach on both platforms. drop the link and post it as the first reply once this goes out",
     };
   }
   const when = input.scheduledFor;
@@ -81,7 +81,7 @@ export async function schedulePost(
   // A small grace window absorbs clock skew / "post it now" phrasing.
   if (when.getTime() < Date.now() - 60_000) return { ok: false, reason: "that time is in the past" };
   if (when.getTime() > Date.now() + MAX_SCHEDULE_AHEAD_MS) {
-    return { ok: false, reason: "that's more than a year out — check the date and pick a time within the next 12 months" };
+    return { ok: false, reason: "that's more than a year out - check the date and pick a time within the next 12 months" };
   }
 
   // Per-plan monthly cap (Growth = 30/mo, Scale = unlimited). Checked centrally
@@ -93,7 +93,7 @@ export async function schedulePost(
     return {
       ok: false,
       capReached: true,
-      reason: `you've used all ${ent.scheduledPostsPerMonth} scheduled posts this month — upgrade to Scale for unlimited.`,
+      reason: `you've used all ${ent.scheduledPostsPerMonth} scheduled posts this month - upgrade to Scale for unlimited.`,
     };
   }
 
@@ -109,10 +109,10 @@ export async function schedulePost(
   if (mediaIds.length > 0) {
     const attached = await attachMediaToPost(userId, row.id, mediaIds);
     if (attached !== mediaIds.length) {
-      // Ownership/staging mismatch — roll the post back rather than publish a
+      // Ownership/staging mismatch - roll the post back rather than publish a
       // post that silently lost an attachment.
       await query(`DELETE FROM scheduled_posts WHERE id = $1`, [row.id]);
-      return { ok: false, reason: "those attachments are no longer available — re-upload them" };
+      return { ok: false, reason: "those attachments are no longer available - re-upload them" };
     }
   }
 
@@ -127,14 +127,14 @@ export async function schedulePost(
 
 export interface ListScheduledOptions {
   /**
-   * Also return posts that have already resolved — everything in flight, plus
+   * Also return posts that have already resolved - everything in flight, plus
    * anything published or failed in the last two weeks.
    *
    * WHY IT EXISTS: the default (pending-only) list is right for the Telegram
    * "/scheduled" queue, which is a cancel-this list. It was wrong as the web
    * Scheduled screen's only source, because a failed post simply vanished from
    * it: the `error` column was written but rendered nowhere, and the failure DM
-   * no-ops for a user with no telegram_id — which is every web-only user. They
+   * no-ops for a user with no telegram_id - which is every web-only user. They
    * had no way at all to learn a post hadn't gone out.
    */
   includeRecent?: boolean;
@@ -172,7 +172,7 @@ export async function listScheduled(userId: string, opts: ListScheduledOptions =
  * Posts scheduled this calendar month, for the monthly cap.
  *
  * Canceled and failed posts don't count. Canceling has always freed the slot;
- * failing now does too, and that is a fix, not a preference — the old comment
+ * failing now does too, and that is a fix, not a preference - the old comment
  * claimed charging for a failure was intentional, but combined with the missing
  * token refresh it meant a Growth user could spend all 30 of their monthly slots
  * on posts that every one of them 401'd, and then be told to upgrade. A slot is
@@ -200,7 +200,7 @@ export interface ScheduledStatus {
   reauthRequiredPlatforms: Platform[];
 }
 
-/** Monthly scheduling usage for the current plan — for the Scheduled screen. */
+/** Monthly scheduling usage for the current plan - for the Scheduled screen. */
 export async function scheduledStatus(userId: string): Promise<ScheduledStatus> {
   const ent = await entitlementsFor(userId);
   const used = await monthlyScheduledCount(userId);
@@ -222,7 +222,7 @@ export async function scheduledStatus(userId: string): Promise<ScheduledStatus> 
 }
 
 /** Cancel a pending scheduled post. The due job re-checks status, so this alone
- *  is enough to stop it — no need to reach into pg-boss. */
+ *  is enough to stop it - no need to reach into pg-boss. */
 export async function cancelScheduled(userId: string, id: string): Promise<boolean> {
   const row = await queryOne<{ id: string }>(
     `UPDATE scheduled_posts SET status = 'canceled', updated_at = now()

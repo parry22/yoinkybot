@@ -16,7 +16,7 @@ const ORDER: KeyProvider[] = ["openrouter", "twitterapi", "apify"];
  * BYOK key management for a lifetime user, in Settings.
  *
  * Mirrors the setup gate but for the ongoing case: rotate a key, or remove one.
- * A stored key is never displayed — only its last four characters, which is
+ * A stored key is never displayed - only its last four characters, which is
  * enough to answer "which key is this?" without the page ever holding the
  * secret. Replacing means pasting a new one; there is no reveal.
  */
@@ -48,7 +48,7 @@ export function ByokSettings({ initial }: { initial: ByokStatus }) {
       setEditing(null);
       setValue("");
     } catch {
-      setErr("Network dropped — try again.");
+      setErr("Network dropped - try again.");
     } finally {
       setBusy(false);
     }

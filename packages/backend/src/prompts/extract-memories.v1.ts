@@ -10,7 +10,7 @@ export interface ExtractVars {
    *  notice it itself. */
   structuralMarker: string | null;
   /** A short per-user calibration note re-derived monthly from their own
-   *  corrections (memory/classification.ts consumers) — null until enough
+   *  corrections (memory/classification.ts consumers) - null until enough
    *  correction history exists. */
   userCalibration: string | null;
 }
@@ -20,17 +20,17 @@ const toneMenu = ALL_TONE_KEYS.map((k) => `${k}: ${TONE_LABEL[k]}`).join("\n");
 /**
  * Splits one raw capture into distinct memory units, classifies each, pulls
  * out explicit positions, AND (v2, added for the classification pass) reads
- * what kind of post the WHOLE capture actually is — its rhetorical mode,
+ * what kind of post the WHOLE capture actually is - its rhetorical mode,
  * sincerity register, and motive. This is a distinct concern from splitting/
  * kind/orientation, called out as its own numbered step: content extraction
  * tells you what a post is about, this tells you what kind of post it is and
  * why it exists. Classified at the CAPTURE level (one register/mode/motive
- * per post), not per memory unit — a post's register doesn't fragment the way
+ * per post), not per memory unit - a post's register doesn't fragment the way
  * its ideas do.
  *
  * The sincerity register is the load-bearing field: jobs/extract.ts gates
  * position emission on it, so a shitpost or bit can never become a stored
- * belief. Confidence must be honest — a garbled or genuinely ambiguous read
+ * belief. Confidence must be honest - a garbled or genuinely ambiguous read
  * should say so, never default to a confident "sincere".
  */
 export const extractMemories: Prompt<ExtractVars> = {
@@ -56,38 +56,38 @@ A capture may contain one idea or several distinct ones (voice notes ramble). Yo
    - neutral: neither applies (questions, pure logistics)
 4. Extract positions: explicit beliefs the author states as their own view ("I think X",
    "X is overrated", strong normative claims). A position is a single crisp sentence in
-   first person. Only extract positions the author actually holds — not questions, not
+   first person. Only extract positions the author actually holds - not questions, not
    others' views they mention. IMPORTANT: only extract positions if the capture as a whole
-   reads as sincere (see step 6) — a joke stated as a "belief" is not a real position, never
+   reads as sincere (see step 6) - a joke stated as a "belief" is not a real position, never
    extract one from a bit, however confidently phrased.
 
-5. Classify the WHOLE capture's rhetorical mode — pick the single best-fitting key from:
+5. Classify the WHOLE capture's rhetorical mode - pick the single best-fitting key from:
 ${toneMenu}
    Also flag format independently (zero or more, they can co-occur with any mode above):
    thread, single_post, visual_carousel_reference, video_reference.
 
-6. Classify the WHOLE capture's sincerity register — this is the most important call you make.
+6. Classify the WHOLE capture's sincerity register - this is the most important call you make.
    Check, in order:
-   - Deliberately broken/lowercase-only formatting used as a REGISTER MARKER, not a typo — only
+   - Deliberately broken/lowercase-only formatting used as a REGISTER MARKER, not a typo - only
      meaningful if it breaks from how this author normally writes (you don't have their full voice
      profile here, so weight this lightly unless the break is extreme).
    - Structural absurdity or non-sequitur AS THE POINT, rather than a coherent claim or narrative.
-   - Exaggeration/hyperbole wildly disproportionate to any real claim — a humor marker, not a
+   - Exaggeration/hyperbole wildly disproportionate to any real claim - a humor marker, not a
      sincere data-driven take.
-   - Contradiction against something the author would sincerely, repeatedly believe — if a claim is
+   - Contradiction against something the author would sincerely, repeatedly believe - if a claim is
      flatly incompatible with normal human sincerity in context, the NEW post is more likely the
      insincere one, not a real belief reversal.
    Pick exactly one: sincere | ironic | self_deprecating | absurdist | ambiguous.
    - sincere: stated at face value, no irony layer.
    - ironic: says one thing, means the opposite or something more nuanced; humor is structural.
-   - self_deprecating: genuine content wrapped in self-directed humor — real signal under the joke.
+   - self_deprecating: genuine content wrapped in self-directed humor - real signal under the joke.
    - absurdist: humor with no real informational content underneath; the craft IS the point.
    - ambiguous: genuinely unclear even with full context. Use this rather than forcing a guess.
    Give an honest confidence 0-1. LOW confidence on a genuinely unclear post is CORRECT and expected
-   — never inflate confidence to seem decisive. A parse-safe default of low-confidence "ambiguous"
+   - never inflate confidence to seem decisive. A parse-safe default of low-confidence "ambiguous"
    is far better than a wrong confident "sincere".
 
-7. Classify the WHOLE capture's motive — what is this post actually trying to accomplish, distinct
+7. Classify the WHOLE capture's motive - what is this post actually trying to accomplish, distinct
    from what it's about. Pick one: authority_building, relationship_building, audience_growth,
    lead_generation, personal_processing (thinking out loud, no strategic intent),
    community_participation (reply/banter energy, low strategic intent), campaign_installment (part
@@ -103,7 +103,7 @@ If the capture contains nothing worth remembering (pure logistics, greetings), r
     const lines = [`Source: ${source}`];
     if (structuralMarker) {
       lines.push(
-        `STRUCTURAL MARKER DETECTED (fact, computed in code — this post carries a "${structuralMarker}" series marker): weight motive strongly toward campaign_installment, high confidence.`,
+        `STRUCTURAL MARKER DETECTED (fact, computed in code - this post carries a "${structuralMarker}" series marker): weight motive strongly toward campaign_installment, high confidence.`,
       );
     }
     if (userCalibration) {

@@ -8,7 +8,7 @@ export interface AutomationInterviewVars {
   known: Record<string, string | string[] | null>;
   /** The single slot code has decided to ask about next, or null when done. */
   nextSlot: string | null;
-  /** What that slot needs, in one line — written by code, not the model. */
+  /** What that slot needs, in one line - written by code, not the model. */
   nextSlotBrief: string;
   /** Their niche/pillars/goal, so suggested options are theirs and not generic. */
   profile?: string;
@@ -35,7 +35,7 @@ export interface AutomationInterviewVars {
  * interview is complete (automations/interview.ts). The model does two things
  * only: read the transcript and extract what's been said into slots, and phrase
  * the one question code asked for. It never decides the interview is over and it
- * never invents a slot — that keeps a chatty model from building a half-specified
+ * never invents a slot - that keeps a chatty model from building a half-specified
  * agent, which is the failure mode a form at least didn't have.
  */
 export const automationInterview: Prompt<AutomationInterviewVars> = {
@@ -48,17 +48,17 @@ You do exactly two jobs each turn:
 
 1. EXTRACT. Read the whole transcript and pull out everything they've now told you
    about the agent, into these slots. Only fill a slot from something they actually
-   said or clearly agreed to — never from your own suggestion they haven't answered.
+   said or clearly agreed to - never from your own suggestion they haven't answered.
    - purpose: one line on what this agent is for, in their words.
    - post_types: the shapes of post they want (e.g. hot take, teardown, personal
      story, how-to, contrarian one-liner, thread). A list.
-   - angles: the angles/topics it may work — their lanes, not every possible take. A list.
+   - angles: the angles/topics it may work - their lanes, not every possible take. A list.
    - hooks: the hook styles that suit them (e.g. blunt claim, number, question,
      story-open, "nobody tells you…"). A list.
    - source: where its raw material comes from. EXACTLY one of:
-       "trend_ride"      — watch what's moving in their niche and ride it
-       "unlock_backlog"  — work through ideas already in their plan
-       "custom"          — from the standing brief they describe, nothing external
+       "trend_ride"      - watch what's moving in their niche and ride it
+       "unlock_backlog"  - work through ideas already in their plan
+       "custom"          - from the standing brief they describe, nothing external
    - platform: "x" | "linkedin". This is where the output will be published.
    - cadence: "daily" | "weekly" | "manual".
    - delivery: "approval" (it asks first) | "auto" (it posts on its own).
@@ -67,12 +67,12 @@ You do exactly two jobs each turn:
 2. ASK ONE QUESTION. You are told which slot to ask about next. Ask ONLY that.
    - One question. Never stack two. Never re-ask something already in WHAT YOU KNOW.
    - Make it concrete and opinionated: propose real options drawn from THEIR niche
-     and pillars, not abstract categories. "so — sharp teardowns of bad pricing
+     and pillars, not abstract categories. "so - sharp teardowns of bad pricing
      pages, or the founder-story angle you do well?" beats "what content types do
      you prefer?".
    - Offer 2-4 short options in the "options" array. These render as tappable chips,
      so each must be a complete answer to your question, 2-6 words, in their
-     vocabulary. They are suggestions, not a menu — they can say anything.
+     vocabulary. They are suggestions, not a menu - they can say anything.
    - If they've been vague twice on the same thing, propose a specific default and
      ask them to confirm it. Never loop.
 
@@ -92,17 +92,17 @@ Omit any slot you have nothing for. Never guess a slot to get the interview over
     const blocks: string[] = [];
     if (v.profile) blocks.push(`WHO THEY ARE (use this to make your options specific):\n${v.profile}`);
     if (v.contentPillars.length) blocks.push(`THEIR CONTENT PILLARS:\n${v.contentPillars.map((p) => `- ${p}`).join("\n")}`);
-    blocks.push(`WHAT YOU KNOW ABOUT THIS AGENT SO FAR:\n${known.length ? known.join("\n") : "(nothing yet — this is the first question)"}`);
+    blocks.push(`WHAT YOU KNOW ABOUT THIS AGENT SO FAR:\n${known.length ? known.join("\n") : "(nothing yet - this is the first question)"}`);
     if (v.approvalOnly) {
       blocks.push(
         `PLAN CONSTRAINT: hands-off posting ("auto") is not on their plan. If delivery comes up, ` +
-          `it's approval mode — say so plainly as a fact, don't pitch an upgrade mid-setup.`,
+          `it's approval mode - say so plainly as a fact, don't pitch an upgrade mid-setup.`,
       );
     }
     blocks.push(
       v.nextSlot
-        ? `ASK ABOUT THIS, AND ONLY THIS — slot "${v.nextSlot}": ${v.nextSlotBrief}`
-        : `NO NEXT SLOT — the interview is complete. Confirm what you built, in one line. No question, no options.`,
+        ? `ASK ABOUT THIS, AND ONLY THIS - slot "${v.nextSlot}": ${v.nextSlotBrief}`
+        : `NO NEXT SLOT - the interview is complete. Confirm what you built, in one line. No question, no options.`,
     );
 
     const convo = v.messages.length

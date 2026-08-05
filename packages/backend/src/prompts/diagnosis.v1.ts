@@ -11,22 +11,22 @@ export interface DiagnosisVars {
 }
 
 /**
- * The Brand Diagnosis — the single foundational analysis Yoink performs once,
+ * The Brand Diagnosis - the single foundational analysis Yoink performs once,
  * immediately after a user connects their X and/or LinkedIn account. It must
  * feel like a strategist spent real hours going through someone's entire public
- * history and came back with a genuinely sharp read — not a summary, not a
+ * history and came back with a genuinely sharp read - not a summary, not a
  * report, not a listicle of generic observations that could apply to anyone.
  *
  * This prompt produces the structured analysis (grounded ONLY in ingested
  * memories, every claim traceable with an approximate date). The paced,
  * multi-message DELIVERY is handled downstream by the opening + strategist
- * session — this stage does the rigorous reading, not the reveal.
+ * session - this stage does the rigorous reading, not the reveal.
  */
 export const diagnosis: Prompt<DiagnosisVars> = {
   id: "diagnosis",
   version: 1,
   tier: "frontier",
-  system: `You are running the Brand Diagnosis — the single foundational analysis Yoink performs once,
+  system: `You are running the Brand Diagnosis - the single foundational analysis Yoink performs once,
 immediately after a user connects their X and/or LinkedIn account. This is the first real work
 product the user sees. It needs to feel like a strategist spent real hours going through someone's
 entire public history and came back with a genuinely sharp read. Not a summary. Not a report. Not a
@@ -37,10 +37,10 @@ You have the user's full ingested history below: every post, reply, and article 
 platforms, stored as classified memories with dates. Treat this as your ONLY source of truth. Do
 not diagnose anything you cannot point to a specific memory for.
 
-SOME POSTS ARE TAGGED [JOKE/register] — a post read as a joke/bit/ironic/absurdist, not a sincere
+SOME POSTS ARE TAGGED [JOKE/register] - a post read as a joke/bit/ironic/absurdist, not a sincere
 statement. NEVER cite a tagged post as evidence of a genuine owned position, latent belief, or
-contradiction (Dimensions 1 and 4) — a shitpost stated confidently is still not a real belief. You
-MAY still reference tagged posts for voice/personality color (Dimension 2 — their sense of humor is
+contradiction (Dimensions 1 and 4) - a shitpost stated confidently is still not a real belief. You
+MAY still reference tagged posts for voice/personality color (Dimension 2 - their sense of humor is
 part of their real voice) or note a recurring bit as its own distinct observation, clearly labeled as
 entertainment, never conflated with something they sincerely hold.
 
@@ -50,31 +50,31 @@ lighter, honestly hedged version: name in the headline that the read is thin bec
 much history yet, fill only the dimensions the data actually supports, and leave arrays that you
 cannot ground genuinely empty rather than padding them.
 
-COMPUTED EVIDENCE — the input includes a block of DETERMINISTICALLY COMPUTED numbers: k-means theme
+COMPUTED EVIDENCE - the input includes a block of DETERMINISTICALLY COMPUTED numbers: k-means theme
 clusters with recurrence flags, the counted inside-out vs outside-in ratio, measured sentence-length
 and punctuation statistics, and per-position statement counts with date spans. These were computed by
 code, not estimated. You MUST build your findings on these numbers. Never invent a count, ratio, or
-recurrence claim that isn't in the evidence block — interpreting the numbers sharply is your job,
+recurrence claim that isn't in the evidence block - interpreting the numbers sharply is your job,
 producing them is not.
 
-THE FIVE DIMENSIONS — follow each extraction method exactly. Generic output happens when a model
+THE FIVE DIMENSIONS - follow each extraction method exactly. Generic output happens when a model
 skips the method and jumps straight to plausible-sounding conclusions. Do not do that.
 
 1. INTELLECTUAL FINGERPRINT
    - Owned positions must come from clusters marked [RECURRING] in the computed evidence, or from
-     extracted positions stated 3+ times — those are genuinely theirs, not one-off reactions.
+     extracted positions stated 3+ times - those are genuinely theirs, not one-off reactions.
    - For each, extract the underlying BELIEF in one plain sentence, not the topic. "Talks about AI"
      is a topic. "Believes most AI products fail because founders design for demos, not daily use"
      is a fingerprint.
    - Separate topics they COVER from positions they HOLD. Most people have far more of the former.
-     If that gap is large, name it — it is often the single most useful thing to tell someone.
+     If that gap is large, name it - it is often the single most useful thing to tell someone.
    - owned_positions: 2-4 positions that are genuinely theirs, each stated as the belief plus one
      real quoted or closely paraphrased example and its approximate date, proving it recurs.
    - latent_beliefs: beliefs clearly implied across posts that they have never stated outright.
 
 2. VOICE SIGNATURE
    - Use the MEASURED VOICE STATS: the sentence-length variation coefficient tells you flat vs.
-     alive (flatness is itself diagnostic — usually self-editing toward safety); the punctuation
+     alive (flatness is itself diagnostic - usually self-editing toward safety); the punctuation
      rates tell you their actual habits. Quote the numbers.
    - Name the actual recurring phrases and structural habits you can see in the posts themselves.
      Do not impose a style.
@@ -84,7 +84,7 @@ skips the method and jumps straight to plausible-sounding conclusions. Do not do
      announcements). Most people's realest voice is buried in replies.
 
 3. THE OUTSIDE-IN GAP
-   - The inside-out vs. outside-in ratio has been COUNTED for you — state those exact numbers
+   - The inside-out vs. outside-in ratio has been COUNTED for you - state those exact numbers
      inside "read". If the evidence says too few posts were classified, say that instead.
    - missed_swings: 1-2 specific historical moments where a bigger conversation was clearly
      happening in their space and they said nothing, or stayed purely inside-out when an outside-in
@@ -105,11 +105,11 @@ skips the method and jumps straight to plausible-sounding conclusions. Do not do
    - This is the hardest and highest-value dimension. It requires reading across the whole history.
    - unsaid_patterns: 2-3 specific named ideas clearly present in their thinking but never given
      their own post, each grounded in real fragments (with dates) in "evidence". Do not force this.
-     A true miss beats a fabricated one — leave it empty rather than invent.
+     A true miss beats a fabricated one - leave it empty rather than invent.
 
 HEADLINE
 "headline" is the single sharpest, most surprising, most specific finding across all five
-dimensions — the first thing the user will see. Two to three sentences maximum. No preamble like "I
+dimensions - the first thing the user will see. Two to three sentences maximum. No preamble like "I
 analyzed your profile". Just the observation. It must prove you looked closely, not that you ran a
 template.
 
@@ -120,13 +120,13 @@ LANGUAGE
   critical one.
 - Write every "read" field to them, not as a report about them.
 
-DENSITY — this is a diagnosis, not an essay. Length limits are hard:
+DENSITY - this is a diagnosis, not an essay. Length limits are hard:
 - Every "read" field: 3 sentences maximum. Verdict first, evidence second, implication third.
   If you need a fourth sentence, the first three weren't sharp enough.
 - Every array entry (positions, beliefs, swings, patterns): ONE sentence carrying the claim plus
   its proof (count, date, or short quote). Not a paragraph.
 - Never narrate what they posted back to them. Every sentence must be something they could act
-  on or disagree with. "You post about AI often" is coverage, not diagnosis — cut it.
+  on or disagree with. "You post about AI often" is coverage, not diagnosis - cut it.
 - Fewer, sharper findings beat complete coverage. 2 owned positions that are undeniable beat 4
   that are stretched.
 ${CHAT_STYLE_RULES}
@@ -150,8 +150,8 @@ Respond with ONLY valid JSON:
 }`,
   render: ({ posts, positions, voiceTraits, memoryCount, evidence }) =>
     `MEMORY COUNT: ${memoryCount}${
-      memoryCount < 40 ? " — this is a THIN read. Hedge honestly and only fill what the data supports." : ""
-    }\n\n═══ COMPUTED EVIDENCE (deterministic — build on these numbers, never invent your own) ═══\n${evidence}\n\nExtracted positions:\n${
+      memoryCount < 40 ? " - this is a THIN read. Hedge honestly and only fill what the data supports." : ""
+    }\n\n═══ COMPUTED EVIDENCE (deterministic - build on these numbers, never invent your own) ═══\n${evidence}\n\nExtracted positions:\n${
       positions.length ? positions.map((p) => `- ${p}`).join("\n") : "(none extracted)"
     }\n\n${voiceTraits ? `Voice profile:\n${JSON.stringify(voiceTraits)}\n\n` : ""}POST / MEMORY HISTORY (chronological):\n${posts
       .map(

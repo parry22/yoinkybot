@@ -88,7 +88,7 @@ export function BuyersRadar({
 
   /**
    * A scan now runs on the backend as a pg-boss job rather than inside the API
-   * request (docs/INTERNAL §3n — SDK-mode composition spawns a subprocess, which
+   * request (docs/INTERNAL §3n - SDK-mode composition spawns a subprocess, which
    * a Vercel function cannot host). So: POST to start, then poll until it lands.
    */
   async function runScan() {
@@ -100,7 +100,7 @@ export function BuyersRadar({
       // 402 and 429 are NOT the same answer and must not share a branch. 402 is
       // "you need to pay" → show the upgrade CTA. 429 is the burst limiter
       // (backend lib/rate-limit.ts), which a fully paid-up customer hits by
-      // tapping Scan twice — telling them to upgrade would be both wrong and
+      // tapping Scan twice - telling them to upgrade would be both wrong and
       // insulting. It carries its own "try again in N" copy; just show it.
       if (res.status === 402) {
         setLocked(true);
@@ -109,7 +109,7 @@ export function BuyersRadar({
       }
       if (res.status === 429) {
         setLocked(false);
-        setScanMsg(data.error ?? "you're scanning faster than I can search — give it a minute.");
+        setScanMsg(data.error ?? "you're scanning faster than I can search - give it a minute.");
         return;
       }
       if (!res.ok || !data.jobId) {
@@ -121,11 +121,11 @@ export function BuyersRadar({
       if (!result) {
         // Still running when we stopped polling. The job keeps going and its
         // results persist, so the honest message is "come back", not "failed".
-        setScanMsg("Still scanning — this one's taking a while. Refresh in a minute to see what it found.");
+        setScanMsg("Still scanning - this one's taking a while. Refresh in a minute to see what it found.");
         return;
       }
       // The server list is authoritative (all surfaced+replied leads), but never
-      // let an empty/short response clear leads we're already showing — "no new
+      // let an empty/short response clear leads we're already showing - "no new
       // signals this round" must not read as "your radar is empty".
       const returned = result.signals ?? [];
       setSignals((prev) => {
@@ -134,7 +134,7 @@ export function BuyersRadar({
         return [...returned, ...prev.filter((p) => !seen.has(p.id))];
       });
       setUsed((u) => u + (result.surfaced ?? 0));
-      // The backend says why a scan came back empty (buyer/scan.ts stages) — an
+      // The backend says why a scan came back empty (buyer/scan.ts stages) - an
       // empty radar has several causes and they need different things from you.
       if (result.surfaced === 0)
         setScanMsg(result.reason ?? "No new buyer signals this round. Yoinky will keep looking.");
@@ -152,7 +152,7 @@ export function BuyersRadar({
 
   /**
    * Poll until the job finishes. Returns null if it is still going when we give
-   * up — a scan fans out into several composition loops and can legitimately
+   * up - a scan fans out into several composition loops and can legitimately
    * outlast a user's patience, and the work is not lost when we stop watching.
    */
   async function pollScan(jobId: string): Promise<ScanOutcome | null> {
@@ -168,7 +168,7 @@ export function BuyersRadar({
         if (!res.ok) continue;
         progress = await res.json();
       } catch {
-        continue; // transient — keep polling until the deadline
+        continue; // transient - keep polling until the deadline
       }
       if (progress.state === "done") return progress.result;
       if (progress.state === "failed") throw new Error(progress.error ?? "scan failed");
@@ -187,7 +187,7 @@ export function BuyersRadar({
   }
 
 
-  // Feature unavailable (no X data source configured) — fail closed, say so plainly.
+  // Feature unavailable (no X data source configured) - fail closed, say so plainly.
   if (!status.enabled) {
     return (
       <div className={panel.page}>
@@ -241,7 +241,7 @@ export function BuyersRadar({
         </div>
         {locked && (
           <div style={{ marginTop: 12 }}>
-            <UpgradeCTA message="Buyer Radar is a paid feature — or you've hit your monthly signal cap." />
+            <UpgradeCTA message="Buyer Radar is a paid feature - or you've hit your monthly signal cap." />
           </div>
         )}
         {scanMsg && !scanning && <div className={styles.scanMsg}>{scanMsg}</div>}
@@ -308,8 +308,8 @@ export function BuyersRadar({
 }
 
 /**
- * A scan is genuinely slow — a widening ladder of paced X searches, then an
- * embedding per candidate — so the wait is a minute or two. The captions track
+ * A scan is genuinely slow - a widening ladder of paced X searches, then an
+ * embedding per candidate - so the wait is a minute or two. The captions track
  * the real pipeline stages at roughly the timings those stages take, so the wait
  * reads as work rather than a hang.
  */
@@ -352,7 +352,7 @@ function ScanningRadar() {
         </span>
       </div>
       <div className={styles.scanStageHint}>
-        This takes a minute or two — Yoinky keeps widening the search until it has six people worth your time.
+        This takes a minute or two - Yoinky keeps widening the search until it has six people worth your time.
       </div>
     </div>
   );

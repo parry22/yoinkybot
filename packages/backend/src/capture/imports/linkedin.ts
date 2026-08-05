@@ -12,7 +12,7 @@ export function parseLinkedInShares(csv: string): ImportedPost[] {
   const dateIdx = header.indexOf("date");
   const linkIdx = header.indexOf("sharelink");
   const textIdx = header.indexOf("sharecommentary");
-  if (textIdx === -1) throw new Error("Not a LinkedIn Shares.csv — missing ShareCommentary column");
+  if (textIdx === -1) throw new Error("Not a LinkedIn Shares.csv - missing ShareCommentary column");
 
   const posts: ImportedPost[] = [];
   for (const row of rows.slice(1)) {

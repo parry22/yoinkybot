@@ -1,5 +1,5 @@
 /**
- * Deterministic voice measurement — pure functions, no LLM. The diagnosis spec
+ * Deterministic voice measurement - pure functions, no LLM. The diagnosis spec
  * demands "sample the sentence length distribution", "describe what's actually
  * there", "compare early against recent". A model can't reliably count; this
  * counts, and the model interprets the numbers.
@@ -120,7 +120,7 @@ export function computeVoiceStats(posts: Post[]): VoiceStats | null {
     shortSentencePct: round((100 * lens.filter((l) => l < 8).length) / Math.max(1, lens.length)),
     longSentencePct: round((100 * lens.filter((l) => l > 25).length) / Math.max(1, lens.length)),
     perPost: {
-      emDashes: round(stat(/—/g)),
+      emDashes: round(stat(/-/g)),
       semicolons: round(stat(/;/g)),
       exclamations: round(stat(/!/g)),
       questions: round(stat(/\?/g)),

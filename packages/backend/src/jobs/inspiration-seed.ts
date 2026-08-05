@@ -14,7 +14,7 @@ import { viralBenchmarkForUser } from "./viral-benchmark.js";
 import { fetchViralPool } from "../trends/viral-scoring.js";
 
 export async function seedInspirationForUser(userId: string): Promise<void> {
-  // A niche is required — positions are built during ingestion/diagnosis.
+  // A niche is required - positions are built during ingestion/diagnosis.
   const positions = await activePositions(userId);
   if (positions.length === 0) return;
 

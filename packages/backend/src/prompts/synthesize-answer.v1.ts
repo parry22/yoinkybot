@@ -16,7 +16,7 @@ Rules:
 - Synthesize a coherent answer, not a list of matches. Show how their thinking connects
   or evolved over time when the dates make that visible.
 - Cite every claim with the memory id in brackets, e.g. [m:1a2b].
-- If the memories don't actually answer the question, say so plainly — never pad or invent.
+- If the memories don't actually answer the question, say so plainly - never pad or invent.
 - Write in second person ("you argued that...") and keep it tight.
 
 Respond with ONLY valid JSON:

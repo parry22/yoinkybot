@@ -10,7 +10,7 @@ import { runAsUser } from "../byok/context.js";
 
 export type { Platform };
 
-// Recent history is what the diagnosis is about — a year-deep scrape mostly
+// Recent history is what the diagnosis is about - a year-deep scrape mostly
 // buys extraction time, not insight. 90 days, floored at 40 posts (the read
 // needs ~30-40 to not be thin), capped at 100 so ingest time stays predictable
 // and we never scrape more than 100 of a user's tweets in one pull.
@@ -78,7 +78,7 @@ export async function startConnect(userId: string, platform: Platform, handle: s
 /**
  * Ingest a connected account's full public history. Each post becomes an
  * immutable capture (marked published, so it feeds the voice profile) and flows
- * through the standard extraction pipeline — their public history IS their brand
+ * through the standard extraction pipeline - their public history IS their brand
  * memory. When done, advances the user to the 'connected' stage and triggers the
  * diagnosis readiness check.
  */
@@ -112,7 +112,7 @@ async function ingestProfileInner(job: IngestProfileJob): Promise<void> {
       { days: INGEST_WINDOW_DAYS, minPosts: INGEST_MIN_POSTS, maxPosts: INGEST_MAX_POSTS },
     );
     if (usable.length === 0) {
-      // Nothing came back — don't wipe what they already have. Tell them why.
+      // Nothing came back - don't wipe what they already have. Tell them why.
       await query(`UPDATE connected_accounts SET status = 'failed' WHERE id = $1`, [account.id]);
       await sendTelegram(
         job.userId,
@@ -125,7 +125,7 @@ async function ingestProfileInner(job: IngestProfileJob): Promise<void> {
 
     // The pull is done, so the reading time is now a fact, not a guess. Tell them
     // before the silent stretch starts. The post count itself stays out of the
-    // message — it's an implementation detail, and quoting it just invites the
+    // message - it's an implementation detail, and quoting it just invites the
     // user to wonder whether the number is enough.
     const eta = estimateIngestMinutes(usable.length);
     await sendTelegram(
@@ -146,7 +146,7 @@ async function ingestProfileInner(job: IngestProfileJob): Promise<void> {
     const boss = getBoss();
     let imported = 0;
 
-    // The profile BIO is the user's own one-line self-description — the densest
+    // The profile BIO is the user's own one-line self-description - the densest
     // signal of who they are and what they're about. Ingest it as its own
     // capture so it flows through extraction into memory/positions/voice, not
     // just sitting unused on the account row (which is all it did before).
@@ -190,7 +190,7 @@ async function ingestProfileInner(job: IngestProfileJob): Promise<void> {
        WHERE id = $1`,
       [account.id, imported, JSON.stringify(pull.meta)],
     );
-    // Advance the stage (only forward — never regress a user who's further along).
+    // Advance the stage (only forward - never regress a user who's further along).
     // 'profile_set' is the profile-first arc reaching connect; 'new' is the
     // connect-first escape hatch.
     await query(
@@ -220,7 +220,7 @@ export async function connectedAccounts(userId: string) {
 }
 
 /**
- * If the user has ingested exactly ONE platform, returns the other one — the
+ * If the user has ingested exactly ONE platform, returns the other one - the
  * natural "want me to pull your LinkedIn too?" moment. Null if they've
  * connected both already, or somehow neither (shouldn't happen once goals are
  * set, but never offer a platform ask in that case).

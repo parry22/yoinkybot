@@ -121,7 +121,7 @@ async function synthesisCluster(userId: string, theme: string): Promise<{ fragme
     [userId, vec, MAX_CLUSTER_SIZE],
   );
 
-  // One hop of extends/echoes links around the semantic seeds — fragments that
+  // One hop of extends/echoes links around the semantic seeds - fragments that
   // belong to the argument even when their wording sits further from the theme.
   const linked = semantic.length
     ? await query<ClusterFragment>(
@@ -141,7 +141,7 @@ async function synthesisCluster(userId: string, theme: string): Promise<{ fragme
     .sort((a, b) => a.created_at.localeCompare(b.created_at))
     .slice(0, MAX_CLUSTER_SIZE);
 
-  // Real belief evolution near this theme — handed to the model so it never
+  // Real belief evolution near this theme - handed to the model so it never
   // silently smooths over a change of mind.
   const evolution = await query<{ old_statement: string; new_statement: string }>(
     `SELECT old_p.statement AS old_statement, new_p.statement AS new_statement
@@ -210,14 +210,14 @@ export async function repurposeContent(userId: string, req: RepurposeRequest): P
       return {
         ok: false,
         output: "",
-        notes: `I only found ${fragments.length} fragment${fragments.length === 1 ? "" : "s"} circling that idea — not enough to assemble a real piece. Keep thinking out loud about it and I'll flag when there's enough to write.`,
+        notes: `I only found ${fragments.length} fragment${fragments.length === 1 ? "" : "s"} circling that idea - not enough to assemble a real piece. Keep thinking out loud about it and I'll flag when there's enough to write.`,
       };
     }
     sources = fragments.map((f) => ({ content: f.content, created_at: f.created_at }));
     sourceIds = fragments.map((f) => f.id);
     evolutionNotes = evolution;
   } else {
-    if (!req.sourceText?.trim()) return { ok: false, output: "", notes: "Nothing to repurpose — paste the content." };
+    if (!req.sourceText?.trim()) return { ok: false, output: "", notes: "Nothing to repurpose - paste the content." };
     sources = [{ content: req.sourceText.trim() }];
   }
 
@@ -248,8 +248,8 @@ export async function repurposeContent(userId: string, req: RepurposeRequest): P
 
   let parsed = await generate();
   if (!parsed.output.trim()) {
-    // Honest refusal (complete thought, thin cluster) — surface the reason, store nothing.
-    return { ok: false, output: "", notes: parsed.notes || "This one doesn't transform well — it's complete as it stands." };
+    // Honest refusal (complete thought, thin cluster) - surface the reason, store nothing.
+    return { ok: false, output: "", notes: parsed.notes || "This one doesn't transform well - it's complete as it stands." };
   }
 
   // Source fidelity: the output must stay anchored to what the source said.
@@ -258,9 +258,9 @@ export async function repurposeContent(userId: string, req: RepurposeRequest): P
     const sourceVec = await embedOne(sources.map((s) => s.content).join("\n"), userId);
     let distance = cosineDistance(await embedOne(parsed.output, userId), sourceVec);
     if (!fidelityOk(distance)) {
-      console.warn(`repurpose fidelity drift (${distance.toFixed(2)}) — regenerating once`);
+      console.warn(`repurpose fidelity drift (${distance.toFixed(2)}) - regenerating once`);
       const retry = await generate(
-        "YOUR PREVIOUS ATTEMPT DRIFTED FROM THE SOURCE. Stay strictly on what the source material actually says — no new claims, no new framing. Transform, don't rewrite.",
+        "YOUR PREVIOUS ATTEMPT DRIFTED FROM THE SOURCE. Stay strictly on what the source material actually says - no new claims, no new framing. Transform, don't rewrite.",
       );
       if (retry.output.trim()) {
         const retryDistance = cosineDistance(await embedOne(retry.output, userId), sourceVec);
@@ -277,7 +277,7 @@ export async function repurposeContent(userId: string, req: RepurposeRequest): P
     }
   } catch (err) {
     // Fidelity couldn't be verified (e.g. the embedding call failed). Don't ship
-    // it as if it passed — say so, so the user reads it against their source.
+    // it as if it passed - say so, so the user reads it against their source.
     console.error("fidelity check failed; flagging as unverified", err);
     parsed.notes = [parsed.notes, "Heads up: I couldn't verify this stayed true to your original just now, so read it against the source before using it."]
       .filter(Boolean)

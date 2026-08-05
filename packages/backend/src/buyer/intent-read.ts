@@ -2,7 +2,7 @@
  * Buyer Radar annotation step. Candidates that cleared the deterministic intent
  * gate and the semantic niche gate get ONE batched, cheap LLM call that says what
  * each person is actually asking for. It does not draft a reply and it cannot
- * remove anyone — see prompts/buyer-intent-read.v1.ts for why that changed.
+ * remove anyone - see prompts/buyer-intent-read.v1.ts for why that changed.
  *
  * Everything here is best-effort by construction. If the model is down, returns
  * garbage, or skips ids, each affected candidate falls back to a deterministic
@@ -22,7 +22,7 @@ export interface IntentRead {
   why: string;
   /** The intent bucket, model-refined where it read the tweet differently. */
   intentType: IntentType;
-  /** 0-1, ordering only — never used to drop a candidate. */
+  /** 0-1, ordering only - never used to drop a candidate. */
   confidence: number;
 }
 
@@ -69,7 +69,7 @@ function formatFollowers(n: number): string {
 }
 
 /**
- * Annotate a batch. Returns a map keyed by tweet id — always complete, because
+ * Annotate a batch. Returns a map keyed by tweet id - always complete, because
  * anything the model didn't cover is filled from `fallbackWhy`.
  */
 export async function readIntents(
@@ -112,7 +112,7 @@ export async function readIntents(
     const parsed = readsSchema.parse(res.parsed);
     for (const r of parsed.reads) {
       const existing = out.get(r.id);
-      if (!existing) continue; // hallucinated id — ignore, never widens the set
+      if (!existing) continue; // hallucinated id - ignore, never widens the set
       const why = r.why.trim();
       out.set(r.id, {
         why: why ? casualize(why).slice(0, 400) : existing.why,
@@ -121,7 +121,7 @@ export async function readIntents(
       });
     }
   } catch (err) {
-    // Loud, but never fatal — every candidate already has its deterministic line.
+    // Loud, but never fatal - every candidate already has its deterministic line.
     console.error("buyer intent read failed; falling back to deterministic reasons", err);
   }
   return out;

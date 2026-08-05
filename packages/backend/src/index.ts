@@ -10,7 +10,7 @@ import { analyticsEnabled, shutdownAnalytics } from "./analytics/posthog.js";
 
 /**
  * Postgres error classes that mean "the database is not available right now",
- * as opposed to "your SQL is wrong". 53xxx is insufficient_resources — which is
+ * as opposed to "your SQL is wrong". 53xxx is insufficient_resources - which is
  * what Neon returns (53000) when a project has burned its compute-time quota.
  * 57P0x is admin shutdown / crash recovery, 08xxx is connection failure.
  */
@@ -32,7 +32,7 @@ function isDatabaseUnavailable(err: unknown): boolean {
  * WHAT HAPPENED ON 2026-07-30. Neon cut the database off for exceeding its
  * compute-time quota. `migrate()` threw PG 53000 on line one of main(), the
  * bottom-of-file `.catch` called process.exit(1), Railway restarted the
- * container, and it threw again — 22 times in one log window. Every one of those
+ * container, and it threw again - 22 times in one log window. Every one of those
  * restarts opened a fresh pool, ran pg-boss's schema check, re-declared 27
  * queues and fired both boot nudges, all aimed at a database that was already
  * over its compute budget. The crash loop was actively feeding the outage it was
@@ -41,7 +41,7 @@ function isDatabaseUnavailable(err: unknown): boolean {
  *
  * So: back off patiently when the database is merely unavailable, and let the
  * process live. A broken migration still fails fast and loudly, because that is a
- * deterministic error a retry cannot fix — the distinction is the whole point.
+ * deterministic error a retry cannot fix - the distinction is the whole point.
  */
 async function migrateWithBackoff(): Promise<void> {
   const MAX_DELAY_MS = 60_000;
@@ -54,11 +54,11 @@ async function migrateWithBackoff(): Promise<void> {
       if (attempt > 0) console.log(`migrations applied after ${attempt} retr${attempt === 1 ? "y" : "ies"}`);
       return;
     } catch (err) {
-      if (!isDatabaseUnavailable(err)) throw err; // real migration bug — surface it
+      if (!isDatabaseUnavailable(err)) throw err; // real migration bug - surface it
       attempt++;
       const detail = err instanceof Error ? err.message : String(err);
       console.warn(
-        `database unavailable (attempt ${attempt}) — retrying in ${Math.round(delay / 1000)}s: ${detail}`,
+        `database unavailable (attempt ${attempt}) - retrying in ${Math.round(delay / 1000)}s: ${detail}`,
       );
       // Page the operator once, early. This is the state where the product is
       // fully down and nothing in the app itself is wrong, which is exactly the
@@ -67,7 +67,7 @@ async function migrateWithBackoff(): Promise<void> {
         void import("./lib/alerts.js").then(({ alertAdmin }) =>
           alertAdmin(
             "db:unavailable",
-            `Backend cannot reach Postgres: ${detail}. If this is Neon reporting a compute-time quota (PG 53000), the plan needs upgrading — the app is fully down until then.`,
+            `Backend cannot reach Postgres: ${detail}. If this is Neon reporting a compute-time quota (PG 53000), the plan needs upgrading - the app is fully down until then.`,
           ),
         );
       }
@@ -88,7 +88,7 @@ async function main(): Promise<void> {
   // (no webhookCallback), which requires botInfo to be loaded up front.
   if (bot) await bot.init();
   // The bot's own t.me link, derived from Telegram rather than hardcoded or
-  // borrowed from an unrelated config value — always correct for whichever
+  // borrowed from an unrelated config value - always correct for whichever
   // token is actually configured.
   const botLink = bot ? `https://t.me/${bot.botInfo.username}` : "https://telegram.org";
 
@@ -96,7 +96,7 @@ async function main(): Promise<void> {
   const app = Fastify({ logger: { level: isDev ? "info" : "warn" } });
 
   // `llm` reports whether the single LLM route is configured (key presence only,
-  // never the key) — so "the bot replies but sounds like a broken robot" is
+  // never the key) - so "the bot replies but sounds like a broken robot" is
   // diagnosable with one curl instead of a log dive. Every conversational turn
   // needs OPENROUTER_API_KEY; without it the bot can only serve fallback lines.
   // `trends` does the same for the macro-moment pipeline (env drift on a deploy
@@ -117,7 +117,7 @@ async function main(): Promise<void> {
       },
     };
   });
-  // Telegram-only, no web dashboard — anyone landing on the bare domain in a
+  // Telegram-only, no web dashboard - anyone landing on the bare domain in a
   // browser should bounce straight to the actual bot, not see a raw 404.
   app.get("/", async (_req, reply) => reply.redirect(botLink));
   await app.register(webhookRoutes);
@@ -130,7 +130,7 @@ async function main(): Promise<void> {
   // The production misconfiguration warnings (paywall off, colliding Dodo
   // product ids, localhost WEB_APP_URL) now live in config.ts and fire at module
   // load instead of here. This guard only ever ran in the backend process, and
-  // the Next.js app imports the same config without executing this file — so the
+  // the Next.js app imports the same config without executing this file - so the
   // one surface where a disabled paywall does the most damage was the surface
   // that never got warned.
 
@@ -145,10 +145,10 @@ async function main(): Promise<void> {
       // Local dev: no public HTTPS URL, fall back to long polling.
       await bot.api.deleteWebhook();
       // Fire-and-forget by design (bot.start's promise only resolves on
-      // shutdown) — but it must still be caught. If a webhook gets registered
+      // shutdown) - but it must still be caught. If a webhook gets registered
       // elsewhere for this same token (e.g. a prod instance switching modes),
       // Telegram kills this poll with a 409 "terminated by setWebhook
-      // request" — expected, not an operational problem, so log it locally
+      // request" - expected, not an operational problem, so log it locally
       // instead of letting it surface as an unhandled rejection that pages
       // the admin for something that isn't actually broken.
       bot.start({ onStart: () => console.log("telegram bot polling (dev)") }).catch((err) => {
@@ -161,13 +161,13 @@ async function main(): Promise<void> {
     // Scream at boot AND page the admin so this can never be a silent state.
     if (!config.OPENROUTER_API_KEY) {
       console.error(
-        "OPENROUTER_API_KEY is NOT set — every conversational turn will fail into fallback lines. " +
+        "OPENROUTER_API_KEY is NOT set - every conversational turn will fail into fallback lines. " +
           "Set it in the service env and redeploy. /health reports llm:false until then.",
       );
       void import("./lib/alerts.js").then(({ alertAdmin }) =>
         alertAdmin(
           "llm:unconfigured",
-          "OPENROUTER_API_KEY is not set on this deploy — the bot is running but can only send canned fallback lines. Set it in the service env and redeploy.",
+          "OPENROUTER_API_KEY is not set on this deploy - the bot is running but can only send canned fallback lines. Set it in the service env and redeploy.",
         ),
       );
     }

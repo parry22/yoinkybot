@@ -3,7 +3,7 @@ import { ALL_TONE_KEYS, TONE_LABEL } from "../strategist/profile.js";
 /**
  * Shared taxonomy + pure helpers for post classification (rhetorical mode,
  * sincerity register, motive, campaign detection). Classified at CAPTURE
- * granularity — see jobs/extract.ts. No I/O in this file; every downstream
+ * granularity - see jobs/extract.ts. No I/O in this file; every downstream
  * consumer (evidence.ts, voice/profile.ts, performance.ts, corrections) calls
  * into the same predicates here so "how conservative are we about ambiguity"
  * lives in exactly one place.
@@ -38,11 +38,11 @@ export const SINCERITY_CONFIDENCE_THRESHOLD = 0.5;
 
 /**
  * The single predicate every downstream filter calls. Conservative by design:
- * anything other than a confident "sincere" is treated as NOT sincere —
+ * anything other than a confident "sincere" is treated as NOT sincere -
  * ironic/self_deprecating/absurdist/ambiguous, or a low-confidence "sincere",
  * all fail closed. NULL (classified before this feature existed, or a parse
  * failure) is treated as sincere for backward compatibility, matching the
- * `orientation IS NULL` tolerance precedent elsewhere in this codebase — this
+ * `orientation IS NULL` tolerance precedent elsewhere in this codebase - this
  * predicate is for NEW gating decisions, not for retroactively distrusting
  * data that predates the feature.
  */
@@ -60,7 +60,7 @@ export function isSincereEnough(
  * updates ("day 14", "part 3 of X", "update #7"), or a repeated bracketed/
  * hashtag tag ("[buildinpublic]", "#100DaysOfCode"). Pure text, computed
  * before the classification call so the model is told the marker as fact
- * rather than asked to notice it — matches the deterministic-then-interpret
+ * rather than asked to notice it - matches the deterministic-then-interpret
  * doctrine used throughout this codebase (evidence.ts, performance.ts,
  * gap.ts). Returns a normalized marker "family" string usable to match this
  * post against an existing campaign, or null when nothing matches.

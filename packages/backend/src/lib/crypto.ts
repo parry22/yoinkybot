@@ -1,5 +1,5 @@
 /**
- * Authenticated symmetric encryption for secrets we must be able to read back —
+ * Authenticated symmetric encryption for secrets we must be able to read back -
  * today that is BYOK provider keys (byok/keys.ts).
  *
  * AES-256-GCM, not AES-CBC or a bare cipher: GCM is AEAD, so decryption FAILS
@@ -37,7 +37,7 @@ function masterKey(): Buffer {
   const raw = config.BYOK_ENCRYPTION_KEY?.trim();
   if (!raw) {
     throw new Error(
-      "BYOK_ENCRYPTION_KEY is not set — refusing to handle user API keys without encryption. " +
+      "BYOK_ENCRYPTION_KEY is not set - refusing to handle user API keys without encryption. " +
         "Generate one with: openssl rand -base64 32",
     );
   }
@@ -53,7 +53,7 @@ function masterKey(): Buffer {
   return buf;
 }
 
-/** True when encryption is usable — for boot-time config warnings, not for
+/** True when encryption is usable - for boot-time config warnings, not for
  *  deciding whether to store something in the clear. */
 export function encryptionConfigured(): boolean {
   try {
@@ -64,7 +64,7 @@ export function encryptionConfigured(): boolean {
   }
 }
 
-/** Encrypt a secret. A fresh random IV per call — reusing a GCM nonce under the
+/** Encrypt a secret. A fresh random IV per call - reusing a GCM nonce under the
  *  same key is catastrophic, so it is never derived from the plaintext or the user. */
 export function seal(plaintext: string): Sealed {
   const iv = randomBytes(IV_BYTES);

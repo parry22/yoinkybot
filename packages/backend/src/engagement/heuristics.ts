@@ -1,5 +1,5 @@
 /**
- * Deterministic visibility/timing facts about a mention's thread — pure
+ * Deterministic visibility/timing facts about a mention's thread - pure
  * functions, no I/O, no model. These exist so the reply-drafting agent reasons
  * over COMPUTED data instead of inventing algorithm folklore: the model gets
  * "reply #47, 3 hours in, conversation-heavy audience" as fact and decides how
@@ -26,7 +26,7 @@ export interface EngagementHeuristics {
   /** Freshness window. */
   minutes_since_post: number;
   /** Share of this post's engagement that is conversation (replies) rather than
-   *  passive (likes/reposts) — does this poster's audience engage with replies. */
+   *  passive (likes/reposts) - does this poster's audience engage with replies. */
   op_reply_engagement_rate: number;
   /** Still inside the high-visibility window. */
   is_early_window: boolean;

@@ -35,7 +35,7 @@ function statusOf(x: { connected: boolean; reading: boolean; failed: boolean }):
 
 /**
  * The escape hatch. This gate is non-dismissible and sits at z-index 100, on top
- * of the top bar's Clerk UserButton — so before this row existed, a user with no
+ * of the top bar's Clerk UserButton - so before this row existed, a user with no
  * X account or a connect that kept failing had no sign-out, no help, and no way
  * out except typing /sign-in by hand. Every state of the gate ends with it.
  */
@@ -63,7 +63,7 @@ function Gate({ connected, reading, failed }: { connected: boolean; reading: boo
   // the layout's read of it raced; the poll below is what actually resolves it.
   const justConnected = params.get("connected") === "x";
   // Set when the OAuth handshake itself blew up before any account row existed.
-  // "config" means X rejected OUR credentials — retrying cannot fix that, so the
+  // "config" means X rejected OUR credentials - retrying cannot fix that, so the
   // copy must not ask the user to. "1" is kept so an in-flight redirect issued by
   // the previous deploy still renders as the retryable case.
   const connectErrorKind = params.get("connect_error");
@@ -124,7 +124,7 @@ function Gate({ connected, reading, failed }: { connected: boolean; reading: boo
           <div className={styles.body}>
             Your account is connected, but pulling your posts didn&apos;t work. That&apos;s usually a protected
             account, one with very little public activity in the last few months, or X being slow to answer. Try again
-            — it often goes through second time.
+            - it often goes through second time.
           </div>
           <a className={styles.xBtn} href="/api/auth/x/start">
             <XLogo size={17} />
@@ -178,19 +178,19 @@ function Gate({ connected, reading, failed }: { connected: boolean; reading: boo
         </div>
         {connectError && (
           <div className={styles.error}>
-            That didn&apos;t go through — X sent us back without finishing the handshake. Please try again.
+            That didn&apos;t go through - X sent us back without finishing the handshake. Please try again.
           </div>
         )}
         {/* Deliberately owns the fault and does NOT say "try again". X rejected
             our credentials, so every retry lands in the same place; sending
             someone round that loop is worse than telling them to stop.
-            It also stops short of promising we've been paged — the failure is
+            It also stops short of promising we've been paged - the failure is
             logged server-side, but alertAdmin routes through the Telegram bot,
             which isn't running in this serverless context, so claiming an alert
             fired would be untrue. */}
         {connectBlocked && (
           <div className={styles.error}>
-            X turned us away — that&apos;s a misconfiguration on our side, not anything you did, and retrying
+            X turned us away - that&apos;s a misconfiguration on our side, not anything you did, and retrying
             won&apos;t clear it. Please reach out and we&apos;ll get it fixed.
           </div>
         )}

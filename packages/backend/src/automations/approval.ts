@@ -28,17 +28,17 @@ export function approvalKeyboard(runId: string): InlineKeyboard {
     .text("🗑 reject", `auto:no:${runId}`);
 }
 
-// An approved post still queues (cancellable), just with a short delay — the user
+// An approved post still queues (cancellable), just with a short delay - the user
 // already chose to publish, so it doesn't wait the full auto-mode window.
 const APPROVED_DELAY_MS = 2 * 60_000;
 
 /**
  * Why a run is no longer actionable, in words. An expired approval used to come
  * back as the same flat "already handled" a double-tap gets, which is the one
- * case where the user genuinely did nothing and deserves an explanation — the
+ * case where the user genuinely did nothing and deserves an explanation - the
  * agent gave up on the draft, and the monthly slot went back.
  */
-const EXPIRY_NOTE = "that draft expired — it sat unanswered too long, so I let it go and gave you the post slot back";
+const EXPIRY_NOTE = "that draft expired - it sat unanswered too long, so I let it go and gave you the post slot back";
 
 export async function approveRun(userId: string, runId: string): Promise<{ ok: boolean; reason?: string }> {
   const run = await getRun(runId, userId);

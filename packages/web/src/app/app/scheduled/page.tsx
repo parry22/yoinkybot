@@ -17,7 +17,7 @@ export default async function ScheduledPage() {
   const [posts, status, xMedia, linkedInMedia] = await Promise.all([
     // includeRecent: the queue alone isn't enough here. A post that failed used
     // to disappear from this screen entirely, and the only failure notice the
-    // backend sends is a Telegram DM — which no-ops for a web-only user. Recent
+    // backend sends is a Telegram DM - which no-ops for a web-only user. Recent
     // failures and successes stay listed so the outcome is visible somewhere.
     listScheduled(user.id, { includeRecent: true }).catch(() => []),
     scheduledStatus(user.id).catch(() => ({
@@ -27,7 +27,7 @@ export default async function ScheduledPage() {
       reauthRequired: false,
       reauthRequiredPlatforms: [],
     })),
-    // Whether their X token can actually upload media — surfaced in the composer
+    // Whether their X token can actually upload media - surfaced in the composer
     // so a missing permission is known at attach time, not at publish time.
     mediaReadiness(user.id, "x").catch(() => ({ canPostMedia: false, warning: null })),
     mediaReadiness(user.id, "linkedin").catch(() => ({ canPostMedia: false, warning: null })),

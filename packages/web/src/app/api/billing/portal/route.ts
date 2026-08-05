@@ -23,7 +23,7 @@ export async function GET(req: Request) {
       return NextResponse.redirect(new URL("/api/billing/start-trial", origin));
     }
     // Back to Settings, not to the Telegram bot that CHECKOUT_RETURN_URL points
-    // at in production — cancelling from the web app should return to the web app.
+    // at in production - cancelling from the web app should return to the web app.
     const { url } = await createCustomerPortal(ov.dodoCustomerId, `${config.WEB_APP_URL}/app/settings`);
     return NextResponse.redirect(url);
   } catch (err) {

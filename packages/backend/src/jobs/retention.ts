@@ -5,14 +5,14 @@ import { query, queryOne } from "../db/pool.js";
  *
  * WHY THIS EXISTS. Nothing here ever had a retention policy, and the assumption
  * that "storage is cheap" held right up until the database became the binding
- * constraint. `usage_events` is the worst of them — a row per LLM call and per
+ * constraint. `usage_events` is the worst of them - a row per LLM call and per
  * embedding batch, forever, on a table that `underDailyCap` (llm/gateway.ts)
  * reads on the hot path of every single model call. Fastest-growing and
  * hottest-read at once.
  *
  * WHAT IT DOES NOT TOUCH, deliberately: captures, memories, positions,
  * surfacings, mentions, buyer_signals, drafts, angles. That is the user's own
- * content and the product's dedup/history reads it — deleting any of it is a
+ * content and the product's dedup/history reads it - deleting any of it is a
  * product decision, not housekeeping, and it is not this job's business.
  *
  * pg-boss manages its own archive/delete for completed jobs, so the `pgboss`
@@ -111,7 +111,7 @@ export async function handleRetention(): Promise<RetentionResult> {
   // Storage only actually returns to the OS on VACUUM, and autovacuum may not
   // get to a table this bursty for a while. On a hosted plan with a hard storage
   // ceiling that lag is the difference between "pruned" and "still over quota".
-  // Not VACUUM FULL — that takes an ACCESS EXCLUSIVE lock and rewrites the table.
+  // Not VACUUM FULL - that takes an ACCESS EXCLUSIVE lock and rewrites the table.
   if (result.usageDeleted > 0) {
     await query(`VACUUM (ANALYZE) usage_events`).catch((err) =>
       console.error("[retention] vacuum failed (non-fatal)", err),
@@ -121,7 +121,7 @@ export async function handleRetention(): Promise<RetentionResult> {
   return result;
 }
 
-/** Rough current size of the tables this job governs — logged so storage
+/** Rough current size of the tables this job governs - logged so storage
  *  pressure is visible before it becomes an outage rather than after. */
 export async function logStorageFootprint(): Promise<void> {
   const row = await queryOne<{ total: string; usage: string }>(

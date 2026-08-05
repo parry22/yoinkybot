@@ -20,8 +20,8 @@ export interface TrendClustersVars {
  * Why this exists (2026-07-12): trends used to be stored as individual hot
  * tweets, with the verbatim tweet text as the "topic". Volume verification then
  * searched that verbatim text and found only the one original tweet (buzz ~0.15
- * — nothing ever cleared the gate). A trend is a CLUSTER — many people on the
- * same thing the same day — and it needs a searchable term ("Claude Code",
+ * - nothing ever cleared the gate). A trend is a CLUSTER - many people on the
+ * same thing the same day - and it needs a searchable term ("Claude Code",
  * "Anthropic global workspace"), not a sentence nobody else tweets verbatim.
  * This LLM call is the clustering + labeling step; volume is then verified
  * deterministically on the term (trends/scoring.ts), never guessed here.
@@ -34,14 +34,14 @@ export const trendClusters: Prompt<TrendClustersVars> = {
   // expensive single call in the system. Fleet-wide, so this is shared spend.
   tier: "cheap",
   system: `You are given a batch of recent tweets (last ~24h) pulled around a set of professional
-topics. Your job: find the distinct THINGS PEOPLE ARE TALKING ABOUT RIGHT NOW — the clusters where
+topics. Your job: find the distinct THINGS PEOPLE ARE TALKING ABOUT RIGHT NOW - the clusters where
 multiple different accounts are reacting to the same event, launch, announcement, or take.
 
 A real trend is a CLUSTER, not one viral tweet. Only emit a topic when SEVERAL DIFFERENT authors
-in the batch are on it. One loud tweet with no echo is not a trend — skip it.
+in the batch are on it. One loud tweet with no echo is not a trend - skip it.
 
 For each trend you find, return:
-- "term": a SHORT, SEARCHABLE phrase for the topic — the words people would actually search or
+- "term": a SHORT, SEARCHABLE phrase for the topic - the words people would actually search or
   that recur across the cluster (e.g. "Claude Code", "Anthropic global workspace", "GPT-5 launch").
   2-5 words. NOT a full sentence, NOT a specific tweet's wording, NOT a hashtag.
 - "description": one plain line on what's happening and why it's live today.

@@ -50,7 +50,7 @@ export interface ProfileCursor {
   pushed?: ProfileField[];
   unresolved?: ProfileField[];
   pillarsDrafted?: string[]; // Stage 5 pillars derived in code, awaiting confirmation
-  /** Consecutive turns spent on the same current field without capturing it —
+  /** Consecutive turns spent on the same current field without capturing it -
    *  the anti-loop backstop force-advances once this crosses a threshold. */
   stuck?: number;
 }
@@ -72,7 +72,7 @@ export interface StrategistState {
   cadenceSet?: boolean; // draft plan has a cadence → ready to commit
   turnsInPhase?: number; // watchdog counter, reset on phase change
   lastTurnAt?: string;
-  /** The bot just asked for a handle — the next bare "@handle" reply is the answer. */
+  /** The bot just asked for a handle - the next bare "@handle" reply is the answer. */
   awaitingConnect?: boolean;
   /**
    * The OAuth-first connect sequence cursor (telegram/connect-auth.ts): which
@@ -83,7 +83,7 @@ export interface StrategistState {
   connectFlow?: { offered?: ("x" | "linkedin")[]; skipped?: ("x" | "linkedin")[] };
   /** The Stage 4 tone inline-keyboard has been sent once (don't resend each turn). */
   toneMenuSent?: boolean;
-  /** An automation approval-card "edit" was tapped — the next text turn is the
+  /** An automation approval-card "edit" was tapped - the next text turn is the
    *  edit instruction for this run (automations/approval.ts). */
   pendingAutoEdit?: { runId: string };
 }
@@ -106,10 +106,10 @@ export async function clearState(userId: string): Promise<void> {
 
 /**
  * Full account reset (triggered by the clear_everything chat tool, confirmed via
- * the clr:confirm button): wipe everything derived from the user's work —
+ * the clr:confirm button): wipe everything derived from the user's work -
  * captures, memories, positions, the diagnosis, goals, plan, chat history,
  * drafts, repurposed content, mentions/replies, peer benchmarks, usage history,
- * connected accounts — and put them back at the 'new' stage so they start the
+ * connected accounts - and put them back at the 'new' stage so they start the
  * connect flow over. The user row itself (Telegram identity) and their billing
  * subscription are kept. All deletes run in one transaction so a partial wipe
  * can never strand the account half-cleared. The confirmation copy promises

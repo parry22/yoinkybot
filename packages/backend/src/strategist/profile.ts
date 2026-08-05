@@ -5,21 +5,21 @@
  * by every downstream feature (drafting, consistency, gap analysis, plan).
  *
  * Deliberately lean (2026-07-11 trim): the intake asks 7 fields, not the original
- * 21 — the deeper positioning/audience/constraints/platform fields
+ * 21 - the deeper positioning/audience/constraints/platform fields
  * (sub_niche_angle, credibility_source, unique_pov, secondary_goals,
  * audience_sophistication, audience_pain_point, formality_gradient,
  * vulnerability_threshold, visual_comfort, primary_platform,
  * platform_adaptation, posting_capacity, and all of the old Stage 7
  * constraints trio) were cut for a faster, less form-like onboarding.
  * Their columns stay in the DB (additive-only schema) and are still read by
- * downstream code (gap.ts, plan.ts, draft.ts) — those code paths are null-aware
+ * downstream code (gap.ts, plan.ts, draft.ts) - those code paths are null-aware
  * and degrade gracefully when a field was never asked; nothing crashes on the
  * removal, those specific findings just never fire for new users.
  *
  * This module owns the field taxonomy (the ordered PROFILE_FIELDS the intake
  * walks, the tone menu, the goal options) and the DB access. It deliberately
- * does NOT import state.ts / setStage — the session orchestrator owns stage
- * transitions — so there is no import cycle.
+ * does NOT import state.ts / setStage - the session orchestrator owns stage
+ * transitions - so there is no import cycle.
  */
 import { query, queryOne } from "../db/pool.js";
 import type { BrandProfile } from "./types.js";
@@ -49,7 +49,7 @@ export type ProfileField = (typeof PROFILE_FIELDS)[number];
 
 const ARRAY_FIELDS = new Set<ProfileField>(["inspiration_creators", "tone_selections", "content_pillars"]);
 
-/** Which stage a field belongs to — used to group the intake and by nudges. */
+/** Which stage a field belongs to - used to group the intake and by nudges. */
 export const FIELD_STAGE: Record<ProfileField, number> = {
   niche: 1,
   primary_goal: 2,
@@ -59,7 +59,7 @@ export const FIELD_STAGE: Record<ProfileField, number> = {
   camera_comfort: 6,
 };
 
-/** Stage 2 goal options — a single primary pick, no secondary-goals follow-up. */
+/** Stage 2 goal options - a single primary pick, no secondary-goals follow-up. */
 export const GOAL_OPTIONS = [
   { key: "job", label: "Land a job or recruiter attention" },
   { key: "leads", label: "Generate leads or clients" },
@@ -146,7 +146,7 @@ export async function ensureProfile(userId: string): Promise<void> {
 /**
  * Array fields sometimes arrive as a real JSON array, but the model
  * occasionally emits the whole array double-encoded as one string instead
- * (e.g. value: "[\"naval\",\"dan koe\"]" instead of value: ["naval","dan koe"]) —
+ * (e.g. value: "[\"naval\",\"dan koe\"]" instead of value: ["naval","dan koe"]) -
  * without this, that string got wrapped as a single-item array containing the
  * literal JSON text. Try a real JSON array first, then a comma-split fallback,
  * before ever treating the string as one opaque item.
@@ -159,7 +159,7 @@ export function normalizeArray(value: string | string[]): string[] {
       const parsed = JSON.parse(trimmed);
       if (Array.isArray(parsed)) return parsed.map((x) => String(x));
     } catch {
-      // not actually JSON — fall through to comma-split
+      // not actually JSON - fall through to comma-split
     }
   }
   if (!trimmed) return [];
@@ -169,7 +169,7 @@ export function normalizeArray(value: string | string[]): string[] {
 function normalize(field: ProfileField, value: string | string[]): string | string[] | null {
   if (ARRAY_FIELDS.has(field)) return normalizeArray(value);
   const scalar = Array.isArray(value) ? value[0] : value;
-  // An empty string means "no value" (the skip path's sentinel) — store NULL,
+  // An empty string means "no value" (the skip path's sentinel) - store NULL,
   // not "", since several scalar columns (primary_goal, camera_comfort, …) have
   // a CHECK constraint on their enum and reject "" outright. Every downstream
   // read already treats "" and null as equally falsy, so this is behavior-

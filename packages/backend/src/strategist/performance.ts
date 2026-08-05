@@ -12,7 +12,7 @@ import type { PlanView } from "./plan.js";
 
 /**
  * Deterministic performance analytics for the Monday progress report. Every
- * number the report's LLM sees is computed here — the model interprets, it
+ * number the report's LLM sees is computed here - the model interprets, it
  * never measures. Same architecture as the diagnosis's computed evidence.
  */
 
@@ -23,7 +23,7 @@ const MIN_BASELINE_POSTS = 8;
 /**
  * A split needs at least this many engagement-bearing posts per bucket to mean
  * anything. Was 2, which rendered a median-of-2-vs-median-of-3 under the header
- * "THROUGHLINE SPLIT (the headline comparison)" — a coin flip presented as the
+ * "THROUGHLINE SPLIT (the headline comparison)" - a coin flip presented as the
  * report's central finding. 4 is still small, which is why renderPerformance now
  * also states the bucket sizes as a sample size the model is told to hedge on.
  */
@@ -46,9 +46,9 @@ export interface PerfPost {
   url: string | null;
   /** Unlock-list idea this post developed, when provenance links them. */
   unlockIdea: string | null;
-  /** Backing capture — lets an outlier be repurposed straight from the report. */
+  /** Backing capture - lets an outlier be repurposed straight from the report. */
   captureId?: string | null;
-  /** Read directly off captures — no subquery needed, unlike orientation, since
+  /** Read directly off captures - no subquery needed, unlike orientation, since
    *  these already live at capture granularity (memory/classification.ts). */
   rhetoricalMode?: string | null;
   sincerityRegister?: string | null;
@@ -73,7 +73,7 @@ export interface PostAnalysis {
   period: { posts: number; withEngagement: number; median: number | null };
   split: { aligned: { posts: number; median: number }; off: { posts: number; median: number } } | null;
   /** Sincere vs everything else (ironic/self_deprecating/absurdist/ambiguous),
-   *  same gating as the throughline split — "your outlier was a shitpost, not
+   *  same gating as the throughline split - "your outlier was a shitpost, not
    *  your usual analytical mode" is a real, useful distinction. */
   sincerityMix: { sincere: { posts: number; median: number }; other: { posts: number; median: number } } | null;
   outliers: Outlier[];
@@ -97,7 +97,7 @@ export function analyzePosts(posts: PerfPost[], periodStartMs: number, nowMs: nu
   const periodWithEng = inPeriod.filter((p) => p.engagement !== null);
   const periodMedian = median(periodWithEng.map((p) => p.engagement!));
 
-  // Throughline split — only over period posts where both engagement and an
+  // Throughline split - only over period posts where both engagement and an
   // alignment reading exist, and only when each bucket is big enough to mean anything.
   const alignedPosts = periodWithEng.filter((p) => p.alignedDistance !== null && p.alignedDistance < ALIGNED_DISTANCE);
   const offPosts = periodWithEng.filter((p) => p.alignedDistance !== null && p.alignedDistance >= ALIGNED_DISTANCE);
@@ -109,7 +109,7 @@ export function analyzePosts(posts: PerfPost[], periodStartMs: number, nowMs: nu
         }
       : null;
 
-  // Sincere vs not — only over period posts that actually carry a sincerity
+  // Sincere vs not - only over period posts that actually carry a sincerity
   // read (older captures/legacy data have none, correctly excluded rather
   // than guessed at).
   const sincerePosts = periodWithEng.filter((p) => p.sincerityRegister === "sincere");
@@ -172,13 +172,13 @@ export interface PerformanceData {
 function smallSampleCaveat(a: number, b: number): string {
   const n = Math.min(a, b);
   if (n >= CONFIDENT_SPLIT_BUCKET) return "";
-  return ` SMALL SAMPLE: the thinner side is ${n} posts, so one post moves the median a lot — state it as a lean, not a proven effect.`;
+  return ` SMALL SAMPLE: the thinner side is ${n} posts, so one post moves the median a lot - state it as a lean, not a proven effect.`;
 }
 
 /** Render the computed block the report LLM is handed. Pure; unit-tested. */
 export function renderPerformance(d: PerformanceData): string {
   const a = d.analysis;
-  const lines: string[] = [`COMPUTED PERFORMANCE (period: last ${a.periodDays} days — every number below is measured, use them verbatim)`];
+  const lines: string[] = [`COMPUTED PERFORMANCE (period: last ${a.periodDays} days - every number below is measured, use them verbatim)`];
 
   if (d.xConfidence === "unavailable") {
     lines.push(`Social engagement: unavailable this period (${d.xConfidenceReason}).`);
@@ -187,7 +187,7 @@ export function renderPerformance(d: PerformanceData): string {
     // connected account, or a source that gave us none). It used to be
     // interpolated raw, so under a header that reads "every number below is
     // measured, use them verbatim" the model was literally handed
-    // "baseline median engagement null per post" — and repeated it. The sibling
+    // "baseline median engagement null per post" - and repeated it. The sibling
     // period median on the same line was already guarded; this matches it.
     const baselineMedian = a.baseline.median === null ? "n/a (no prior post carries metrics)" : String(a.baseline.median);
     lines.push(
@@ -225,7 +225,7 @@ export function renderPerformance(d: PerformanceData): string {
           a.outliers
             .map(
               (o) =>
-                `- "${o.content}" — engagement ${o.engagement} (${o.ratio}x baseline)` +
+                `- "${o.content}" - engagement ${o.engagement} (${o.ratio}x baseline)` +
                 `${o.orientation ? ` · ${o.orientation}` : ""}` +
                 `${o.aligned === null ? "" : o.aligned ? " · on-throughline" : " · off-throughline"}` +
                 `${o.sincerityRegister && o.sincerityRegister !== "sincere" ? ` · ${o.sincerityRegister.replace("_", "-")}, not your usual mode` : ""}` +
@@ -272,7 +272,7 @@ export interface RefreshOpts {
 
 /**
  * Engagement is captured as a snapshot at /connect time and posts published
- * afterwards never enter the system on their own — so before each performance
+ * afterwards never enter the system on their own - so before each performance
  * read, re-pull the user's recent X history: refresh metrics on posts we
  * already hold (matched by client_id) and ingest genuinely new ones through
  * the normal extract pipeline (oldest first, so belief reconciliation stays
@@ -311,7 +311,7 @@ export async function refreshXEngagement(userId: string, maxPosts = 100, opts: R
         updated++;
         continue;
       }
-      // Metric refreshes on posts we already hold happen above for EVERYONE — a
+      // Metric refreshes on posts we already hold happen above for EVERYONE - a
       // plain UPDATE, and the whole point of the job. Only the LLM-backed ingest
       // of genuinely new posts is gated (see RefreshOpts.ingestNew).
       if (!ingestNew) {
@@ -340,7 +340,7 @@ export async function refreshXEngagement(userId: string, maxPosts = 100, opts: R
 
     // Refresh the profile facts too, not just the per-post metrics. `followers`
     // is read straight off connected_accounts.meta by the analytics page, and
-    // before this it only ever changed on a full reconnect — so a user's
+    // before this it only ever changed on a full reconnect - so a user's
     // follower count sat frozen at its connect-day value indefinitely. Merge
     // rather than replace: meta also carries cadence stats written elsewhere.
     await query(
@@ -493,7 +493,7 @@ const PULSE_LOOKBACK_DAYS = 3;
  * Next-day feedback, not two-weeks-later feedback: a light engagement refresh,
  * then one message when a post published in the last few days is running well
  * above the user's own baseline. Shares the proactive budget (it's a nudge,
- * not a report), dedupes per capture, carries a repurpose button — acting on
+ * not a report), dedupes per capture, carries a repurpose button - acting on
  * a measured signal, exactly the outlier exception the repurposing spec allows.
  */
 export async function handlePerformancePulse(): Promise<void> {
@@ -514,11 +514,11 @@ export async function handlePerformancePulse(): Promise<void> {
 }
 
 export async function pulseForUser(userId: string, settings: UserSettings): Promise<boolean> {
-  // Refresh first (2 pages — recent posts only), then measure. Skip it when the
+  // Refresh first (2 pages - recent posts only), then measure. Skip it when the
   // twice-daily sweep (jobs/x-refresh.ts, 01:00 & 13:00 UTC) already pulled this
   // account recently: the pulse runs at 04:45, so without this gate every
   // Telegram user with an active plan gets a second full pull 3h45m after the
-  // first — paying twice for data that hasn't moved.
+  // first - paying twice for data that hasn't moved.
   const fresh = await queryOne<{ fresh: boolean }>(
     `SELECT (last_refreshed_at > now() - interval '6 hours') AS fresh
        FROM connected_accounts WHERE user_id = $1 AND platform = 'x'`,
@@ -544,7 +544,7 @@ export async function pulseForUser(userId: string, settings: UserSettings): Prom
     .sort((a, b) => b.engagement! - a.engagement!);
   if (candidates.length === 0) return false;
 
-  // One per capture, ever — a post gets celebrated once, not daily while hot.
+  // One per capture, ever - a post gets celebrated once, not daily while hot.
   let pick: (typeof candidates)[number] | null = null;
   for (const c of candidates) {
     const seen = await queryOne(
@@ -559,7 +559,7 @@ export async function pulseForUser(userId: string, settings: UserSettings): Prom
   if (!pick) return false;
 
   const cadence = await canDeliverProactive(userId, settings);
-  if (!cadence.ok) return false; // still within lookback tomorrow — it'll get its moment
+  if (!cadence.ok) return false; // still within lookback tomorrow - it'll get its moment
 
   const ratio = Math.round((pick.engagement! / baseline) * 10) / 10;
   const surfacing = await queryOne<{ id: string }>(

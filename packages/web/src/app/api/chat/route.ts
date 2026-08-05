@@ -12,7 +12,7 @@ export const maxDuration = 120;
 export async function POST(req: Request) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  // Parity with Telegram (chat is walled once the trial lapses) — no LLM spend for free users.
+  // Parity with Telegram (chat is walled once the trial lapses) - no LLM spend for free users.
   if (!(await requirePaid(user)))
     return NextResponse.json({ error: "upgrade_required" }, { status: 402 });
   // Burst guard: the paywall says "may spend", the monthly cap says "how much";

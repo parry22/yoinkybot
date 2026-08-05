@@ -7,14 +7,14 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /**
- * "Add payment" — the in-app card capture. Reached from the trial banner and
+ * "Add payment" - the in-app card capture. Reached from the trial banner and
  * Settings → Billing, AFTER the user has seen the product. It opens the Dodo
  * subscription-with-trial checkout: the card is collected now but not charged
  * until the trial ends, when Dodo auto-charges and converts to paid.
  *
  * The Dodo trial length is the user's REMAINING local trial days, so adding a
  * card on day 5 still charges on day 7 (no free-period extension). A user whose
- * trial already lapsed gets no trial here — they're charged immediately (this
+ * trial already lapsed gets no trial here - they're charged immediately (this
  * doubles as the plain upgrade for the expired state).
  *
  * Robustness: the local `trialing` row already grants access, so if Dodo isn't
@@ -34,7 +34,7 @@ export async function GET(req: Request) {
       ? "founding"
       : planParam === "scale"
         ? "scale"
-        // Lifetime is a ONE-TIME product — createCheckout omits subscription_data
+        // Lifetime is a ONE-TIME product - createCheckout omits subscription_data
         // for it, so it never carries a trial and never renews.
         : planParam === "lifetime"
           ? "lifetime"
@@ -42,7 +42,7 @@ export async function GET(req: Request) {
   if (planParam) await setIntendedPlan(user.id, planParam).catch(() => {});
 
   try {
-    // One read for both the duplicate-subscription check and the trial days —
+    // One read for both the duplicate-subscription check and the trial days -
     // billingOverview already carries trialInfo.
     const ov = await billingOverview(user.id).catch(() => null);
     if (ov?.hasDodoSubscription) {

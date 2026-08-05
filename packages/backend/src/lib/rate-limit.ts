@@ -4,7 +4,7 @@
  * This is the layer BELOW the paywall and ABOVE the monthly caps. The paywall
  * (web/lib/entitlements.ts#requirePaid) decides whether you may spend at all;
  * the plan entitlements decide how much you may spend in a month; neither
- * bounds how fast. A paid user — or anyone holding a live session — could fire
+ * bounds how fast. A paid user - or anyone holding a live session - could fire
  * dozens of concurrent /api/chat/stream or Buyer Radar scans and burn a day of
  * model + twitterapi.io budget in minutes, with the monthly cap only noticing
  * afterwards. This bounds the rate.
@@ -12,7 +12,7 @@
  * Fixed-window counter in Postgres (migration 0036), NOT an in-process map: the
  * web app is Vercel functions, so an in-memory counter limits one ephemeral
  * instance rather than one user. The window resets lazily inside the same
- * UPSERT that increments it, so the whole check is one atomic statement — two
+ * UPSERT that increments it, so the whole check is one atomic statement - two
  * simultaneous requests can never both read a stale count.
  *
  * Fail-OPEN on a database error. These limits protect the budget, not
@@ -31,7 +31,7 @@ export interface RateLimitResult {
   ok: boolean;
   /** Requests left in the current window (0 when limited). */
   remaining: number;
-  /** Seconds until the window resets — what to put in Retry-After. */
+  /** Seconds until the window resets - what to put in Retry-After. */
   retryAfterSec: number;
 }
 
@@ -46,18 +46,18 @@ export interface RateLimitResult {
  * generous for a real user and ruinous for a script.
  */
 export const RATE_LIMITS = {
-  /** Compose / chat turn — several model calls + retrieval per turn. */
+  /** Compose / chat turn - several model calls + retrieval per turn. */
   chat: { limit: 12, windowSec: 60 },
   /** One-shot draft (full drafting pipeline). */
   draft: { limit: 8, windowSec: 60 },
   /** Buyer Radar scan: paid twitterapi.io searches + a composition loop each. */
   buyer_scan: { limit: 3, windowSec: 600 },
-  /** Manual "run this automation now" — a full agent run. */
+  /** Manual "run this automation now" - a full agent run. */
   automation_run: { limit: 6, windowSec: 300 },
   /** The Auto Agent setup interview + agent build (model call per turn). */
   automation_interview: { limit: 30, windowSec: 300 },
   /**
-   * Trends/virals refresh — Apify + twitterapi.io spend. Looser than the other
+   * Trends/virals refresh - Apify + twitterapi.io spend. Looser than the other
    * spend buckets on purpose: this one fires AUTOMATICALLY whenever the
    * Inspiration feed renders empty, so ordinary navigation in and out of the
    * page consumes it. The server-side stale guard already makes repeats cheap
@@ -68,7 +68,7 @@ export const RATE_LIMITS = {
   automation_verdict: { limit: 20, windowSec: 300 },
   /** Media upload → staging (Blob write + probe). */
   media_upload: { limit: 20, windowSec: 300 },
-  /** Reply analytics — a paid timeline read. */
+  /** Reply analytics - a paid timeline read. */
   analytics_replies: { limit: 10, windowSec: 300 },
   /**
    * In-app feedback. Every submission fires a Resend email + a Telegram DM to
@@ -88,7 +88,7 @@ export type RateLimitBucket = keyof typeof RATE_LIMITS;
 
 /**
  * Consume one unit from (user, bucket). Returns ok:false when the window is
- * already full — the caller should answer 429 with `retryAfterSec`.
+ * already full - the caller should answer 429 with `retryAfterSec`.
  *
  * The single statement does all four things: insert-or-find the row, reset the
  * window if it has aged out, increment, and hand back both the new count and
@@ -121,7 +121,7 @@ export async function consumeRateLimit(
     if (count > rule.limit) return { ok: false, remaining: 0, retryAfterSec };
     return { ok: true, remaining: Math.max(0, rule.limit - count), retryAfterSec };
   } catch (err) {
-    // Fail open — see the header comment.
+    // Fail open - see the header comment.
     console.error("rate limit check failed (allowing request)", bucket, err);
     return { ok: true, remaining: rule.limit, retryAfterSec: 0 };
   }
@@ -129,7 +129,7 @@ export async function consumeRateLimit(
 
 /** Human-facing copy for a 429, in Yoinky's register. */
 export function rateLimitMessage(retryAfterSec: number): string {
-  if (retryAfterSec <= 90) return `easy — you're going faster than I can think. try again in ${Math.ceil(retryAfterSec)}s.`;
+  if (retryAfterSec <= 90) return `easy - you're going faster than I can think. try again in ${Math.ceil(retryAfterSec)}s.`;
   const mins = Math.ceil(retryAfterSec / 60);
   return `you've hit the burst limit on this one. try again in about ${mins} min${mins === 1 ? "" : "s"}.`;
 }

@@ -3,7 +3,7 @@ import styles from "./page-skeleton.module.css";
 /**
  * A neutral loading placeholder shown while a new app page's server component
  * fetches its data (wired via the App Router `loading.tsx` files). It mirrors the
- * common panel layout — a header plus a few cards — so navigation feels instant:
+ * common panel layout - a header plus a few cards - so navigation feels instant:
  * the shell and this skeleton paint immediately, then the real page swaps in.
  */
 export function PageSkeleton({ cards = 3 }: { cards?: number }) {

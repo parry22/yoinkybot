@@ -1,6 +1,6 @@
 /**
  * Content moderation gate. Deterministic (doctrine: code decides, not the model),
- * fast, and free — a lexicon of clearly pornographic / sexually explicit terms and
+ * fast, and free - a lexicon of clearly pornographic / sexually explicit terms and
  * abusive slurs, matched on word boundaries against a lightly normalized copy of
  * the text. Any hit means the input is rejected with a single, consistent
  * "against platform guidelines" pushback.

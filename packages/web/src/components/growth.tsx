@@ -63,17 +63,17 @@ function scoreLabel(s: number): string {
 /**
  * The Growth board. Ordered by what earns a DAILY visit rather than by what's
  * biggest to render:
- *   1. urgency  — only when the streak is actually at risk (conditional, so it
+ *   1. urgency  - only when the streak is actually at risk (conditional, so it
  *                 never becomes permanent furniture)
- *   2. next move — the single highest-priority open quest + its CTA. One clear
+ *   2. next move - the single highest-priority open quest + its CTA. One clear
  *                 thing to do is what brings someone back; three vanity numbers
  *                 competing for attention is what the old layout led with.
- *   3. momentum — level / score / streak as three compact equal tiles. The score
+ *   3. momentum - level / score / streak as three compact equal tiles. The score
  *                 breakdown (4 sub-bars) is collapsed by default; expanded it was
  *                 the single densest thing on the page.
- *   4. queue    — the remaining quests, lighter than the promoted one.
- *   5. progress — milestones.
- *   6. identity — read-once reference (headline, throughline, territory), so last.
+ *   4. queue    - the remaining quests, lighter than the promoted one.
+ *   5. progress - milestones.
+ *   6. identity - read-once reference (headline, throughline, territory), so last.
  */
 export function Growth({ data }: { data: Data }) {
   const [showDone, setShowDone] = useState(false);
@@ -101,7 +101,7 @@ export function Growth({ data }: { data: Data }) {
           <div className={styles.urgent}>
             <span className={styles.urgentFlame} aria-hidden="true">🔥</span>
             <span className={styles.urgentText}>
-              Your {data.streak.current}-week streak is at risk — ship one post to keep it.
+              Your {data.streak.current}-week streak is at risk - ship one post to keep it.
             </span>
             <a href="/app/compose" className={styles.urgentCta}>Compose</a>
           </div>
@@ -122,7 +122,7 @@ export function Growth({ data }: { data: Data }) {
                 <div className={styles.levelSub}>
                   {data.xpForNextLevel
                     ? `${data.xpForNextLevel - data.xpIntoLevel} XP to ${data.nextTitle}`
-                    : "Max level — legend"}
+                    : "Max level - legend"}
                 </div>
               </div>
             </div>
@@ -287,7 +287,7 @@ export function Growth({ data }: { data: Data }) {
             <div className={styles.lockedRead}>
               <div className={styles.lockedTitle}>🔒 Your brand read is locked</div>
               <p>
-                Clear the setup quests above — connect X, finish your profile, get your diagnosis — and your identity,
+                Clear the setup quests above - connect X, finish your profile, get your diagnosis - and your identity,
                 throughline, and highest-value territory unlock right here.
               </p>
             </div>

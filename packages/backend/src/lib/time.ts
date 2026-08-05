@@ -9,7 +9,7 @@ export interface UserSettings {
   resurface_per_week?: number;
   timezone?: string;
   /** Deliver alerts about mentions/comments on the user's own posts (reputation
-   *  alerts + reply-draft offers). Default OFF for everyone — only true when the
+   *  alerts + reply-draft offers). Default OFF for everyone - only true when the
    *  user explicitly opts in via `/settings mentions on`. */
   mention_alerts?: boolean;
 }

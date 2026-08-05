@@ -9,7 +9,7 @@ import { TONE_CLUSTER, TONE_LABEL, type BrandProfile } from "./profile.js";
 /**
  * The GAP the onboarding pays off on (Stage 10): the user's ACTUAL public history
  * measured against the profile they STATED in Stages 1-7. Every number here is
- * computed deterministically — positioning drift, goal/content mismatch, tone
+ * computed deterministically - positioning drift, goal/content mismatch, tone
  * gap, audience fit, and the plain baseline (audience size, cadence, top/bottom
  * posts). The reveal prompt only interprets these numbers; it never invents them.
  *
@@ -38,8 +38,8 @@ const ON_NICHE_DISTANCE = 0.5;
 const MIN_POSITIONING_POSTS = 6;
 /**
  * At or above this many, the off-niche percentage is worth stating flatly. Below
- * it the figure is still computed and shown — dropping it would lose a real
- * finding — but it travels with its n and an instruction to hedge. The old code
+ * it the figure is still computed and shown - dropping it would lose a real
+ * finding - but it travels with its n and an instruction to hedge. The old code
  * printed "X% sit OFF the stated niche. USE THIS NUMBER." from as few as 6 posts,
  * where a single post swings the figure 17 points.
  */
@@ -96,7 +96,7 @@ async function positioningBlock(
   const confident = scored.length >= CONFIDENT_POSITIONING_POSTS;
   const claim = confident
     ? `${offPct}% sit OFF the stated niche. USE THIS NUMBER.`
-    : `${offPct}% sit OFF the stated niche — but that is ${off.length} of only ${scored.length} posts, so one post moves it ` +
+    : `${offPct}% sit OFF the stated niche - but that is ${off.length} of only ${scored.length} posts, so one post moves it ` +
       `${Math.round(100 / scored.length)} points. State it as an early read with the sample size attached, never as a settled percentage.`;
   return {
     text:
@@ -177,9 +177,9 @@ async function audienceBlock(userId: string, profile: BrandProfile, voice: Voice
   const parts: string[] = [];
   if (profile.audience_sophistication && voice) {
     if (profile.audience_sophistication === "expert" && voice.meanSentenceLen < 9) {
-      parts.push(`You write for an expert audience, but the prose is very simple (median ${voice.meanSentenceLen} words) — may read as under-pitched to peers.`);
+      parts.push(`You write for an expert audience, but the prose is very simple (median ${voice.meanSentenceLen} words) - may read as under-pitched to peers.`);
     } else if (profile.audience_sophistication === "beginner" && voice.meanSentenceLen > 24) {
-      parts.push(`You write for beginners, but the prose runs long and dense (median ${voice.meanSentenceLen} words) — may lose them.`);
+      parts.push(`You write for beginners, but the prose runs long and dense (median ${voice.meanSentenceLen} words) - may lose them.`);
     }
   }
   if (profile.audience_pain_point && ideas.length >= 6) {
@@ -205,13 +205,13 @@ export interface RankablePost {
 const MIN_RANKABLE_POSTS = 4;
 
 /**
- * "Your best posts vs your quietest" — or the honest admission that there is no
+ * "Your best posts vs your quietest" - or the honest admission that there is no
  * such distinction to draw. Pure so the degenerate cases are unit-testable.
  *
  * THE BUG THIS FIXES. The old code filtered on `e !== null` and sorted, then
  * printed slice(0,2) as TOP and slice(-2) as QUIETEST whenever four posts
- * survived. For an account whose source reports real zeros — a small or new
- * account, which is exactly who this onboarding gap analysis runs for — every
+ * survived. For an account whose source reports real zeros - a small or new
+ * account, which is exactly who this onboarding gap analysis runs for - every
  * post scores 0, so the sort is a no-op and the reveal prompt received two
  * identical "(0 eng)" lists labelled as opposites, which the model then
  * narrated as a performance contrast. The `else if (x)` honest fallback below
@@ -234,11 +234,11 @@ export function topBottomLines(posts: RankablePost[], hasX: boolean): string[] {
         `QUIETEST CONNECTED POSTS:\n${withEng.slice(-2).map(fmt).join("\n")}`,
       ];
     }
-    // Metrics exist and are all the same number — usually all zero. Naming the
+    // Metrics exist and are all the same number - usually all zero. Naming the
     // number is more useful than pretending there's a best and a worst.
     return [
       `Connected post-level engagement is flat: all ${withEng.length} posts with metrics score exactly ${top}, so there is no best ` +
-        `and no quietest post to compare. Say that plainly — do NOT invent a performance contrast.`,
+        `and no quietest post to compare. Say that plainly - do NOT invent a performance contrast.`,
     ];
   }
   if (hasX) {
@@ -323,7 +323,7 @@ async function baselineBlock(
 
 /**
  * Compute the full gap analysis. Deterministic; the reveal prompt narrates it.
- * Defensive throughout — any section with too little data says so rather than
+ * Defensive throughout - any section with too little data says so rather than
  * fabricating a finding.
  */
 export async function computeGap(userId: string, profile: BrandProfile): Promise<GapResult> {

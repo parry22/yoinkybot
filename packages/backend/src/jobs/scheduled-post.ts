@@ -10,18 +10,18 @@ import type { ScheduledPostJob } from "./boss.js";
  * Fires when a scheduled post comes due (enqueued with startAfter = its time).
  * Claims the row atomically (pending → publishing) so a cancel that landed in
  * the meantime, or a duplicate delivery, can't double-post. Then publishes and
- * DMs the user the outcome — a permalink on success, the real reason on failure
+ * DMs the user the outcome - a permalink on success, the real reason on failure
  * (most often: the account isn't connected for posting yet).
  *
  * The DM is best-effort, not the contract: dmChannel().say() no-ops for a user
  * with no telegram_id, which is every web-only user. Every terminal state is
  * therefore also written to the row (`status` + `error`) and the Scheduled screen
- * shows recently failed posts with that error — see scheduling/service.ts#listScheduled.
+ * shows recently failed posts with that error - see scheduling/service.ts#listScheduled.
  */
 export async function handleScheduledPost(job: ScheduledPostJob): Promise<void> {
   // Atomic claim: only the transition out of 'pending' wins. A canceled or
   // already-claimed row returns nothing and we stop. The attempt counter is what
-  // bounds the reaper below — see reapStuckPublishing.
+  // bounds the reaper below - see reapStuckPublishing.
   const post = await queryOne<{ platform: Platform; content: string }>(
     `UPDATE scheduled_posts
         SET status = 'publishing', publish_attempts = publish_attempts + 1, updated_at = now()
@@ -42,7 +42,7 @@ export async function handleScheduledPost(job: ScheduledPostJob): Promise<void> 
     ]);
   };
   /** Release the claim so the post stays retryable. Only for genuinely transient
-   *  conditions — anything the user has to act on must go through `fail`, or a
+   *  conditions - anything the user has to act on must go through `fail`, or a
    *  broken post loops until it runs out of attempts. */
   const releaseClaim = async (reason: string) => {
     await query(`UPDATE scheduled_posts SET status = 'pending', error = $2, updated_at = now() WHERE id = $1`, [
@@ -53,13 +53,13 @@ export async function handleScheduledPost(job: ScheduledPostJob): Promise<void> 
 
   if (!publishConfigured(platform)) {
     await fail(`${label} posting isn't configured on this instance`);
-    await channel.say(`couldn't post your scheduled ${label} update — posting isn't set up on my end yet.`);
+    await channel.say(`couldn't post your scheduled ${label} update - posting isn't set up on my end yet.`);
     return;
   }
 
   // Renew the token if it's expired or about to be. Until this existed the
   // publisher used whatever access token was stored at connect time, which for X
-  // is dead after ~2 hours — so a post scheduled for tomorrow reliably 401'd.
+  // is dead after ~2 hours - so a post scheduled for tomorrow reliably 401'd.
   const resolved = await ensureWriteAuth(job.userId, platform);
   if (!resolved.ok) {
     if (resolved.reason === "refresh_failed") {
@@ -72,9 +72,9 @@ export async function handleScheduledPost(job: ScheduledPostJob): Promise<void> 
     await fail(resolved.detail);
     await channel.say(
       resolved.reason === "needs_reauth"
-        ? `heads up — your scheduled ${label} post didn't go out. your ${label} connection expired and i can't renew it, ` +
+        ? `heads up - your scheduled ${label} post didn't go out. your ${label} connection expired and i can't renew it, ` +
             `so you'll need to reconnect ${label} for posting. the post is still saved.`
-        : `heads up — your scheduled ${label} post didn't go out. your ${label} account isn't connected for posting yet, ` +
+        : `heads up - your scheduled ${label} post didn't go out. your ${label} account isn't connected for posting yet, ` +
             `so i can only draft, not publish. connect it and i'll be able to ship these for you.`,
     );
     return;
@@ -83,7 +83,7 @@ export async function handleScheduledPost(job: ScheduledPostJob): Promise<void> 
 
   // Media goes up first and separately: the platform wants ids on the post call,
   // and a video can take minutes to transcode. A media failure fails the whole
-  // post rather than quietly publishing the text alone — someone who attached a
+  // post rather than quietly publishing the text alone - someone who attached a
   // chart meant the chart to be part of the point.
   const media = await mediaForPost(job.scheduledPostId).catch(() => []);
   let mediaIds: string[] = [];
@@ -95,11 +95,11 @@ export async function handleScheduledPost(job: ScheduledPostJob): Promise<void> 
       // failed", and drop the credential so nothing else retries against it.
       if (uploaded.authExpired) await markWriteAuthDead(job.userId, platform);
       const reason = uploaded.authExpired
-        ? `${label} rejected the upload — the connection expired, reconnect ${label} to publish`
+        ? `${label} rejected the upload - the connection expired, reconnect ${label} to publish`
         : (uploaded.error ?? "media upload failed");
       await fail(reason);
       await channel.say(
-        `your scheduled ${label} post didn't go out — i couldn't upload the ${media.length === 1 ? "attachment" : "attachments"}: ${reason}`,
+        `your scheduled ${label} post didn't go out - i couldn't upload the ${media.length === 1 ? "attachment" : "attachments"}: ${reason}`,
       );
       return;
     }
@@ -110,7 +110,7 @@ export async function handleScheduledPost(job: ScheduledPostJob): Promise<void> 
   if (!result.ok) {
     if (result.authExpired) await markWriteAuthDead(job.userId, platform);
     const reason = result.authExpired
-      ? `${label} connection expired — reconnect ${label} to publish`
+      ? `${label} connection expired - reconnect ${label} to publish`
       : (result.error ?? "unknown publish error");
     await fail(reason);
     await channel.say(`your scheduled ${label} post didn't go through: ${reason}`);
@@ -129,8 +129,8 @@ export async function handleScheduledPost(job: ScheduledPostJob): Promise<void> 
 /**
  * How long a row may sit in 'publishing' before we assume the run that claimed it
  * is gone. Must be comfortably longer than the queue's expiry (boss.ts sets 20
- * minutes for posts.scheduled) so a slow-but-alive publish — a big video's
- * transcode poll alone budgets 5 minutes — is never reaped out from under itself
+ * minutes for posts.scheduled) so a slow-but-alive publish - a big video's
+ * transcode poll alone budgets 5 minutes - is never reaped out from under itself
  * and double-posted.
  */
 const STUCK_AFTER_MINUTES = 30;
@@ -145,15 +145,15 @@ const MAX_PUBLISH_ATTEMPTS = 3;
  * Return posts stranded in 'publishing' to the queue (or fail them honestly).
  *
  * THE BUG THIS FIXES: handleScheduledPost claims the row before it does any
- * work, and every retry path requires status='pending'. If the process died — or
- * pg-boss expired the job — between the claim and a terminal write, the retry's
+ * work, and every retry path requires status='pending'. If the process died - or
+ * pg-boss expired the job - between the claim and a terminal write, the retry's
  * claim matched nothing, so the row sat at 'publishing' with `error` NULL
  * forever: no post, no DM, no failure the user could see, and the slot silently
  * consumed. That was reachable in ordinary use, since a video's transcode poll
  * alone could outlast the queue's old 10-minute expiry.
  *
  * Recovery re-sends the pg-boss job rather than only flipping the status,
- * because the job that stranded the row is by definition gone — a 'pending' row
+ * because the job that stranded the row is by definition gone - a 'pending' row
  * with nothing queued behind it would never fire again.
  *
  * Safe on a single-instance backend (docs/INTERNAL.md): the only writer racing
@@ -178,7 +178,7 @@ export async function reapStuckPublishing(): Promise<void> {
   for (const row of rows) {
     const label = row.platform === "x" ? "X" : "LinkedIn";
     if (row.status === "pending") {
-      console.warn(`scheduled post ${row.id} was stuck in publishing — requeued`);
+      console.warn(`scheduled post ${row.id} was stuck in publishing - requeued`);
       // startAfter is deliberately omitted: it's already overdue.
       await getBoss()
         .send(QUEUES.scheduledPost, { scheduledPostId: row.id, userId: row.user_id })
@@ -189,7 +189,7 @@ export async function reapStuckPublishing(): Promise<void> {
     await dmChannel(row.user_id)
       .say(
         `your scheduled ${label} post kept stalling mid-publish, so i've stopped retrying it. ` +
-          `it's marked failed on your Scheduled screen — re-queue it there when you want another go.`,
+          `it's marked failed on your Scheduled screen - re-queue it there when you want another go.`,
       )
       .catch(() => {});
   }

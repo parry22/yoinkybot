@@ -9,7 +9,7 @@ export interface ClassifyMentionVars {
 
 /**
  * Cheap-tier signal extraction on one incoming public mention. These booleans
- * feed the deterministic reply-worthy scorer — this call classifies, it never
+ * feed the deterministic reply-worthy scorer - this call classifies, it never
  * decides whether the mention deserves attention.
  */
 export const classifyMention: Prompt<ClassifyMentionVars> = {
@@ -18,7 +18,7 @@ export const classifyMention: Prompt<ClassifyMentionVars> = {
   tier: "cheap",
   system: `You classify one public reply/mention directed at a person. Three signals, judged strictly:
 
-- is_question: does it contain a DIRECT question aimed at them — something they could actually
+- is_question: does it contain a DIRECT question aimed at them - something they could actually
   answer? Rhetorical flourishes and questions aimed at the void are false.
 - is_substantive_challenge: does it meaningfully push back on something they've said (their stated
   positions are provided)? Generic agreement, compliments, emoji, "this", "so true", spam, and

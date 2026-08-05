@@ -10,8 +10,8 @@ import { LOCKDOWN, PROTOCOL_OVERRIDE, sdkConfigured, sdkEnv } from "./sdk-option
 /**
  * The agent-runtime adapter (docs/INTERNAL §3n).
  *
- * `runAgentLoop(feature, req)` is a DROP-IN for `runToolLoop(req)` — same request
- * shape, same `{ output, steps }` result — that dispatches to either the bespoke
+ * `runAgentLoop(feature, req)` is a DROP-IN for `runToolLoop(req)` - same request
+ * shape, same `{ output, steps }` result - that dispatches to either the bespoke
  * runner or the Claude Agent SDK based on that feature's `AGENT_RUNTIME_*` flag.
  * Callsites change one line and keep both runtimes available, so a bad flip is a
  * config change away from being undone rather than a revert.
@@ -25,7 +25,7 @@ import { LOCKDOWN, PROTOCOL_OVERRIDE, sdkConfigured, sdkEnv } from "./sdk-option
  * 2. HOOK MATCHERS NEED THE QUALIFIED NAME. In-process MCP tools are
  *    `mcp__yoinky__<tool>`; a bare name matches nothing and the PreToolUse hook
  *    never fires. That hook IS the anti-loop ledger, so a bare matcher would fail
- *    OPEN — the exact bug the first spike run hid.
+ *    OPEN - the exact bug the first spike run hid.
  * 3. NEVER METER FROM THE SDK. Its `total_cost_usd` over-reports grok-4.5 by
  *    ~3.4× (it prices the unknown model `yoinky-agent` off an Anthropic default).
  *    Cost is logged for shape only; LiteLLM's spend log is the ledger.
@@ -60,7 +60,7 @@ export async function runAgentLoop<S extends z.ZodTypeAny>(
   }
 
   if (!sdkConfigured()) {
-    // Misconfiguration, not a runtime failure — say so precisely instead of
+    // Misconfiguration, not a runtime failure - say so precisely instead of
     // letting the SDK fail with an opaque connection error.
     const why = `agent-runtime [${feature}] sdk mode requires LITELLM_BASE_URL + LITELLM_API_KEY`;
     if (!config.AGENT_SDK_FALLBACK_TO_LEGACY) throw new Error(why);
@@ -93,7 +93,7 @@ async function runViaSdk<S extends z.ZodTypeAny>(
   // a PreToolUse hook, because by the time a tool handler runs the call already
   // counted against the turn budget.
   const seen = new Set<string>();
-  // Tool calls the hook has let through — the loop's real budget (see maxTurns).
+  // Tool calls the hook has let through - the loop's real budget (see maxTurns).
   let approved = 0;
 
   const { tools, derived } = toolsFromSchema(req.toolSchema, req.executors, {
@@ -122,7 +122,7 @@ async function runViaSdk<S extends z.ZodTypeAny>(
     const stream = query({
       // The loop's first user message. The legacy runner re-rendered this each
       // iteration to inject accumulated notes; the SDK keeps its own conversation
-      // state across turns, so notes are unnecessary — hence `[]`.
+      // state across turns, so notes are unnecessary - hence `[]`.
       prompt: req.renderUser([]),
       options: {
         model: config.AGENT_MODEL,
@@ -130,13 +130,13 @@ async function runViaSdk<S extends z.ZodTypeAny>(
         env: sdkEnv(),
         systemPrompt: req.system + PROTOCOL_OVERRIDE,
         // The TOOL BUDGET is enforced in the PreToolUse hook below, not by
-        // maxTurns — mirroring the legacy runner, where exhausting the budget
+        // maxTurns - mirroring the legacy runner, where exhausting the budget
         // forces a final answer rather than killing the run. maxTurns is only a
         // runaway backstop, so it needs headroom: the model spends one turn per
         // tool call and needs at least one more to compose. Setting it to
         // maxToolCalls + 1 (the obvious choice) makes a loop that uses its full
         // budget die with "Reached maximum number of turns" instead of
-        // answering — observed, not theorised.
+        // answering - observed, not theorised.
         maxTurns: req.maxToolCalls + 3,
         maxBudgetUsd: config.AGENT_MAX_BUDGET_USD,
         ...LOCKDOWN,
@@ -162,7 +162,7 @@ async function runViaSdk<S extends z.ZodTypeAny>(
                   },
                 });
 
-                // Budget first — this is the legacy runner's `forceFinal`, and it
+                // Budget first - this is the legacy runner's `forceFinal`, and it
                 // must be a deny (which the model can recover from by answering)
                 // rather than a turn-cap kill (which it cannot).
                 if (approved >= req.maxToolCalls) {
@@ -175,7 +175,7 @@ async function runViaSdk<S extends z.ZodTypeAny>(
                 if (seen.has(key)) {
                   return deny(
                     `Repeat call to ${tool_name ?? d.name} with identical arguments. ` +
-                      `Do not call it again — answer with what you already have.`,
+                      `Do not call it again - answer with what you already have.`,
                   );
                 }
                 seen.add(key);
@@ -198,7 +198,7 @@ async function runViaSdk<S extends z.ZodTypeAny>(
     if (result == null) throw new Error(`agent-runtime [${feature}] stream ended with no result message`);
     if (result.subtype !== "success") {
       // Caps also *can* arrive here (Phase 0 saw them throw, but do not assume
-      // one channel) — either way it is a non-success and the caller gets legacy.
+      // one channel) - either way it is a non-success and the caller gets legacy.
       throw new Error(`agent-runtime [${feature}] result subtype=${result.subtype}`);
     }
 
@@ -207,7 +207,7 @@ async function runViaSdk<S extends z.ZodTypeAny>(
 
     const memDelta = memBefore != null ? peakMem - memBefore : null;
     console.log(
-      `agent-runtime [${req.eventType}] sdk ok — steps=${steps.length} ` +
+      `agent-runtime [${req.eventType}] sdk ok - steps=${steps.length} ` +
         `ms=${Date.now() - started} memΔ=${memDelta == null ? "n/a" : `${memDelta}MB`} ` +
         // Logged for shape only. Finding 3: this number is NOT our cost of record.
         `sdkCostUsd(unreliable)=${result.total_cost_usd}`,

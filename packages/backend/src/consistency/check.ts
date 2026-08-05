@@ -42,15 +42,15 @@ export interface ConsistencyResult {
 /**
  * Pre-publish check: embed the draft, retrieve nearby positions, let the
  * frontier model compare meaning. Flags show the exact prior statement,
- * its dates, and its source memories — never a vague warning.
+ * its dates, and its source memories - never a vague warning.
  *
  * Two paths, chosen by a deterministic ambiguity signal (never by the model):
- * the common case — one clean top match with a clear similarity margin — stays
+ * the common case - one clean top match with a clear similarity margin - stays
  * a single-shot compare (v1). The bounded agent (v2) runs on either of two
  * signals: (a) the top-2 matches sit within CONSISTENCY_AMBIGUITY_DELTA of each
  * other ("which position is this even about" is genuinely uncertain), decided
  * from embeddings before any model call; or (b) the single-shot pass itself
- * comes back below CONSISTENCY_CONFIDENCE_THRESHOLD — a shaky first read is
+ * comes back below CONSISTENCY_CONFIDENCE_THRESHOLD - a shaky first read is
  * escalated to the deeper pass instead of being acted on. Either way the code
  * decides when to spend the loop; the model never chooses to wander.
  */
@@ -73,7 +73,7 @@ export async function checkConsistency(userId: string, draft: string): Promise<C
      LIMIT 12`,
     [userId, toVector(embedding)],
   );
-  // The active plan throughline, if any — lets the check flag off-brand drift.
+  // The active plan throughline, if any - lets the check flag off-brand drift.
   const planRow = await queryOne<{ throughline: string }>(
     `SELECT throughline FROM brand_plans WHERE user_id = $1 AND status = 'active' ORDER BY created_at DESC LIMIT 1`,
     [userId],
@@ -88,7 +88,7 @@ export async function checkConsistency(userId: string, draft: string): Promise<C
     try {
       return await checkWithAgent(userId, draft, nearby, throughline);
     } catch (err) {
-      // The agent path is an upgrade, not a dependency — fall through to the
+      // The agent path is an upgrade, not a dependency - fall through to the
       // single-shot compare rather than failing the check.
       console.error("consistency agent failed; falling back to single-shot compare", err);
     }
@@ -108,7 +108,7 @@ export async function checkConsistency(userId: string, draft: string): Promise<C
   // Second escalation signal: the single-shot pass isn't sure of its own
   // verdict. Rather than act on a snap call (and risk a trust-eroding false
   // flag), hand it to the bounded agent to pin down the real conflict. Only
-  // from this non-ambiguous path — the ambiguous branch already ran the agent.
+  // from this non-ambiguous path - the ambiguous branch already ran the agent.
   if (parsed.confidence < config.CONSISTENCY_CONFIDENCE_THRESHOLD) {
     try {
       return await checkWithAgent(userId, draft, nearby, throughline);
@@ -204,7 +204,7 @@ interface NearbyPosition {
 /**
  * The bounded agent path for a genuinely ambiguous match. The tools let the
  * model pin down WHICH prior statement (if any) the draft conflicts with;
- * verdicts under CONSISTENCY_CONFIDENCE_THRESHOLD are reported as clear —
+ * verdicts under CONSISTENCY_CONFIDENCE_THRESHOLD are reported as clear -
  * a shaky catch costs more trust than a missed one.
  */
 async function checkWithAgent(
@@ -310,7 +310,7 @@ async function checkWithAgent(
     notes.push(
       `reads as intentional evolution, not a slip: you said "${output.prior_statement}"${
         output.date ? ` (${output.date.slice(0, 10)})` : ""
-      } — ${output.explanation}`,
+      } - ${output.explanation}`,
     );
   }
   return { clear: true, flags: [], checkedPositions: nearby.length, notes: notes.length ? notes : undefined };

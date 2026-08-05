@@ -1,5 +1,5 @@
 /**
- * The ICP (ideal customer profile) — who BUYS the user's thing, which overlaps
+ * The ICP (ideal customer profile) - who BUYS the user's thing, which overlaps
  * but is not the same as brand_profiles (the creator's brand + content audience).
  * Buyer Radar needs "who is in-market for my product" to search, score, and gate,
  * so this is a distinct one-row-per-user store.
@@ -48,7 +48,7 @@ export async function getIcp(userId: string): Promise<IcpProfile | null> {
 
 /**
  * The feature can only run with the two load-bearing fields set (what you sell +
- * who buys). Everything else sharpens the search but isn't required — so the
+ * who buys). Everything else sharpens the search but isn't required - so the
  * intake stays minimal (3-4 questions).
  */
 export function icpComplete(icp: IcpProfile | null): boolean {
@@ -64,7 +64,7 @@ export async function prefillIcp(userId: string): Promise<IcpPrefill> {
   const p = await getProfile(userId);
   const buyer = [p?.audience_who, p?.audience_pain_point ? `pain: ${p.audience_pain_point}` : ""]
     .filter(Boolean)
-    .join(" — ");
+    .join(" - ");
   return {
     product_oneliner: p?.niche ?? "",
     buyer_description: buyer,

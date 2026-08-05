@@ -13,7 +13,7 @@ import { config } from "../config.js";
  * This is what makes the migration work WITHOUT a Railway plan upgrade. Measured
  * on the current plan: the limit is 8 GB / 8 vCPU and the backend idles at
  * ~156 MB (2%). Even at the pessimistic ~1 GiB-per-subprocess estimate, the
- * default concurrency of 2 peaks near 2.2 GB — roughly a quarter of the box. The
+ * default concurrency of 2 peaks near 2.2 GB - roughly a quarter of the box. The
  * plan was never the binding constraint; the missing piece was a bound.
  *
  * CONTAINER MEMORY, NOT HOST MEMORY: `os.freemem()` reports the *host's* free
@@ -66,7 +66,7 @@ const MB = 1024 * 1024;
 export function hasMemoryHeadroom(): { ok: boolean; detail: string } {
   const { limitBytes, usedBytes } = readContainerMemory();
   if (limitBytes == null || usedBytes == null) {
-    return { ok: true, detail: "cgroup unreadable — gating on concurrency only" };
+    return { ok: true, detail: "cgroup unreadable - gating on concurrency only" };
   }
   const freeMb = (limitBytes - usedBytes) / MB;
   const needMb = config.AGENT_SUBPROCESS_MB + config.AGENT_MEMORY_RESERVE_MB;
@@ -88,7 +88,7 @@ export function activeSubprocesses(): number {
  * Acquire a subprocess slot. Resolves once both the concurrency cap and the
  * memory check allow another spawn. Rejects only if the wait exceeds
  * `AGENT_ACQUIRE_TIMEOUT_MS`, which the caller treats as "run this on legacy
- * instead" — a queue that grows without bound would turn memory pressure into
+ * instead" - a queue that grows without bound would turn memory pressure into
  * silent latency, and for the interactive chat loop that is worse than a
  * downgrade.
  */
@@ -119,7 +119,7 @@ export async function acquireSlot(label: string): Promise<() => void> {
       );
     }
 
-    // Wake on the next release, or re-poll — memory can free up without a
+    // Wake on the next release, or re-poll - memory can free up without a
     // release when an unrelated part of the process gives memory back.
     await new Promise<void>((resolve) => {
       const timer = setTimeout(resolve, Math.min(250, timeoutMs - waited));

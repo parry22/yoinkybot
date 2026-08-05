@@ -1,18 +1,18 @@
 /**
- * Buyer Radar scan orchestrator: the full pipeline for one user —
+ * Buyer Radar scan orchestrator: the full pipeline for one user -
  *   discovery → DETERMINISTIC intent gate → SEMANTIC niche gate → batched intent
  *   read → persist.
  * Code decides selection at every step; the model only annotates what code chose.
  *
  * The monthly budget is checked BEFORE any paid twitterapi.io call (same spirit
  * as the niche gate running before paid work in the macro-moment pipeline).
- * Never sends, never drafts a reply — it surfaces prospects and what they asked for.
+ * Never sends, never drafts a reply - it surfaces prospects and what they asked for.
  *
  * THE TARGET IS SIX. A scan that returns nothing is worse than a scan that
  * returns six imperfect leads: the user can skip a weak lead in a second, but
  * they cannot act on an empty screen, and "no signals" is indistinguishable from
  * "this product is broken". So both gates below are RANKERS WITH FLOORS rather
- * than cliffs — everything clearing the threshold passes, and if that leaves
+ * than cliffs - everything clearing the threshold passes, and if that leaves
  * fewer than six, the next-best candidates backfill. Supply, not the gates, is
  * what limits a scan now. Exclusions are the one hard kill that never backfills:
  * those are the user's own "this is not my buyer" and outrank the target.
@@ -36,7 +36,7 @@ export const TARGET_SIGNALS_PER_SCAN = 6;
 
 /**
  * Supply target handed to discovery. Several times the surfacing target on
- * purpose — both gates subtract, so asking search for exactly six reliably ends
+ * purpose - both gates subtract, so asking search for exactly six reliably ends
  * with two.
  */
 const CANDIDATE_TARGET = TARGET_SIGNALS_PER_SCAN * 5;
@@ -45,7 +45,7 @@ export type ScanStatus = "ok" | "no_icp" | "unavailable" | "budget_exhausted";
 
 /**
  * Where the funnel emptied out. Without this, "0 signals" is indistinguishable
- * from "the pipeline is broken" — which is exactly how a dead query set stayed
+ * from "the pipeline is broken" - which is exactly how a dead query set stayed
  * invisible. Cheap to carry, and the UI turns it into a plain-language reason.
  */
 export interface ScanStages {
@@ -158,7 +158,7 @@ export async function scanForUser(userId: string): Promise<ScanResult> {
   if (!icpComplete(icp) || !icp) return empty("no_icp");
 
   // Budget FIRST, before any paid search. Per-plan monthly cap. A null cap means
-  // no monthly ceiling — the scan is then bounded only by the per-scan target.
+  // no monthly ceiling - the scan is then bounded only by the per-scan target.
   const cap = (await entitlementsFor(userId)).buyerIntentsPerMonth;
   const used = await monthlySurfacedCount(userId);
   const headroom = cap === null ? TARGET_SIGNALS_PER_SCAN : cap - used;
@@ -167,7 +167,7 @@ export async function scanForUser(userId: string): Promise<ScanResult> {
   // month has left.
   const targetThisScan = Math.min(TARGET_SIGNALS_PER_SCAN, headroom);
 
-  // Per-user calibrated gates (falls back to config defaults) — recalibrated
+  // Per-user calibrated gates (falls back to config defaults) - recalibrated
   // from the user's verdicts (buyer/calibration.ts).
   const thresholds = await effectiveThresholds(userId);
 

@@ -20,14 +20,14 @@ const extractionSchema = z.object({
       content: z.string().min(1),
       kind: z.enum(["idea", "claim", "question", "story", "reaction"]),
       // Tolerate a missing/garbled orientation from the cheap model rather than
-      // failing the whole capture — 'neutral' just drops it from the ratio.
+      // failing the whole capture - 'neutral' just drops it from the ratio.
       orientation: z.enum(["inside_out", "outside_in", "neutral"]).catch("neutral").default("neutral"),
     }),
   ),
   positions: z.array(z.string()).default([]),
   // Capture-level classification (v2). Every field fails CLOSED on a garbled
-  // response — the sincerity gate below must never default to "sincere".
-  // Validated against ALL_TONE_KEYS in app code below, not a zod enum — that
+  // response - the sincerity gate below must never default to "sincere".
+  // Validated against ALL_TONE_KEYS in app code below, not a zod enum - that
   // list is TS-owned and evolves; a zod enum here would be a second copy that
   // silently rejects new tone keys until this file is also updated.
   rhetorical_mode: z.string().catch("").optional(),
@@ -53,7 +53,7 @@ export async function handleExtract(job: ExtractJob): Promise<void> {
   );
   if (!capture) return;
   // Idempotency: a job re-run after this capture already completed must be a
-  // no-op — otherwise a pg-boss retry double-inserts memories, re-fires belief
+  // no-op - otherwise a pg-boss retry double-inserts memories, re-fires belief
   // DMs, and double-charges LLM spend.
   if (capture.status === "processed") return;
   if (!capture.raw_text?.trim()) {
@@ -67,7 +67,7 @@ export async function handleExtract(job: ExtractJob): Promise<void> {
     await query(`DELETE FROM memories WHERE capture_id = $1`, [capture.id]);
 
     // Deterministic, pre-LLM: a numbered-series/tag marker is a fact, not a
-    // judgment call — told to the model rather than asked to notice it.
+    // judgment call - told to the model rather than asked to notice it.
     const structuralMarker = detectStructuralMarker(capture.raw_text);
     const userCalibration = await getCalibrationNote(job.userId).catch(() => null);
 
@@ -86,7 +86,7 @@ export async function handleExtract(job: ExtractJob): Promise<void> {
         ? parsed.rhetorical_mode
         : null;
 
-    // Capture-level classification, computed once — this is what jobs/extract.ts
+    // Capture-level classification, computed once - this is what jobs/extract.ts
     // gates position emission on below, and what evidence.ts/voice/profile.ts/
     // performance.ts filter by downstream.
     await query(
@@ -107,7 +107,7 @@ export async function handleExtract(job: ExtractJob): Promise<void> {
 
     const memoryIds: string[] = [];
     for (const m of parsed.memories) {
-      // Memories inherit the capture's timestamp — for imported posts that's the
+      // Memories inherit the capture's timestamp - for imported posts that's the
       // original publish date, which is what makes every time-based read real
       // (recurrence across periods, voice drift, chronological diagnosis).
       const row = await queryOne<{ id: string }>(
@@ -126,7 +126,7 @@ export async function handleExtract(job: ExtractJob): Promise<void> {
 
     // Positions need a source memory; anchor each to the first extracted memory.
     // Gated on sincerity: a joke stated as a "belief" must never become a
-    // stored position, however confidently phrased — see memory/classification.ts.
+    // stored position, however confidently phrased - see memory/classification.ts.
     const anchor = memoryIds[0];
     const supersessions: Array<{ now: string; before: string[] }> = [];
     if (anchor && isSincereEnough(parsed.sincerity_register, parsed.sincerity_confidence)) {

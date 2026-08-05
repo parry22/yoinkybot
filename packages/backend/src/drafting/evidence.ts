@@ -3,7 +3,7 @@
  *
  * THE PROBLEM THIS FIXES. The draft prompt was stylistically very well specified
  * and empirically blind: it received retrieved memory *fragments*, a voice
- * profile, and the stated brand profile — but nothing about which of this
+ * profile, and the stated brand profile - but nothing about which of this
  * person's actual posts ever landed, what shape they took, or what they were
  * trying to do. Every performance number the product computes lived in analytics
  * / diagnosis / report surfaces the USER reads, and never in the loop that
@@ -12,14 +12,14 @@
  * underperform their own median by 40%.
  *
  * Everything below already existed in the DB; none of it was wired to drafting:
- *   - `captures.raw_text` — the full text of their real posts (source='x_import')
- *   - `captures.metadata->'engagement'` — likes/replies/RTs/quotes (performance.ts
+ *   - `captures.raw_text` - the full text of their real posts (source='x_import')
+ *   - `captures.metadata->'engagement'` - likes/replies/RTs/quotes (performance.ts
  *     refreshes these), so "high performer" is quotable against their own baseline
- *   - `captures.rhetorical_mode` / `sincerity_register` / `motive` — the post
+ *   - `captures.rhetorical_mode` / `sincerity_register` / `motive` - the post
  *     classifier (migration 0017) writes all three. `motive` in particular was
  *     written by the extractor and read by ZERO queries before this.
  *
- * Cost: one query, then pure computation. Best-effort by construction — a user
+ * Cost: one query, then pure computation. Best-effort by construction - a user
  * with no connected X, no refreshed engagement, or too few posts yields an empty
  * evidence object and the writer simply falls back to universal doctrine.
  */
@@ -31,12 +31,12 @@ import { classifyOpener } from "../trends/viral-heuristics.js";
 const HISTORY_LIMIT = 200;
 /** A bucket/motive needs this many posts before its median means anything. */
 const MIN_SAMPLE = 3;
-/** Post text is an exemplar, not a corpus — enough to see the shape, not bloat context. */
+/** Post text is an exemplar, not a corpus - enough to see the shape, not bloat context. */
 const TOP_TEXT_CHARS = 240;
 const QUIET_TEXT_CHARS = 140;
 
 export interface EvidencePost {
-  /** The real post text (truncated) — the single most useful "sounds like me" input. */
+  /** The real post text (truncated) - the single most useful "sounds like me" input. */
   text: string;
   engagement: number;
   /** Multiple of their own median engagement. 2.4 = "2.4x your usual". */
@@ -44,7 +44,7 @@ export interface EvidencePost {
   mode: string | null;
   sincerity: string | null;
   motive: string | null;
-  /** How the first line opens — question | number | bold_claim | plain. */
+  /** How the first line opens - question | number | bold_claim | plain. */
   opener: string;
   chars: number;
   daysAgo: number;
@@ -69,7 +69,7 @@ export interface DraftEvidence {
   postsConsidered: number;
   /** Their biggest hits, strongest first. */
   topPosts: EvidencePost[];
-  /** Their quietest posts — counter-examples, so the writer can avoid repeating them. */
+  /** Their quietest posts - counter-examples, so the writer can avoid repeating them. */
   quietPosts: EvidencePost[];
   /** Which SHAPE of post out/under-performs their own median. */
   shapeLift: ShapeLift[];
@@ -89,7 +89,7 @@ export const EMPTY_EVIDENCE: DraftEvidence = {
 /**
  * Post-shape buckets. Deliberately the same cuts `web/analytics.ts#FORMAT_BUCKETS`
  * shows the user, so the writer is reasoning about the same shapes the Analytics
- * page reports — but measured on raw engagement here (self-contained on captures)
+ * page reports - but measured on raw engagement here (self-contained on captures)
  * rather than engagement RATE (which needs impressions). Those bucket predicates
  * are private to analytics.ts; if you change one, change it in both places.
  */
@@ -159,7 +159,7 @@ export async function draftEvidence(userId: string, platform: "x" | "linkedin" =
 
   const overall = median(posts.map((p) => p.engagement));
   if (overall === null || overall <= 0) {
-    // Everything at zero engagement (brand-new account) — a baseline of 0 makes
+    // Everything at zero engagement (brand-new account) - a baseline of 0 makes
     // every ratio meaningless, so report the count and stay quiet on performance.
     return { ...EMPTY_EVIDENCE, postsConsidered: posts.length };
   }
@@ -218,7 +218,7 @@ export async function draftEvidence(userId: string, platform: "x" | "linkedin" =
  * Provenance for the memories the retriever returned: which of them came from a
  * post the user actually PUBLISHED, how that post did, and what it was trying to
  * do. Without this the writer cannot tell a private half-formed voice note from a
- * take that already went out and landed — and it treats both as equal substance.
+ * take that already went out and landed - and it treats both as equal substance.
  * Keyed by memory id. Best-effort: failure returns an empty map.
  */
 export interface MemoryProvenance {

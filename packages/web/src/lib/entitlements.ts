@@ -4,7 +4,7 @@ import { entitlementsFor, isPaidOrExempt, type Entitlements, type User } from "@
 /**
  * The web-side paywall gate. Returns the user's plan entitlements when they're
  * allowed past the paywall (paid/trialing/exempt), or null when they should be
- * walled — the caller then returns a 402. Mirrors the Telegram `upgradeWall`
+ * walled - the caller then returns a 402. Mirrors the Telegram `upgradeWall`
  * (both go through `isPaidOrExempt`), closing the gap where web routes ran paid
  * work (twitterapi.io / LLM) for free/expired users.
  */

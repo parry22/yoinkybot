@@ -4,7 +4,7 @@ import type { DraftEvidence } from "../drafting/evidence.js";
 
 /**
  * Drafting, v2: same writing doctrine as v1, plus EVIDENCE. v1 was stylistically
- * well-specified and empirically blind — it applied universal reach rules to every
+ * well-specified and empirically blind - it applied universal reach rules to every
  * user identically because it had no idea which of *this* person's posts ever
  * landed, what shape they took, or what they were trying to do.
  *
@@ -65,7 +65,7 @@ function renderTopPosts(e: DraftEvidence): string {
     return `- [${tags}]\n  "${p.text}"`;
   });
   return (
-    `YOUR POSTS THAT ACTUALLY LANDED (their real text — this is what "sounds like them at their best" ` +
+    `YOUR POSTS THAT ACTUALLY LANDED (their real text - this is what "sounds like them at their best" ` +
     `looks like in practice, and the numbers are measured against their own median of ` +
     `${e.baselineEngagement} engagements across ${e.postsConsidered} posts):\n${lines.join("\n")}\n\n`
   );
@@ -75,7 +75,7 @@ function renderQuietPosts(e: DraftEvidence): string {
   if (e.quietPosts.length === 0) return "";
   const lines = e.quietPosts.map((p) => `- [${p.engagement} engagements · ${p.chars} chars] "${p.text}"`);
   return (
-    `THEIR QUIETEST POSTS (counter-examples — do NOT reproduce whatever these are doing):\n` +
+    `THEIR QUIETEST POSTS (counter-examples - do NOT reproduce whatever these are doing):\n` +
     `${lines.join("\n")}\n\n`
   );
 }
@@ -100,7 +100,7 @@ function renderMemories(v: DraftV2Vars): string {
             m.motive ? `, intent: ${m.motive}` : ""
           }`
         : "private thinking, never posted";
-      return `[${m.id}] (${m.kind} — ${label}) ${m.content}`;
+      return `[${m.id}] (${m.kind} - ${label}) ${m.content}`;
     })
     .join("\n\n");
 }
@@ -111,7 +111,7 @@ export const draftPostV2: Prompt<DraftV2Vars> = {
   tier: "frontier",
   system: `You are Yoinky's writing engine. Turn the retrieved memories into a post that sounds
 like it came from this person's own head at their sharpest moment, not from an AI. The memories
-are the only allowed source of substance — you may sharpen and arrange, but every idea in the
+are the only allowed source of substance - you may sharpen and arrange, but every idea in the
 draft must trace to a provided memory. If the memories cannot support the request, say so instead
 of inventing.
 
@@ -120,14 +120,14 @@ Use the voice profile strictly: its vocabulary, rhythm, tics, and especially its
 
 HONOR THEIR STATED PROFILE (below, when present): stay on their content pillars and niche, match
 their stated formality and tone. HARD BOUNDARY: never write about an OFF-LIMITS topic. If the
-request targets one, decline in the note and return an empty draft — a well-written post that
+request targets one, decline in the note and return an empty draft - a well-written post that
 crosses their stated line is a failure, not a draft.
 
 USE THE EVIDENCE, AND LET IT OVERRULE THE GENERAL RULES.
 The context below may include this person's own measured results: their engagement baseline, the
 real text of posts that beat it, their quietest posts, which SHAPE of post over/under-performs for
 them, and which INTENT lands. Treat all of it as the strongest available signal:
-- Their landed posts are the truest specification of their voice — closer than any profile JSON.
+- Their landed posts are the truest specification of their voice - closer than any profile JSON.
   Study how those posts open, how long they run, how they end, how much they hedge.
 - THE RECONCILIATION RULE: where their measured results contradict the universal reach doctrine
   below, THEIR DATA WINS, and say so in the note. If "short & punchy" is -35% for them, do not
@@ -140,7 +140,7 @@ them, and which INTENT lands. Treat all of it as the strongest available signal:
 - When there is no evidence block, fall back to the universal doctrine below and don't speculate
   about what works for them.
 
-A memory marked PUBLISHED POST is something they already said in public — do not restate it as if
+A memory marked PUBLISHED POST is something they already said in public - do not restate it as if
 it were new; build past it. A memory marked "private thinking" has never been posted, which makes
 it the most valuable raw material you have.
 
@@ -150,7 +150,7 @@ ${REACH_PRINCIPLES}
 
 MEDIA: a post carried by a native image, a simple diagram, a real screenshot, or a poll travels
 further than text alone. Suggest one concrete, specific visual grounded in the post's actual
-substance — name the thing to show ("a screenshot of the failing test output", "a two-box before/
+substance - name the thing to show ("a screenshot of the failing test output", "a two-box before/
 after diagram"), never a generic "add an image". If the post is genuinely stronger as pure text
 (an aphorism, a confession), return an empty media_suggestion rather than forcing one.
 
@@ -169,7 +169,7 @@ If the memories are insufficient, or the request crosses an off-limits topic: {"
     renderMotiveLift(v.evidence) +
     renderQuietPosts(v.evidence) +
     (v.currentContext?.length
-      ? `LIVE ON X RIGHT NOW (near this topic — use ONLY if it genuinely sharpens the post; a natural nod to the live conversation reads current, a forced reference reads like engagement bait; substance must still come from the memories):\n${v.currentContext.map((c) => `- ${c.topic}: ${c.summary}`).join("\n")}\n\n`
+      ? `LIVE ON X RIGHT NOW (near this topic - use ONLY if it genuinely sharpens the post; a natural nod to the live conversation reads current, a forced reference reads like engagement bait; substance must still come from the memories):\n${v.currentContext.map((c) => `- ${c.topic}: ${c.summary}`).join("\n")}\n\n`
       : "") +
     `Voice profile:\n${JSON.stringify(v.voiceTraits, null, 2)}\n\n` +
     `Retrieved memories:\n${renderMemories(v)}`,

@@ -57,7 +57,7 @@ function tweetMedia(t: RawTweet): ImportedPost["media"] {
 
 // Verified against a live call to /twitter/user/last_tweets on 2026-07-05: the
 // tweets array is nested under `data`, and pagination fields sit at the TOP
-// level — both differ from what the published docs page describes.
+// level - both differ from what the published docs page describes.
 interface LastTweetsResponse {
   status?: string; // "success" | anything else on failure
   code?: number; // 0 = ok
@@ -79,7 +79,7 @@ export class TwitterApiIoError extends Error {
 /**
  * Parse twitterapi.io's tweet shape into ImportedPost, carrying engagement +
  * thread context that the Apify actor doesn't expose. Pure function, no I/O.
- * Excludes replies and pure retweets — same "own original posts only" contract
+ * Excludes replies and pure retweets - same "own original posts only" contract
  * as the other import paths, since positions/voice must be the person's words.
  */
 export function parseTwitterApiIoTweets(
@@ -135,7 +135,7 @@ function sleep(ms: number): Promise<void> {
  *
  *  EVERY twitterapi.io request in this file goes through here, which is why BYOK
  *  key resolution lives at this one point rather than in each of the five
- *  exported helpers — those only guard on config, they never send the header. */
+ *  exported helpers - those only guard on config, they never send the header. */
 async function fetchPage(url: URL): Promise<LastTweetsResponse> {
   // A lifetime user's own twitterapi.io key when we're inside their work
   // (byok/context.ts); ours otherwise. See lib/apify.ts for why the fallback
@@ -162,7 +162,7 @@ async function fetchPage(url: URL): Promise<LastTweetsResponse> {
  * Paginate `/twitter/user/last_tweets` by cursor until maxPosts or the feed
  * runs out. The free tier allows 1 request/5s, so pages are spaced out. When
  * `sinceDays` is set, pagination stops early once a page reaches past the
- * cutoff with at least `minPosts` collected — the feed is newest-first, so
+ * cutoff with at least `minPosts` collected - the feed is newest-first, so
  * everything after that would be discarded by the recency window anyway.
  */
 async function fetchTweets(
@@ -209,7 +209,7 @@ async function fetchTweets(
   // and included a newer tweet `last_tweets` had never returned at all.
   //
   // The symptom was an analytics page that looked broken: two posts, both in the
-  // current week, every earlier week empty. Nothing downstream was wrong — the
+  // current week, every earlier week empty. Nothing downstream was wrong - the
   // corpus really did contain two posts, because that is all the provider handed
   // over. So when the primary endpoint comes back implausibly thin, re-pull
   // through search and merge. Kept as a fallback rather than a replacement
@@ -218,7 +218,7 @@ async function fetchTweets(
   const wanted = Math.min(maxPosts, opts?.minPosts ?? MIN_HISTORY_BEFORE_SEARCH_FALLBACK);
   if (all.length < wanted) {
     console.warn(
-      `[twitterapi] last_tweets returned only ${all.length} for @${userName} (wanted ${wanted}) — falling back to advanced_search`,
+      `[twitterapi] last_tweets returned only ${all.length} for @${userName} (wanted ${wanted}) - falling back to advanced_search`,
     );
     const viaSearch = await fetchOwnTweetsViaSearch(userName, maxPosts, opts);
     const seen = new Set(all.map((t) => t.id).filter(Boolean));
@@ -288,7 +288,7 @@ async function fetchOwnTweetsViaSearch(
   return all;
 }
 
-/** Pull a user's public X history via twitterapi.io — richer than the Apify actor. */
+/** Pull a user's public X history via twitterapi.io - richer than the Apify actor. */
 /** Hard ceiling on how many of a user's own tweets we ever scrape in one pull. */
 export const MAX_OWN_TWEETS = 100;
 
@@ -308,7 +308,7 @@ export interface TimelineTweet {
 }
 
 /**
- * Pull a user's recent timeline — posts AND replies — each with its public
+ * Pull a user's recent timeline - posts AND replies - each with its public
  * counters (impressions/likes/replies/RT/quotes/bookmarks). Unlike the profile
  * pull (which drops replies for voice work), this keeps them so analytics can
  * show reply-level performance. Retweets are dropped (they carry the original's
@@ -363,7 +363,7 @@ export interface XTweet {
   authorHandle: string;
   authorName: string;
   authorFollowers: number;
-  /** Blue/verified affiliation — a reach signal for the breakout ratio. */
+  /** Blue/verified affiliation - a reach signal for the breakout ratio. */
   authorVerified: boolean;
   likeCount: number;
   retweetCount: number;
@@ -372,7 +372,7 @@ export interface XTweet {
   /** Impressions. Populated by advanced_search (verified live 2026-07-13). */
   viewCount: number;
   bookmarkCount: number;
-  /** Any image/video attached — a format signal for the viral breakdown. */
+  /** Any image/video attached - a format signal for the viral breakdown. */
   hasMedia: boolean;
   isReply: boolean;
   conversationId: string | null;
@@ -411,7 +411,7 @@ function toXTweet(t: RawTweet): XTweet | null {
 /**
  * Fetch tweets by id via GET /twitter/tweets (`tweet_ids` param). Used for
  * live engagement counts + the conversation id of a mention before drafting.
- * VERIFY against a live call before first production run — this endpoint's
+ * VERIFY against a live call before first production run - this endpoint's
  * response nesting has not been confirmed live the way last_tweets/mentions
  * were; both observed shapes (top-level `tweets`, nested `data.tweets`) are
  * handled.
@@ -430,12 +430,12 @@ export async function pullTweetsByIds(ids: string[]): Promise<XTweet[]> {
 export interface SearchOpts {
   /** "Top" ranks by engagement, "Latest" by recency. */
   queryType: "Top" | "Latest";
-  /** Unix seconds — twitterapi.io takes since_time/until_time, NOT the
+  /** Unix seconds - twitterapi.io takes since_time/until_time, NOT the
    *  `since:YYYY-MM-DD_...` form (explicitly unsupported there). */
   sinceTime?: number;
   untilTime?: number;
   /** Hard pagination cap; $0.00015/tweet returned is cheap per topic but not
-   *  free at scale — never paginate unbounded. */
+   *  free at scale - never paginate unbounded. */
   maxPages: number;
 }
 
@@ -492,7 +492,7 @@ export interface XMention {
 /**
  * Public mentions of a handle (replies, quotes, @-mentions) via
  * /twitter/user/mentions. Verified live 2026-07-06: unlike last_tweets, this
- * endpoint returns `tweets` at the TOP level, newest first, 20/page — one page
+ * endpoint returns `tweets` at the TOP level, newest first, 20/page - one page
  * per fetch cycle is enough, the ingest job runs several times a day.
  */
 export async function pullXMentions(handle: string): Promise<XMention[]> {

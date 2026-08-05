@@ -5,7 +5,7 @@ import { detectStructuralMarker } from "../memory/classification.js";
 import { getBoss, QUEUES, type CampaignDetectJob } from "./boss.js";
 
 /**
- * Build-in-public series detection. Fired ONCE PER CAPTURE (not per memory —
+ * Build-in-public series detection. Fired ONCE PER CAPTURE (not per memory -
  * see jobs/extract.ts) so two sibling memories from one post can never race
  * and create two campaigns for the same series. This queue's worker
  * concurrency is set to 1 in jobs/workers.ts for the same reason: campaign
@@ -13,17 +13,17 @@ import { getBoss, QUEUES, type CampaignDetectJob } from "./boss.js";
  * so serializing it per-process is simpler than an advisory lock and fully
  * closes the create-race on this single-instance deploy.
  *
- * Two paths: a structural marker ("day 14", a repeated bracket/hashtag tag —
+ * Two paths: a structural marker ("day 14", a repeated bracket/hashtag tag -
  * deterministic, computed from the immutable raw_text) fast-attaches to an
  * existing matching campaign; otherwise a thematic check looks for 2+ of the
- * user's own recent campaign-less captures embedding-close to this one — if
+ * user's own recent campaign-less captures embedding-close to this one - if
  * found (3 total including this one), a new campaign is created and the
  * earlier matches are backfilled retroactively in the same transaction.
  */
 
 const MAX_READINESS_ATTEMPTS = 20; // ~10 min of 30s re-checks, same budget as diagnosis.ts
 /**
- * Matches embed-link's own NEIGHBOR_DISTANCE exactly — verified live against
+ * Matches embed-link's own NEIGHBOR_DISTANCE exactly - verified live against
  * the real embedding provider in this deploy (Qwen/DashScope), whose vectors
  * run "cool": on-topic paraphrases sit ~0.5-0.6 cosine, not the ~0.2-0.3 a
  * tighter threshold assumes. An earlier 0.4 attempt matched nothing at all in
@@ -60,7 +60,7 @@ async function representativeEmbedding(captureId: string): Promise<number[] | nu
   return row ? parseVector(row.embedding) : null;
 }
 
-/** Attach a capture to an existing campaign — shared by both match paths. */
+/** Attach a capture to an existing campaign - shared by both match paths. */
 async function attachToCampaign(campaignId: string, capture: CaptureRow): Promise<void> {
   const campaign = await queryOne<{ post_count: number }>(
     `UPDATE campaigns SET post_count = post_count + 1, last_capture_at = $2
@@ -84,7 +84,7 @@ export async function handleCampaignDetect(job: CampaignDetectJob): Promise<void
   if (!capture || !capture.raw_text) return;
   const rawText = capture.raw_text;
 
-  // Wait for this capture's memories to have embeddings — bounded, same
+  // Wait for this capture's memories to have embeddings - bounded, same
   // startAfter-requeue idiom as strategist/diagnosis.ts's ingestionPending.
   if ((await embeddingsPending(capture.id)) && attempt < MAX_READINESS_ATTEMPTS) {
     await getBoss().send(QUEUES.campaignDetect, { ...job, attempt: attempt + 1 }, { startAfter: 30 });
@@ -92,7 +92,7 @@ export async function handleCampaignDetect(job: CampaignDetectJob): Promise<void
   }
 
   const embedding = await representativeEmbedding(capture.id);
-  if (!embedding) return; // extraction produced no memories — nothing to link
+  if (!embedding) return; // extraction produced no memories - nothing to link
 
   const marker = detectStructuralMarker(rawText);
 
@@ -124,7 +124,7 @@ export async function handleCampaignDetect(job: CampaignDetectJob): Promise<void
     return;
   }
 
-  // Neither an existing campaign nor a marker match — check whether this post
+  // Neither an existing campaign nor a marker match - check whether this post
   // is the 3rd+ of a NEW, not-yet-detected series among the user's own recent
   // campaign-less captures.
   const candidates = await query<{ id: string; captured_at: string; embedding: string }>(

@@ -7,7 +7,7 @@ import { consumeRateLimit, rateLimitMessage, type RateLimitBucket } from "@yoink
  * operator's inbox.
  *
  * Returns a ready-to-return 429 `Response` when the caller is over the limit,
- * or null when they may proceed — same shape as the paywall check above it, so
+ * or null when they may proceed - same shape as the paywall check above it, so
  * a route reads:
  *
  *   const limited = await rateLimited(user.id, "chat");

@@ -16,7 +16,7 @@ export async function getSessionUser(): Promise<User | null> {
   const existing = await findUserByClerkId(userId);
   if (existing) return existing;
 
-  // First request of a brand-new (or pre-Clerk) account — we need the verified
+  // First request of a brand-new (or pre-Clerk) account - we need the verified
   // email to link/create the row (and start the trial for a genuine signup).
   const cu = await currentUser();
   const email =

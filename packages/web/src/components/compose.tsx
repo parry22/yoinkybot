@@ -28,12 +28,12 @@ const SUGGESTIONS = [
  * It used to be a top-anchored textarea with a "Write it" button and a list of
  * results underneath, which framed the agent as a one-shot generator. It's now a
  * transcript with the composer pinned to the bottom, talking to the same brain the
- * Telegram bot uses (`/api/chat/stream`) — so it can draft, search memory, check a
+ * Telegram bot uses (`/api/chat/stream`) - so it can draft, search memory, check a
  * draft, repurpose or schedule, and you can follow up in context.
  *
  * While a turn runs, the activity feed shows the steps actually being taken. Those
  * labels come from the tool the model invoked and from the draft pipeline, written
- * in code (web/stream.ts) — never scraped from model narration, which under
+ * in code (web/stream.ts) - never scraped from model narration, which under
  * enforced structured output frequently isn't emitted at all.
  */
 export function Compose({ initialDrafts }: { initialDrafts: Draft[] }) {
@@ -47,7 +47,7 @@ export function Compose({ initialDrafts }: { initialDrafts: Draft[] }) {
   );
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
-  /** A 402 isn't an error message, it's a wall — it gets the upgrade link, not
+  /** A 402 isn't an error message, it's a wall - it gets the upgrade link, not
    *  a grey line of hint text you can't act on. */
   const [paywalled, setPaywalled] = useState(false);
   const { run, activity, busy } = useAgentStream();
@@ -117,7 +117,7 @@ export function Compose({ initialDrafts }: { initialDrafts: Draft[] }) {
               <div className={styles.header}>
                 <div className={styles.greeting}>What are we shipping?</div>
                 <div className={styles.sub}>
-                  Drop a thought and I&apos;ll write it in your voice — grounded in what you&apos;ve actually said, and
+                  Drop a thought and I&apos;ll write it in your voice - grounded in what you&apos;ve actually said, and
                   in what&apos;s actually worked for you.
                 </div>
               </div>
@@ -141,7 +141,7 @@ export function Compose({ initialDrafts }: { initialDrafts: Draft[] }) {
               const gap = prevSpeaker !== null && prevSpeaker !== speaker ? styles.turnGap : "";
 
               // A drafted post and an ordinary reply are the same object on
-              // screen — plain agent text. The draft only differs in carrying a
+              // screen - plain agent text. The draft only differs in carrying a
               // copy action, because a post is a thing you take somewhere.
               if (e.kind === "draft") {
                 return (
@@ -162,7 +162,7 @@ export function Compose({ initialDrafts }: { initialDrafts: Draft[] }) {
           {/* One shimmering line of the CURRENT action, for the whole turn. It
            *  shows the last stage the stream emitted (falling back to a starter
            *  before the first stage arrives), so there is always something moving
-           *  on screen between a completed step and the reply landing — the old
+           *  on screen between a completed step and the reply landing - the old
            *  strand where a static tick list sat still is gone. */}
           {busy && (
             <AgentShimmer
@@ -178,7 +178,7 @@ export function Compose({ initialDrafts }: { initialDrafts: Draft[] }) {
             message in the thread. */}
         {paywalled && (
           <div style={{ width: "var(--content-width)", marginInline: "auto", marginBottom: 10 }}>
-            <UpgradeCTA message="Your trial has ended — upgrade to keep composing." plan="growth" />
+            <UpgradeCTA message="Your trial has ended - upgrade to keep composing." plan="growth" />
           </div>
         )}
         <div className={styles.composer}>
@@ -215,18 +215,18 @@ export function Compose({ initialDrafts }: { initialDrafts: Draft[] }) {
 /**
  * The bot delivers a draft as "✍️ here you go:\n\n<post>" (telegram/actions.ts).
  * Pull the post body out so it can render as a copyable card. Anything not
- * recognisably a draft stays an ordinary message — no guessing.
+ * recognisably a draft stays an ordinary message - no guessing.
  */
 function extractDraft(msg: string): string | null {
   const m = msg.match(/^✍️[^\n]*\n\n([\s\S]+)$/);
   if (!m) return null;
-  // Drop the trailing media nudge — it's guidance about the post, not the post.
+  // Drop the trailing media nudge - it's guidance about the post, not the post.
   return (m[1] ?? "").split("\n\n📎 pair it with:")[0]!.trim() || null;
 }
 
 /**
  * An agent turn: bare text on the canvas, with the copy affordance sitting
- * *under* it rather than in a header bar above it. `copyable` is on for drafts —
+ * *under* it rather than in a header bar above it. `copyable` is on for drafts -
  * the only agent output you'd actually want on your clipboard.
  */
 export function AgentMessage({

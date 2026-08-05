@@ -47,7 +47,7 @@ export interface TopicAnglesResult {
 }
 
 /**
- * Two to three angles on `topic`. `research` is optional — pass one already
+ * Two to three angles on `topic`. `research` is optional - pass one already
  * fetched (so a turn that just researched the topic doesn't pay for it twice),
  * or let this fetch its own.
  */
@@ -63,7 +63,7 @@ export async function anglesForTopic(
   ]);
 
   // The subject is the research when there is any, and the bare topic when there
-  // isn't — angles on a topic with no live conversation are still worth having.
+  // isn't - angles on a topic with no live conversation are still worth having.
   const subject = found && (found.posts.length > 0 || found.headlines.length > 0)
     ? `${topic}\n\n${renderResearch(found)}`
     : topic;
@@ -99,7 +99,7 @@ export async function anglesForTopic(
   return { topic, angles, research: found };
 }
 
-/** The angles as a chat message — numbered, so "write #2" is an obvious next move. */
+/** The angles as a chat message - numbered, so "write #2" is an obvious next move. */
 export function formatAngles(result: TopicAnglesResult): string {
   if (result.angles.length === 0) {
     return `couldn't find an angle on "${result.topic}" worth taking. tell me what you actually think about it and i'll build from that instead.`;
@@ -108,7 +108,7 @@ export function formatAngles(result: TopicAnglesResult): string {
     ? `here's what's live on "${result.topic}" and ${result.angles.length} ways you could take it:`
     : `${result.angles.length} ways you could take "${result.topic}":`;
   const body = result.angles
-    .map((a, i) => `${i + 1}) ${a.label} — ${a.angle}\n   hook: ${a.hook}`)
+    .map((a, i) => `${i + 1}) ${a.label} - ${a.angle}\n   hook: ${a.hook}`)
     .join("\n\n");
   return `${sourced}\n\n${body}\n\nsay "write #1" (or paste your own spin) and i'll draft it.`;
 }

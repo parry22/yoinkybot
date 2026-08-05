@@ -38,8 +38,8 @@ async function nearbyTrends(userId: string, request: string, k = 4): Promise<Arr
  * without measured voice traits would sound like everyone else.
  *
  * That reasoning was right about the risk and wrong about the remedy. Refusing is
- * how a brand-new user's first request — the one that decides whether they come
- * back — got answered with a maintenance instruction. And the codebase already
+ * how a brand-new user's first request - the one that decides whether they come
+ * back - got answered with a maintenance instruction. And the codebase already
  * disagreed with itself: draftFromAngle (drafting/angle-draft.ts) has always
  * drafted without a profile using exactly this fallback. So the two paths now
  * behave the same way, and the honest caveat rides out on the draft's `note`
@@ -48,7 +48,7 @@ async function nearbyTrends(userId: string, request: string, k = 4): Promise<Arr
 const NO_VOICE_TRAITS = {
   note:
     "No voice profile built yet. Write in a clear, natural first-person voice drawn from the " +
-    "material below — their own words, sentence rhythm and vocabulary. Avoid generic AI phrasing, " +
+    "material below - their own words, sentence rhythm and vocabulary. Avoid generic AI phrasing, " +
     "avoid inventing opinions they have not expressed.",
 };
 
@@ -121,13 +121,13 @@ export async function generateDraft(
 
   // NOTHING IN MEMORY IS NOT A DEAD END. It used to be: an empty retrieval
   // returned "capture some thinking on it first", which is the answer a user got
-  // for the most natural request there is — "write me a post about <thing in the
+  // for the most natural request there is - "write me a post about <thing in the
   // news>". Nothing they'd said was about it yet, by definition.
   //
   // So a cold retrieval now triggers live research (trends/research.ts: X search
   // + cached trends + news) and the draft is grounded in THAT plus their stated
   // positions and profile. The one remaining refusal is when research also comes
-  // back empty AND there are no positions to reason from — at that point there is
+  // back empty AND there are no positions to reason from - at that point there is
   // genuinely no material, and saying so is honest rather than evasive.
   let research: TopicResearch | null = null;
   let positions: string[] = [];
@@ -145,7 +145,7 @@ export async function generateDraft(
         ok: false,
         draft: "",
         note:
-          "I've got nothing to build this on — you haven't said anything about it, and there's no live " +
+          "I've got nothing to build this on - you haven't said anything about it, and there's no live " +
           "conversation on it I can find either. Tell me what you actually think and I'll write from that.",
         mediaSuggestion: "",
         sources: [],
@@ -225,7 +225,7 @@ export async function generateDraft(
   stage("polishing");
   const parsed = draftSchema.parse(res.parsed);
   const draft = enforceStyle(parsed.draft);
-  // Only real memory rows are citable sources — the synthetic position:/live: ids
+  // Only real memory rows are citable sources - the synthetic position:/live: ids
   // used for grounding are not persistable and must not reach `drafts.source_memory_ids`.
   const cited = new Set(parsed.source_memory_ids);
   const sources = memories
@@ -233,13 +233,13 @@ export async function generateDraft(
     .map((m) => ({ id: m.id, content: m.content, kind: m.kind }));
   const allMemories = memories.map((m) => ({ id: m.id, content: m.content, kind: m.kind }));
 
-  // When the draft came from research rather than memory, say so — the user should
+  // When the draft came from research rather than memory, say so - the user should
   // know it was built on the live conversation, not on something they'd told us.
   const provenanceNote =
     memories.length === 0 && research
       ? research.posts.length > 0
-        ? `Built from what's live on X about this right now plus your stated positions — you hadn't said anything about it yet.`
-        : `Built from your stated positions and what's in the news — you hadn't said anything about this yet.`
+        ? `Built from what's live on X about this right now plus your stated positions - you hadn't said anything about it yet.`
+        : `Built from your stated positions and what's in the news - you hadn't said anything about this yet.`
       : "";
   const voiceNote = profile
     ? ""

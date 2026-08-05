@@ -73,8 +73,8 @@ async function pullXProfileViaApify(handle: string, maxPosts = MAX_OWN_TWEETS): 
 }
 
 /**
- * Pull a user's public X history. Prefers twitterapi.io when configured — it
- * returns engagement counts and thread context the Apify actor doesn't expose —
+ * Pull a user's public X history. Prefers twitterapi.io when configured - it
+ * returns engagement counts and thread context the Apify actor doesn't expose -
  * and falls back to Apify when TWITTERAPI_IO_KEY is unset. `window` lets the
  * twitterapi path stop paginating early once past the recency cutoff; the
  * Apify actor has no such control, so its result is windowed by the caller.
@@ -92,7 +92,7 @@ export async function pullXProfile(
 /**
  * Parse raw items from apimaestro/linkedin-profile-posts into posts. Verified
  * field shape against a live Apify run 2026-07-04: text, url, posted_at.date,
- * post_type ("repost" excluded — not the user's own words).
+ * post_type ("repost" excluded - not the user's own words).
  */
 export function parseLinkedInItems(items: unknown[]): ImportedPost[] {
   const posts: ImportedPost[] = [];

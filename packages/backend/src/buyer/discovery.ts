@@ -9,7 +9,7 @@
  * depends on the model. All paid search is BOUNDED (page cap × query cap); the
  * monthly budget is enforced by the caller (buyer/scan.ts) BEFORE this runs.
  *
- * SUPPLY IS THE JOB. Everything downstream of here can only narrow — the intent
+ * SUPPLY IS THE JOB. Everything downstream of here can only narrow - the intent
  * gate, the niche gate and the plan cap all subtract. So discovery runs a
  * WIDENING LADDER rather than a single pass: it keeps loosening one constraint at
  * a time (lookback → the author cooldown → a bare vocabulary sweep with no intent
@@ -41,7 +41,7 @@ export interface DiscoveryTrace {
   vocabulary: string[];
   /** Queries actually executed. */
   queriesRun: number;
-  /** Ladder rungs used — see LADDER below. */
+  /** Ladder rungs used - see LADDER below. */
   rungs: string[];
   /** True when the LLM research step produced usable output. */
   llmQueries: boolean;
@@ -84,7 +84,7 @@ const CATEGORY_STOPWORDS = new Set([
 
 /**
  * Words that are content, not category. Fine inside a quoted pair ("landing
- * page"), useless as a standalone search term — `(people OR meals)` matches half
+ * page"), useless as a standalone search term - `(people OR meals)` matches half
  * of X and spends the search budget on noise the niche gate then throws away.
  */
 const GENERIC_NOUNS = new Set([
@@ -105,7 +105,7 @@ function contentTokens(raw: string): { tok: string; idx: number }[] {
 }
 
 /**
- * Deterministic buyer vocabulary — the fallback for the model's research step.
+ * Deterministic buyer vocabulary - the fallback for the model's research step.
  *
  * Pulls from BOTH the product one-liner and the buyer description, because those
  * two sentences use different words for the same market and either one alone is
@@ -121,7 +121,7 @@ export function buyerVocabulary(icp: IcpProfile): string[] {
 
   // The user's own pain phrasings go FIRST. They are the only terms here already
   // written in the buyer's voice rather than the seller's, so they must survive
-  // the length cap — appending them let a wordy one-liner crowd them out entirely.
+  // the length cap - appending them let a wordy one-liner crowd them out entirely.
   for (const p of icp.pain_signals.slice(0, 3)) push(p.toLowerCase().slice(0, 40));
 
   for (const source of [icp.product_oneliner ?? "", icp.buyer_description ?? ""]) {
@@ -134,7 +134,7 @@ export function buyerVocabulary(icp: IcpProfile): string[] {
     }
     // Then the most specific singles. Longer word ≈ more specific category noun;
     // ties keep the source's own order. Generic nouns come back only when nothing
-    // more specific exists — an over-broad term still beats none.
+    // more specific exists - an over-broad term still beats none.
     const usable = toks.filter((t) => t.tok.length >= 4);
     const specific = usable.filter((t) => !GENERIC_NOUNS.has(t.tok));
     for (const t of (specific.length > 0 ? specific : usable)
@@ -157,7 +157,7 @@ export function orGroup(terms: string[], limit = 4): string {
 
 /**
  * True when a query ANDs a run of bare words. Every one of them must appear in
- * the same tweet, so anything past a couple of terms reliably matches nothing —
+ * the same tweet, so anything past a couple of terms reliably matches nothing -
  * the single most common way a distilled query goes silently dead. Quoted
  * phrases, OR-groups and operators are excluded from the count.
  */
@@ -170,7 +170,7 @@ export function tooNarrow(q: string): boolean {
   return bare.split(/\s+/).filter((w) => /[a-z0-9]/i.test(w)).length > 2;
 }
 
-/** Deterministic query set, best-signal-first — the fallback when the LLM is unavailable. */
+/** Deterministic query set, best-signal-first - the fallback when the LLM is unavailable. */
 export function fallbackQueries(icp: IcpProfile, vocabulary: string[]): IntentQuery[] {
   const cat = orGroup(vocabulary, 4);
   const wide = orGroup(vocabulary, 6);
@@ -185,7 +185,7 @@ export function fallbackQueries(icp: IcpProfile, vocabulary: string[]): IntentQu
   for (const comp of icp.competitor_terms.slice(0, 2)) {
     out.push({ q: `("switching from" OR "alternative to") "${comp}"`, bucket: "competitor_dissatisfaction" });
   }
-  // Pain phrasings are already specific — AND-ing the category on top of a quoted
+  // Pain phrasings are already specific - AND-ing the category on top of a quoted
   // phrase is what killed these queries before. The niche gate does that narrowing.
   for (const pain of icp.pain_signals.slice(0, 3)) {
     out.push({ q: `"${pain}"`, bucket: "pain" });
@@ -225,7 +225,7 @@ export async function deriveIntentQueries(userId: string, icp: IcpProfile): Prom
     const parsed = queriesSchema.parse(res.parsed);
     // Drop dead-on-arrival queries before they cost a paid search.
     const usable = parsed.queries.filter((q) => !tooNarrow(q.q));
-    // The researched vocabulary is worth keeping even when the queries aren't —
+    // The researched vocabulary is worth keeping even when the queries aren't -
     // the widening ladder searches it directly on its last rung.
     const vocabulary = dedupeTerms([
       ...parsed.vocabulary.map((v) => v.toLowerCase().trim()).filter((v) => v.length >= 2 && v.length <= 40),
@@ -264,7 +264,7 @@ async function ownHandle(userId: string): Promise<string | null> {
 /**
  * Tweet ids already considered + authors within the cooldown window (dedup ledger).
  * The cooldown exists so the user isn't shown the same prospect twice, so it only
- * counts authors actually SURFACED to them — a 'rejected' row is a decline the
+ * counts authors actually SURFACED to them - a 'rejected' row is a decline the
  * user never saw, and blocking that author for three weeks was silently shrinking
  * the candidate pool with every scan.
  */
@@ -285,7 +285,7 @@ async function seenState(userId: string): Promise<{ tweetIds: Set<string>; coole
  * The widening ladder. Each rung loosens exactly ONE constraint relative to the
  * one above it, so when a scan comes back thin the trace names which loosening
  * was still not enough. Rungs run in order and stop as soon as the candidate
- * target is met — a healthy niche never pays for rungs 2-4.
+ * target is met - a healthy niche never pays for rungs 2-4.
  */
 interface Rung {
   name: string;
@@ -293,7 +293,7 @@ interface Rung {
   widen: number;
   /** How many of the (bucket-ordered) queries to run on this rung. */
   queryLimit: number;
-  /** Ignore the repeat-author cooldown — a known-good prospect beats an empty radar. */
+  /** Ignore the repeat-author cooldown - a known-good prospect beats an empty radar. */
   ignoreCooldown?: boolean;
   /** Search bare vocabulary with no intent phrase at all (widest, lowest precision). */
   bareVocabulary?: boolean;

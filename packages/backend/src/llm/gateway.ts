@@ -8,10 +8,10 @@
  * Also: retries with backoff, a bounded JSON recovery ladder, a per-user daily
  * call cap, and cost logging to usage_events.
  *
- * `tier` now maps to `reasoning_effort` (cheap→low, frontier→high, none→low) —
+ * `tier` now maps to `reasoning_effort` (cheap→low, frontier→high, none→low) -
  * reasoning tokens bill at the output rate, so it's the biggest per-call lever.
  * `cacheKey` routes same-key requests to one upstream server so the prefix cache
- * is warm; the code is correct at a 0% hit rate — a warm cache is opportunistic.
+ * is warm; the code is correct at a 0% hit rate - a warm cache is opportunistic.
  */
 import { createHash } from "node:crypto";
 import { config } from "../config.js";
@@ -34,7 +34,7 @@ export interface LlmRequest {
   /**
    * Native structured output (spec §5). When set alongside `json`, the request
    * uses constrained decoding (`response_format: json_schema`) instead of the
-   * looser `json_object` mode — the model can't emit wrong-shape JSON. On a
+   * looser `json_object` mode - the model can't emit wrong-shape JSON. On a
    * provider that rejects it, the 400 degrade path drops it and the JSON recovery
    * ladder still runs, so this is a pure optimization: safe to attach anywhere.
    */
@@ -42,7 +42,7 @@ export interface LlmRequest {
   /**
    * Cache-affinity routing tag (spec §3). Same key → same upstream server → warm
    * prefix cache. MUST NOT be a raw user id/email (it leaves our system as a
-   * routing tag) — build it with `hashForCacheKey`. Optional; omitting it just
+   * routing tag) - build it with `hashForCacheKey`. Optional; omitting it just
    * forgoes affinity, never breaks a call.
    */
   cacheKey?: string;
@@ -65,7 +65,7 @@ export interface LlmResponse {
   text: string;
   parsed?: unknown;
   model: string;
-  /** Provider finish reason ("stop" | "length" | …) — "length" means truncation. */
+  /** Provider finish reason ("stop" | "length" | …) - "length" means truncation. */
   finishReason?: string;
 }
 
@@ -83,14 +83,14 @@ const PRICE: Record<string, { in: number; cachedIn: number; out: number }> = {
   "grok-4.5": { in: 2.0, cachedIn: 0.3, out: 6.0 }, // xAI-direct id
   "z-ai/glm-4.7-flash": { in: 0.06, cachedIn: 0.01, out: 0.4 }, // the cheap tier
   "z-ai/glm-5.2": { in: 0.812, cachedIn: 0.151, out: 2.552 }, // historical
-  // Alternates worth knowing, priced live the same day — swap via MODEL_CHEAP.
+  // Alternates worth knowing, priced live the same day - swap via MODEL_CHEAP.
   "deepseek/deepseek-v4-flash": { in: 0.14, cachedIn: 0.028, out: 0.28 },
   "google/gemini-2.5-flash-lite": { in: 0.1, cachedIn: 0.01, out: 0.4 },
   "openai/gpt-5-nano": { in: 0.05, cachedIn: 0.005, out: 0.4 },
 };
 
 /** Price row for a model id, tolerant of the OpenRouter vs xAI naming split.
- *  An unknown model prices at 0 — visible as a suspicious $0 line in
+ *  An unknown model prices at 0 - visible as a suspicious $0 line in
  *  usage_events rather than a wrong number, which is the failure mode we want. */
 function priceFor(model: string): { in: number; cachedIn: number; out: number } {
   if (PRICE[model]) return PRICE[model]!;
@@ -101,12 +101,12 @@ function priceFor(model: string): { in: number; cachedIn: number; out: number } 
 /**
  * Which model + transport serves this tier.
  *
- * frontier → MODEL_CHAT (Grok 4.5): anything the user reads as Yoinky's voice —
+ * frontier → MODEL_CHAT (Grok 4.5): anything the user reads as Yoinky's voice -
  *   drafts, takes, replies, the chat turn, the diagnosis.
  * cheap / cheap_floor / none → MODEL_CHEAP: mechanical and structural work whose
  *   output is JSON we consume, never prose the user sees.
  *
- * The cheap tier ALWAYS goes over OpenRouter, even when LLM_TRANSPORT=xai —
+ * The cheap tier ALWAYS goes over OpenRouter, even when LLM_TRANSPORT=xai -
  * api.x.ai serves Grok and nothing else, so a cheap-tier call there would 404.
  * That makes transport a per-REQUEST decision, not a per-process one.
  */
@@ -131,7 +131,7 @@ const liveRouteEnv = (): RouteEnv => ({
 
 export function routeFor(tier: Tier, env: RouteEnv = liveRouteEnv()): { model: string; xai: boolean } {
   // The cheap model lives on OpenRouter, so without a key there is nothing to
-  // route TO — fall back to the product model rather than failing the call.
+  // route TO - fall back to the product model rather than failing the call.
   // Only reachable under LLM_TRANSPORT=xai; the OpenRouter transport needs that
   // key for every call anyway.
   if (tier !== "frontier" && env.cheapRouting && env.openRouterKey) {
@@ -183,12 +183,12 @@ export class LlmHttpError extends Error {
 }
 
 /** Default ceiling on any single provider HTTP call. A hung connection must not
- * hang the user's turn forever — abort and let the retry path decide. */
+ * hang the user's turn forever - abort and let the retry path decide. */
 export const PROVIDER_TIMEOUT_MS = Number(process.env.LLM_PROVIDER_TIMEOUT_MS ?? 45_000);
 
 /**
  * fetch with a hard timeout via AbortController. Throws on timeout (an aborted
- * request rejects), which the retry wrapper treats as retriable — so a stalled
+ * request rejects), which the retry wrapper treats as retriable - so a stalled
  * provider yields to a retry instead of blocking indefinitely.
  */
 export async function fetchWithTimeout(
@@ -211,16 +211,16 @@ export async function fetchWithTimeout(
 /** Single chat-completions call over the active transport (OpenRouter or
  *  xAI-direct, per LLM_TRANSPORT). `useJsonMode` is separate from `req.json` so the
  *  caller can retry WITHOUT response_format when a provider rejects it (OpenRouter
- *  spreads across providers, and not all accept response_format — that 400 must
+ *  spreads across providers, and not all accept response_format - that 400 must
  *  degrade, not kill the turn). Both transports speak the OpenAI chat shape. */
 async function callModel(req: LlmRequest, useJsonMode: boolean, sendReasoning = true): Promise<LlmResponse> {
-  // Model AND transport now follow the tier — see routeFor.
+  // Model AND transport now follow the tier - see routeFor.
   let { model, xai } = routeFor(req.tier);
   let cheapModel = !xai && model !== config.MODEL_CHAT;
 
   /**
    * BYOK: a lifetime user's own OpenRouter key, so their generation bills their
-   * account and not ours — that's the whole basis of the uncapped lifetime plan
+   * account and not ours - that's the whole basis of the uncapped lifetime plan
    * (billing/entitlements.ts LIFETIME).
    *
    * A BYOK key is an OPENROUTER key, so it also forces the OpenRouter transport:
@@ -276,7 +276,7 @@ async function callModel(req: LlmRequest, useJsonMode: boolean, sendReasoning = 
   } else if (cheapModel) {
     headers["HTTP-Referer"] = "https://t.me/yoinkyybot";
     headers["X-Title"] = "Yoinky";
-    // REASONING OFF — not "low". GLM 4.7 Flash is a reasoning model, and this is
+    // REASONING OFF - not "low". GLM 4.7 Flash is a reasoning model, and this is
     // the difference between the cheap tier working and returning nothing at all:
     // with effort "low" it spent the entire 80-token budget of classify_mention
     // on an internal monologue and came back `content: null`,
@@ -314,14 +314,14 @@ async function callModel(req: LlmRequest, useJsonMode: boolean, sendReasoning = 
       prompt_tokens_details?: { cached_tokens?: number };
     };
   };
-  // Log the raw usage shape when debugging — the spec wants the live cached_tokens
+  // Log the raw usage shape when debugging - the spec wants the live cached_tokens
   // location confirmed on the chosen transport before trusting the metering.
   if (process.env.LLM_DEBUG === "true" || process.env.LLM_DEBUG === "1") {
     console.log(`llm usage [${req.eventType}] transport=${xai ? "xai" : "openrouter"} ${JSON.stringify(data.usage ?? {})}`);
   }
   const choice = data.choices[0];
   // Hybrid reasoning models sometimes put the whole answer in message.reasoning
-  // and leave content empty — that used to surface as "no JSON found".
+  // and leave content empty - that used to surface as "no JSON found".
   const content = choice?.message.content ?? "";
   const text = content.trim() ? content : (choice?.message.reasoning ?? "");
   const tokensIn = data.usage?.prompt_tokens ?? 0;
@@ -345,7 +345,7 @@ async function callModel(req: LlmRequest, useJsonMode: boolean, sendReasoning = 
 }
 
 /**
- * Walk a string starting at a `{` or `[` and return the balanced JSON slice —
+ * Walk a string starting at a `{` or `[` and return the balanced JSON slice -
  * i.e. up to the matching close bracket, string- and escape-aware. Returns the
  * whole rest when the structure never closes (truncated output); the caller's
  * parse then fails and the salvage path takes over.
@@ -373,7 +373,7 @@ function balancedJsonSlice(s: string): string {
   return s;
 }
 
-/** Drop trailing commas before } / ] — GLM emits them under JSON pressure. */
+/** Drop trailing commas before } / ] - GLM emits them under JSON pressure. */
 function stripTrailingCommas(s: string): string {
   return s.replace(/,\s*([}\]])/g, "$1");
 }
@@ -398,7 +398,7 @@ export function extractJson(text: string): unknown {
  * ([{"reply":...},{"tool":...}]). Callers that expect ONE object should run
  * res.parsed through this: an array of objects is shallow-merged back into a
  * single object, and anything else is returned untouched. This is valid-but-
- * wrong-shape JSON, so the recovery ladder above never catches it — without this
+ * wrong-shape JSON, so the recovery ladder above never catches it - without this
  * a purely structural quirk throws a raw Zod "expected object, received array"
  * and kills the whole turn (see telegram/conversation.ts).
  */
@@ -416,7 +416,7 @@ export function asObject(value: unknown): unknown {
  * Last-resort salvage for TRUNCATED JSON (finish_reason "length", mid-string
  * cutoffs): close the open string and brackets and parse; if the tail is
  * unparseably broken, chop back to the previous comma/close-bracket and try
- * again — so a cut-off array of N items degrades to the first N-1 items instead
+ * again - so a cut-off array of N items degrades to the first N-1 items instead
  * of a hard failure. Returns undefined when nothing structured can be saved.
  * Only ever used after the model was ALREADY re-asked and failed again; a
  * partial parse of real output beats a dead job. Callers zod-validate.
@@ -460,12 +460,12 @@ export function salvageTruncatedJson(text: string): unknown | undefined {
   return undefined;
 }
 
-/** Per-user daily model-call ceiling — command spam can't burn unmetered spend. */
+/** Per-user daily model-call ceiling - command spam can't burn unmetered spend. */
 const DAILY_CALL_CAP = Number(process.env.LLM_DAILY_CALL_CAP ?? 400);
 
 export class LlmBudgetError extends Error {
   constructor() {
-    super("Daily AI budget reached for this account — resets at midnight UTC. Anything urgent still works tomorrow.");
+    super("Daily AI budget reached for this account - resets at midnight UTC. Anything urgent still works tomorrow.");
   }
 }
 
@@ -490,7 +490,7 @@ export async function llmCall(req: LlmRequest): Promise<LlmResponse> {
   if (req.userId && !(await underDailyCap(req.userId))) throw new LlmBudgetError();
 
   // JSON requests ask for response_format json_object first. If the routed
-  // provider rejects it (a non-retriable 400 — happens because OpenRouter spreads
+  // provider rejects it (a non-retriable 400 - happens because OpenRouter spreads
   // GLM across providers with uneven support), fall back to plain mode and lean
   // on the prompt's "respond with ONLY valid JSON" + extractJson. Without this,
   // provider roulette silently broke every structured call (the onboarding loop).
@@ -499,7 +499,7 @@ export async function llmCall(req: LlmRequest): Promise<LlmResponse> {
     res = await withRetries(() => callModel(req, req.json === true), 3);
   } catch (err) {
     // A non-retriable 400 on the chat path is almost always a request param the
-    // routed provider rejects — response_format (uneven across OpenRouter hosts)
+    // routed provider rejects - response_format (uneven across OpenRouter hosts)
     // or the reasoning field (unverified on grok-4.5). Degrade once: drop BOTH and
     // lean on the prompt's "respond with ONLY JSON" instruction. A plain call beats
     // a dead turn; without this, provider roulette (or an unaccepted param) would
@@ -525,16 +525,16 @@ export async function llmCall(req: LlmRequest): Promise<LlmResponse> {
 
     // Ladder-entry metric (spec §5): first parse failed, so a recovery rung is
     // about to run (each rung re-charges input). Grep `json-ladder-entry` by
-    // event to see which prompts still need it — a prompt that never enters it
+    // event to see which prompts still need it - a prompt that never enters it
     // under native structured output can drop its ladder; one that keeps entering
     // signals a too-tight max_tokens, not a flaky model.
     ladderEntries.set(req.eventType, (ladderEntries.get(req.eventType) ?? 0) + 1);
     console.warn(`json-ladder-entry event=${req.eventType} finish=${res.finishReason ?? "?"} schema=${req.jsonSchema ? "y" : "n"} count=${ladderEntries.get(req.eventType)}`);
 
     // ── The JSON recovery ladder (2026-07-13). Kept as a FALLBACK under native
-    // structured outputs — three failure classes, each with its own bounded rung. ──
+    // structured outputs - three failure classes, each with its own bounded rung. ──
 
-    // Rung 1 — truncation: finish_reason "length" means the JSON was cut off
+    // Rung 1 - truncation: finish_reason "length" means the JSON was cut off
     // mid-structure (GLM front-loads prose before the JSON, eating the budget).
     // Re-run the same call with a doubled token budget.
     const biggerBudget = Math.min(4096, (req.maxTokens ?? 1024) * 2);
@@ -549,7 +549,7 @@ export async function llmCall(req: LlmRequest): Promise<LlmResponse> {
       }
     }
 
-    // Rung 2 — repair, not re-ask: hand the model its OWN previous output and
+    // Rung 2 - repair, not re-ask: hand the model its OWN previous output and
     // ask it to convert that to the required JSON. Much more reliable than
     // re-asking cold (the old corrective retry re-rolled the same dice and
     // failed live), and it preserves the answer that was already generated.
@@ -558,14 +558,14 @@ export async function llmCall(req: LlmRequest): Promise<LlmResponse> {
         callModel(
           {
             ...req,
-            // Reformatting the model's own text into JSON needs no deliberation —
+            // Reformatting the model's own text into JSON needs no deliberation -
             // force low reasoning_effort regardless of the original prompt's tier.
             tier: "none",
             maxTokens: biggerBudget,
             user:
               `${req.user}\n\nYou already answered this, but not as valid JSON. ` +
               `Convert YOUR PREVIOUS ANSWER below into the exact JSON format required above. ` +
-              `Output ONLY the JSON — no prose, no code fences.\n\nYOUR PREVIOUS ANSWER:\n${res.text.slice(0, 6000)}`,
+              `Output ONLY the JSON - no prose, no code fences.\n\nYOUR PREVIOUS ANSWER:\n${res.text.slice(0, 6000)}`,
           },
           false,
         ),
@@ -573,7 +573,7 @@ export async function llmCall(req: LlmRequest): Promise<LlmResponse> {
     ).catch(() => null);
     if (repair && tryParse(repair)) return repair;
 
-    // Rung 3 — salvage: best-effort close-and-parse of truncated structures,
+    // Rung 3 - salvage: best-effort close-and-parse of truncated structures,
     // newest text first. A partial parse of real output (fewer array items)
     // beats a dead job; callers zod-validate whatever comes out.
     for (const source of [repair, res]) {

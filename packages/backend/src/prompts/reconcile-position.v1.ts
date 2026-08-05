@@ -8,7 +8,7 @@ export interface ReconcileVars {
 /**
  * The belief-reconciliation judge. When a newly stated position lands near
  * existing active positions in embedding space, this decides the actual
- * semantic relation so the store can reinforce, supersede, or coexist —
+ * semantic relation so the store can reinforce, supersede, or coexist -
  * instead of piling contradictory beliefs side by side forever.
  */
 export const reconcilePosition: Prompt<ReconcileVars> = {
@@ -21,7 +21,7 @@ relation to the new statement:
 
 - "same": states the same underlying belief (wording may differ). The new statement is a
   re-affirmation, not a new belief.
-- "contradicts": a reasonable reader would say the person changed their mind — the two cannot both
+- "contradicts": a reasonable reader would say the person changed their mind - the two cannot both
   be their current view. A genuine reversal or replacement, not mere tension or a different topic.
 - "unrelated": different belief; both can stand.
 

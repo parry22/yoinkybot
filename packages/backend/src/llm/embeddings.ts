@@ -13,7 +13,7 @@ interface EmbeddingProvider {
  * Prefer OpenAI; fall back to Qwen/DashScope (OpenAI-compatible embeddings endpoint).
  *
  * DELIBERATELY NOT BYOK. A lifetime user supplies an OpenRouter key, and
- * OpenRouter does not serve an embeddings endpoint — there is nothing to route
+ * OpenRouter does not serve an embeddings endpoint - there is nothing to route
  * their embedding traffic to. Asking for a fourth key (OpenAI) to cover this
  * would add real setup friction for a line item measured at ~$0.00001 per call
  * (see docs/INTERNAL.md §3s), which is not a trade worth making. Embeddings stay
@@ -36,7 +36,7 @@ function resolveProvider(): EmbeddingProvider {
       model: config.QWEN_EMBEDDING_MODEL,
       // DashScope text-embedding-v4 list price. It was 0 as a placeholder, which
       // silently zeroed every embedding line in usage telemetry whenever the
-      // Qwen fallback was the active provider — and embeddings run on EVERY
+      // Qwen fallback was the active provider - and embeddings run on EVERY
       // buyer lead and every performance read, so the under-report compounded.
       // Deliberately rounded UP: an over-estimate shows in the budget, an
       // under-estimate hides.

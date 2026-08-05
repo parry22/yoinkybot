@@ -2,7 +2,7 @@ import { query, queryOne } from "../db/pool.js";
 import type { UserSettings } from "../lib/time.js";
 
 /**
- * Deterministic "best time to post" advisory — computed from the user's OWN
+ * Deterministic "best time to post" advisory - computed from the user's OWN
  * published post history (real engagement, not guessed), same doctrine as
  * engagement/heuristics.ts and trends/viral-heuristics.ts. Buckets posts into
  * four dayparts in the user's local timezone and recommends whichever daypart
@@ -14,11 +14,11 @@ import type { UserSettings } from "../lib/time.js";
 export type Daypart = "early_morning" | "morning" | "afternoon" | "evening" | "night";
 
 const DAYPART_LABEL: Record<Daypart, string> = {
-  early_morning: "early morning (5–8am)",
-  morning: "late morning (8am–12pm)",
-  afternoon: "afternoon (12–5pm)",
-  evening: "early evening (5–9pm)",
-  night: "night (9pm–5am)",
+  early_morning: "early morning (5-8am)",
+  morning: "late morning (8am-12pm)",
+  afternoon: "afternoon (12-5pm)",
+  evening: "early evening (5-9pm)",
+  night: "night (9pm-5am)",
 };
 
 /** Minimum posts in a daypart bucket before its average is trusted. */
@@ -36,7 +36,7 @@ export function daypartForHour(hourLocal: number): Daypart {
 
 export interface EngagedPost {
   postedAtMs: number;
-  /** likeCount + retweetCount*2 + replyCount*2 — amplification weighted, same
+  /** likeCount + retweetCount*2 + replyCount*2 - amplification weighted, same
    *  spirit as trends/scoring.ts's engagement weighting. */
   engagement: number;
 }
@@ -62,7 +62,7 @@ function localHour(ms: number, tz: string): number {
 
 /** Pure: bucket posts by daypart, pick the highest-average bucket that clears
  *  the minimum sample. Falls back to a fixed general best-practice default
- *  (late morning — the most commonly cited high-traffic window) when there
+ *  (late morning - the most commonly cited high-traffic window) when there
  *  isn't enough of the user's own data to trust a personalized read. */
 export function computeBestWindow(posts: EngagedPost[], tz: string): BestWindowResult {
   if (posts.length < MIN_TOTAL_SAMPLE) {
@@ -111,7 +111,7 @@ async function loadEngagedPosts(userId: string, platform: "x" | "linkedin"): Pro
 }
 
 /**
- * The advisory line appended to a scheduling confirmation — always present
+ * The advisory line appended to a scheduling confirmation - always present
  * (the ask is "make sure to advise", not "only when it matters"), honest about
  * whether it's personalized or a general default, and never blocks scheduling.
  */
@@ -127,12 +127,12 @@ export async function bestTimeAdvisory(
   const label = DAYPART_LABEL[result.daypart];
   const basis = result.personalized
     ? "based on your own posts' engagement"
-    : "general best-practice default — post a bit more and I'll personalize this to your own data";
+    : "general best-practice default - post a bit more and I'll personalize this to your own data";
 
   if (isInRecommendedWindow(candidateWhenMs, tz, result)) {
     return `this lands right in your best window (${label}, ${basis}).`;
   }
-  return `heads up: your best window tends to be ${label} (${basis}) — this slot is outside it. keeping it as scheduled, just flagging.`;
+  return `heads up: your best window tends to be ${label} (${basis}) - this slot is outside it. keeping it as scheduled, just flagging.`;
 }
 
 /** Earliest upcoming 15-minute slot in the platform-specific best daypart.

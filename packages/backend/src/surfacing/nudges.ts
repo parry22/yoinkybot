@@ -20,7 +20,7 @@ import { PROACTIVE_TYPES } from "./cadence.js";
 /**
  * Hours of total silence after plan confirmation before the first touch fires.
  * The spec's window is 48h of zero contact; we fire at 24h so the first-ever
- * proactive message lands on day two, not day three — this window is where
+ * proactive message lands on day two, not day three - this window is where
  * "is this thing even on?" gets decided.
  */
 export const COLD_START_MIN_HOURS = 24;
@@ -58,7 +58,7 @@ export async function coldStartInputs(userId: string, now = Date.now()): Promise
 }
 
 /**
- * The honest check-in — the cold-start ladder's last rung, when memory is too
+ * The honest check-in - the cold-start ladder's last rung, when memory is too
  * sparse for even a relaxed resurface. A modest real message beats an empty
  * inbox that makes the whole product feel dead.
  */

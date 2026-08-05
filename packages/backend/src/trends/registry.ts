@@ -13,7 +13,7 @@ const ALL: Record<string, TrendProvider> = {
 /**
  * Ordered provider chain: the configured TREND_PROVIDER first, then the rest as
  * fallbacks. A provider that is unconfigured, throws, or returns nothing simply
- * yields to the next — the caller never sees which one answered.
+ * yields to the next - the caller never sees which one answered.
  */
 export function providerChain(): TrendProvider[] {
   const preferred = ALL[config.TREND_PROVIDER];

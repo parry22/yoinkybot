@@ -4,14 +4,14 @@ import { SUPABASE_ROOT_CA } from "./supabase-ca.js";
 
 /**
  * Two very different consumers share this module, and they need opposite pool
- * shapes — which the old flat `max: 10` got wrong for one of them.
+ * shapes - which the old flat `max: 10` got wrong for one of them.
  *
  * The BACKEND is a single long-lived process. Ten connections is right: pg-boss's
  * workers plus the bot plus the crons genuinely want concurrency, and the process
  * holds them for its whole lifetime.
  *
  * The WEB APP is Vercel serverless. Every concurrent function instance builds its
- * OWN pool, so `max: 10` means ten connections *per instance* — a traffic spike
+ * OWN pool, so `max: 10` means ten connections *per instance* - a traffic spike
  * that spins up 20 instances asks for 200 connections. Against a managed
  * Postgres's connection ceiling (Supabase free is far below that, and a pooler in
  * transaction mode has its own client limit) this exhausts the server and the
@@ -32,13 +32,13 @@ const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTI
  * in the public trust store. node-postgres treats the `sslmode=require` in the
  * connection string as `verify-full`, so it rejects that chain outright:
  *   Error: self-signed certificate in certificate chain
- * — confirmed against both pooler ports in CI before the cutover, which is the
+ * - confirmed against both pooler ports in CI before the cutover, which is the
  * only reason this wasn't a production outage.
  *
  * Pinning the real CA keeps verification ON, including the hostname check. The
  * easy alternatives (`sslmode=no-verify`, `rejectUnauthorized: false`) would
  * encrypt while authenticating nothing, leaving the database credential open to
- * anyone who can get in the path — not a trade worth making for a managed
+ * anyone who can get in the path - not a trade worth making for a managed
  * database reached across the public internet.
  *
  * Host-matched rather than applied unconditionally, so a non-Supabase
@@ -53,7 +53,7 @@ const isSupabase = /\.supabase\.(co|com)(:|\/|$)/.test(config.DATABASE_URL);
  * THIS IS LOAD-BEARING, and the reason the first attempt at CA pinning silently
  * did nothing. `pg` builds its parameters as
  *   Object.assign({}, config, parse(config.connectionString))
- * — the parsed connection string is merged ON TOP of the explicit options, so a
+ * - the parsed connection string is merged ON TOP of the explicit options, so a
  * `sslmode=require` in the URL overwrites the `ssl` object rather than deferring
  * to it. The CA was simply never consulted, and the failure was identical to
  * having passed no CA at all ("self-signed certificate in certificate chain"),
@@ -69,7 +69,7 @@ function withoutSslMode(url: string): string {
     u.searchParams.delete("sslmode");
     return u.toString();
   } catch {
-    return url; // unparseable — leave it alone and let pg report the real error
+    return url; // unparseable - leave it alone and let pg report the real error
   }
 }
 
@@ -77,7 +77,7 @@ function withoutSslMode(url: string): string {
  * The connection settings every Postgres client in this codebase must use.
  *
  * Exported because `pg.Pool` is NOT the only consumer: pg-boss (jobs/boss.ts)
- * builds its own connection, and it passed the raw DATABASE_URL — so the moment
+ * builds its own connection, and it passed the raw DATABASE_URL - so the moment
  * the URL pointed at Supabase it would have hit the same TLS rejection the pool
  * did, taking every background job down with it while the web app looked fine.
  * One helper means TLS cannot be right in one place and wrong in another.
@@ -95,7 +95,7 @@ export function dbConnectionOptions(): { connectionString: string; ssl?: pg.Pool
 /**
  * THE SESSION-POOLER BUDGET. Supabase's session pooler (port 5432, what the
  * Railway backend uses) allows **15 client connections total**, and exceeding it
- * does not queue — it throws:
+ * does not queue - it throws:
  *
  *     error: (EMAXCONNSESSION) max clients reached in session mode
  *            - max clients are limited to pool_size: 15
@@ -106,11 +106,11 @@ export function dbConnectionOptions(): { connectionString: string; ssl?: pg.Pool
  *
  * The backend opens TWO independent pools against that one budget: this one, and
  * pg-boss's (jobs/boss.ts). Neither used to declare a size, so this pool took 10
- * and pg-boss's default took another 10 — 20 against a ceiling of 15. It worked
+ * and pg-boss's default took another 10 - 20 against a ceiling of 15. It worked
  * on Neon, which allows far more, and broke the moment we moved.
  *
  * So the 15 is now divided on purpose:
- *   pg-boss   8   (BOSS_POOL_MAX in jobs/boss.ts — it needs the most; 27 workers
+ *   pg-boss   8   (BOSS_POOL_MAX in jobs/boss.ts - it needs the most; 27 workers
  *                  poll plus maintenance)
  *   this pool 4   (request/job query traffic)
  *   spare     3   (boot migrations, a one-off script, a human's psql)
@@ -128,18 +128,18 @@ export const pool = new pg.Pool({
   //
   // The backend releases idle connections too, which it did not before (0 = never).
   // Against a shared 15-slot pooler, holding connections open while idle is just
-  // hoarding slots that boot migrations and pg-boss need — and reconnecting is
+  // hoarding slots that boot migrations and pg-boss need - and reconnecting is
   // cheap next to failing.
   idleTimeoutMillis: isServerless ? 10_000 : 30_000,
   // Fail fast rather than hanging a request for the platform's full timeout when
-  // the database is unreachable — which is exactly what happened when the Neon
+  // the database is unreachable - which is exactly what happened when the Neon
   // compute quota ran out: every page sat waiting instead of erroring cleanly.
   connectionTimeoutMillis: 10_000,
 });
 
 // A pooled connection can be killed server-side (pooler recycling, a failover, an
 // idle reaper). `pg` emits that on the pool, and an unhandled 'error' event on an
-// EventEmitter takes the whole process down — so this listener is what stops a
+// EventEmitter takes the whole process down - so this listener is what stops a
 // routine connection drop from becoming a crash.
 pool.on("error", (err) => console.error("pg pool error (connection dropped)", err.message));
 

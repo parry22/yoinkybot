@@ -101,7 +101,7 @@ export async function maybeProgressReport(userId: string): Promise<boolean> {
   );
 
   // Paced delivery in one window: everything but the closer as a sequence, the
-  // closer via sendTelegram so it carries the reaction keyboard — plus, when
+  // closer via sendTelegram so it carries the reaction keyboard - plus, when
   // the period had a real outlier, an offer to repurpose that specific post
   // (acting on a measured signal; rides this message, no extra proactive send).
   if (messages.length > 1) {

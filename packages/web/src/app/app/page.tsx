@@ -19,7 +19,7 @@ const one = (v: string | string[] | undefined): string | undefined => (Array.isA
 // query string entirely. `/api/auth/x/callback` lands here as `/app?connected=x`
 // (or `/app?connect_error=1`), so the drop meant the gate never saw either: the
 // post-connect "Reading your X" state was unreachable dead code, and a failed
-// OAuth was completely silent — the user was bounced into the app with no idea
+// OAuth was completely silent - the user was bounced into the app with no idea
 // the connect hadn't worked. Anything the gate reads must be forwarded.
 export default async function AppIndexPage({
   searchParams,

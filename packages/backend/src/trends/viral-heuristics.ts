@@ -1,5 +1,5 @@
 /**
- * Deterministic "why it blew up" facts for a single high-impression tweet —
+ * Deterministic "why it blew up" facts for a single high-impression tweet -
  * pure functions, no I/O, no model. Same doctrine as engagement/heuristics.ts:
  * the composition agent narrates THESE numbers; it never invents "hooks and
  * algorithm" folklore. Every field here is computed from the tweet's real
@@ -24,7 +24,7 @@ export type Opener = "question" | "number" | "bold_claim" | "plain";
 
 export interface ViralHeuristics {
   view_count: number;
-  /** views ÷ author followers — the single best "escaped its normal reach" signal. */
+  /** views ÷ author followers - the single best "escaped its normal reach" signal. */
   breakout_ratio: number;
   /** Engagement rate per 1,000 views (like/rt/reply/bookmark). Bookmarks are the
    *  "save for later" signal that often precedes sustained reach. */
@@ -34,7 +34,7 @@ export interface ViralHeuristics {
   bookmark_rate_per_1k: number;
   /** Share of engagement that is amplification (rt+quote) vs passive (likes). */
   amplification_share: number;
-  /** Views per hour since posting — raw velocity. */
+  /** Views per hour since posting - raw velocity. */
   views_per_hour: number;
   hours_since_post: number;
   has_media: boolean;

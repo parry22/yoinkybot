@@ -36,7 +36,7 @@ export async function POST(req: Request) {
         return;
       }
       console.error("streamed automation save failed", err);
-      emit({ type: "error", message: "Couldn't set that agent up — try again." });
+      emit({ type: "error", message: "Couldn't set that agent up - try again." });
     }
   });
 }
