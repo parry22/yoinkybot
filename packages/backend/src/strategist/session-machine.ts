@@ -484,8 +484,8 @@ async function runProfilingTurn(userId: string, message: string, state: Strategi
     phase === "profiling" && field
       ? FALLBACK_QUESTION[field]
       : authConnect
-        ? "Tap the connect button below to link your X (LinkedIn's next), or drop your @handle / LinkedIn profile URL and I'll read your history from that."
-        : "Drop your X handle (like @yourname) or your LinkedIn profile URL and I'll read your history from here.";
+        ? "Tap a connect button below to link X or LinkedIn, or share an X handle or LinkedIn profile URL and I’ll read your history from there."
+        : "Share an X handle (like @yourname) or a LinkedIn profile URL and I’ll read your history from there.";
 
   // Context loads are best-effort: a DB hiccup on any of them must NOT kill the
   // turn (that was the loop bug - a failed getProfile threw before the LLM ran,

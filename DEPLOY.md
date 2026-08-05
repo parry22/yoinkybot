@@ -128,7 +128,7 @@ A healthy response reports `ok: true`. It also reports whether the selected LLM 
 
 Test these flows with a non-admin account:
 
-1. Sign up and connect X.
+1. Sign up and connect X or LinkedIn.
 2. Create a draft from Compose.
 3. Schedule a post with media.
 4. Connect LinkedIn and repurpose an X post.

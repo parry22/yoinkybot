@@ -128,8 +128,10 @@ export async function getGrowthState(userId: string): Promise<GrowthState> {
     currentDiagnosis(userId).catch(() => null),
     getPlan(userId).catch(() => null),
     getProfile(userId).catch(() => null),
-    queryOne<{ handle: string; meta: Record<string, unknown> | null }>(
-      `SELECT handle, meta FROM connected_accounts WHERE user_id = $1 AND platform = 'x' ORDER BY created_at DESC LIMIT 1`,
+    queryOne<{ platform: "x" | "linkedin"; handle: string; meta: Record<string, unknown> | null }>(
+      `SELECT platform, handle, meta FROM connected_accounts
+       WHERE user_id = $1 AND status <> 'failed'
+       ORDER BY CASE platform WHEN 'x' THEN 0 ELSE 1 END, created_at DESC LIMIT 1`,
       [userId],
     ).catch(() => null),
     queryOne<{
@@ -159,7 +161,9 @@ export async function getGrowthState(userId: string): Promise<GrowthState> {
   ]);
 
   const connected = !!acct;
-  const followers = typeof acct?.meta?.followers === "number" ? (acct!.meta!.followers as number) : null;
+  // LinkedIn's OAuth profile does not provide a follower count. Only surface
+  // the X snapshot when it exists rather than showing a misleading zero.
+  const followers = acct?.platform === "x" && typeof acct.meta?.followers === "number" ? (acct.meta.followers as number) : null;
   const profileComplete = isProfileComplete(profile);
   const hasDiagnosis = !!diag;
   const hasPlan = !!plan;
@@ -214,8 +218,8 @@ export async function getGrowthState(userId: string): Promise<GrowthState> {
   const quests: GrowthQuest[] = [];
   quests.push({
     id: "connect",
-    title: "Connect your X account",
-    detail: "Yoinky reads your posts to learn your voice and everything downstream.",
+    title: "Connect X or LinkedIn",
+    detail: "Yoinky learns from your posts and uses that context throughout your workspace.",
     xp: 50,
     done: connected,
     kind: "setup",

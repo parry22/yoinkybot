@@ -28,6 +28,11 @@ export interface XConnectStatus {
   postCount: number;
 }
 
+export interface SocialConnectStatus {
+  x: XConnectStatus;
+  linkedIn: XConnectStatus;
+}
+
 /** Store the X posting token, then kick the scrape+diagnose job. */
 export async function finalizeXConnect(
   userId: string,
@@ -93,16 +98,29 @@ export async function connectLinkedInProfileFromWeb(userId: string, profileUrl: 
 
 /** Read the current X connection/ingest state for the mandatory-connect popup poll. */
 export async function getXConnectStatus(userId: string): Promise<XConnectStatus> {
+  return getPlatformConnectStatus(userId, "x");
+}
+
+/** Connection state for either publishing platform. LinkedIn OAuth currently
+ * authorizes posting immediately, whereas X also starts a history read. */
+export async function getSocialConnectStatus(userId: string): Promise<SocialConnectStatus> {
+  const [x, linkedIn] = await Promise.all([
+    getPlatformConnectStatus(userId, "x"),
+    getPlatformConnectStatus(userId, "linkedin"),
+  ]);
+  return { x, linkedIn };
+}
+
+async function getPlatformConnectStatus(userId: string, platform: "x" | "linkedin"): Promise<XConnectStatus> {
   const row = await query<{ status: string; post_count: number }>(
-    `SELECT status, post_count FROM connected_accounts WHERE user_id = $1 AND platform = 'x' LIMIT 1`,
-    [userId],
+    `SELECT status, post_count FROM connected_accounts WHERE user_id = $1 AND platform = $2 LIMIT 1`,
+    [userId, platform],
   );
   const r = row[0];
   const status = r?.status ?? null;
   const failed = status === "failed";
-  // 'pending' is also the state a connect gets stuck in when no scrape provider
-  // is configured (finalizeXConnect only enqueues the read when a key exists),
-  // so it must read as "still working", never as "done".
+  // 'pending' is also the state an X connect gets stuck in when no scrape
+  // provider is configured, so it must read as "still working", never "done".
   const reading = status === "pending" || status === "ingesting";
   return { connected: Boolean(r) && !failed, status, reading, failed, postCount: r?.post_count ?? 0 };
 }

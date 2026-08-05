@@ -16,21 +16,27 @@ function XLogo({ size = 20 }: { size?: number }) {
 }
 
 const READING_MESSAGES = [
-  "reading your recent posts…",
-  "learning how you actually write…",
-  "spotting the themes you keep returning to…",
-  "finding your throughline…",
-  "personalizing Yoinky for you…",
+  "Reading your recent posts…",
+  "Learning how you actually write…",
+  "Spotting the themes you keep returning to…",
+  "Finding your throughline…",
+  "Personalizing Yoinky for you…",
 ];
 
 /** none = no X attached · reading = attached, history read in flight · failed =
  *  attached but the read died · ready = attached and read. */
 type GateStatus = "none" | "reading" | "failed" | "ready";
+type Connection = { connected: boolean; reading: boolean; failed: boolean };
 
-function statusOf(x: { connected: boolean; reading: boolean; failed: boolean }): GateStatus {
-  if (x.failed) return "failed";
-  if (x.reading) return "reading";
-  return x.connected ? "ready" : "none";
+function statusOf(x: Connection, linkedIn: Connection): GateStatus {
+  // Either platform gets a person into Yoinky. A LinkedIn OAuth connection is
+  // immediately usable for drafting and publishing; X finishes after its read.
+  if ((x.connected && !x.reading && !x.failed) || (linkedIn.connected && !linkedIn.reading && !linkedIn.failed)) {
+    return "ready";
+  }
+  if (x.reading || linkedIn.reading) return "reading";
+  if (x.failed || linkedIn.failed) return "failed";
+  return "none";
 }
 
 /**
@@ -56,22 +62,22 @@ function EscapeRow() {
   );
 }
 
-function Gate({ connected, reading, failed }: { connected: boolean; reading: boolean; failed: boolean }) {
+function Gate({ x, linkedIn }: { x: Connection; linkedIn: Connection }) {
   const params = useSearchParams();
-  // Set by the OAuth callback (/app?connected=x). The row is already written by
+  // Set by the OAuth callback (/app?connected=x or linkedin). The row is already written by
   // then, so this is only a belt-and-braces trigger for the reading state in case
   // the layout's read of it raced; the poll below is what actually resolves it.
-  const justConnected = params.get("connected") === "x";
+  const justConnected = ["x", "linkedin"].includes(params.get("connected") ?? "");
   // Set when the OAuth handshake itself blew up before any account row existed.
-  // "config" means X rejected OUR credentials - retrying cannot fix that, so the
+  // "config" means the platform rejected OUR credentials - retrying cannot fix that, so the
   // copy must not ask the user to. "1" is kept so an in-flight redirect issued by
   // the previous deploy still renders as the retryable case.
   const connectErrorKind = params.get("connect_error");
   const connectError = connectErrorKind === "1" || connectErrorKind === "retry";
   const connectBlocked = connectErrorKind === "config";
 
-  const [status, setStatus] = useState<GateStatus>(() => statusOf({ connected, reading, failed }));
-  const [ingested, setIngested] = useState(() => statusOf({ connected, reading, failed }) === "ready");
+  const [status, setStatus] = useState<GateStatus>(() => statusOf(x, linkedIn));
+  const [ingested, setIngested] = useState(() => statusOf(x, linkedIn) === "ready");
   const [dismissed, setDismissed] = useState(false);
 
   const showReading = !ingested && status !== "failed" && (status === "reading" || justConnected);
@@ -90,11 +96,13 @@ function Gate({ connected, reading, failed }: { connected: boolean; reading: boo
     const poll = setInterval(async () => {
       try {
         const r = (await fetch("/api/connect-status").then((res) => res.json())) as {
-          connected?: boolean;
-          reading?: boolean;
-          failed?: boolean;
+          x?: Connection;
+          linkedIn?: Connection;
         };
-        const next = statusOf({ connected: !!r.connected, reading: !!r.reading, failed: !!r.failed });
+        const next = statusOf(
+          r.x ?? { connected: false, reading: false, failed: false },
+          r.linkedIn ?? { connected: false, reading: false, failed: false },
+        );
         setStatus(next);
         if (next === "ready") setIngested(true);
       } catch {
@@ -120,15 +128,18 @@ function Gate({ connected, reading, failed }: { connected: boolean; reading: boo
           <div className={styles.icon}>
             <XLogo />
           </div>
-          <div className={styles.title}>We couldn&apos;t read your X</div>
+          <div className={styles.title}>We couldn&apos;t finish reading your account</div>
           <div className={styles.body}>
-            Your account is connected, but pulling your posts didn&apos;t work. That&apos;s usually a protected
-            account, one with very little public activity in the last few months, or X being slow to answer. Try again
-            - it often goes through second time.
+            Your account is connected, but pulling its posts didn&apos;t work. This can happen with a protected account,
+            very little recent public activity, or a slow platform response. You can reconnect X or continue with
+            LinkedIn instead.
           </div>
           <a className={styles.xBtn} href="/api/auth/x/start">
             <XLogo size={17} />
-            Try connecting again
+            Reconnect X
+          </a>
+          <a className={styles.xBtn} href="/api/auth/linkedin/start">
+            Continue with LinkedIn
           </a>
           <EscapeRow />
         </div>
@@ -147,7 +158,7 @@ function Gate({ connected, reading, failed }: { connected: boolean; reading: boo
               <XLogo size={18} />
             </div>
           </div>
-          <div className={styles.title}>Reading your X</div>
+          <div className={styles.title}>Reading your X posts</div>
           <div className={styles.readingMsg}>{READING_MESSAGES[msgIndex]}</div>
           <div className={styles.progressTrack}>
             <div className={styles.progressBar} />
@@ -171,10 +182,10 @@ function Gate({ connected, reading, failed }: { connected: boolean; reading: boo
         <div className={styles.icon}>
           <XLogo />
         </div>
-        <div className={styles.title}>Connect your X to continue</div>
+        <div className={styles.title}>Connect X or LinkedIn to continue</div>
         <div className={styles.body}>
-          Yoinky works off your real posts. Connect your X account so it can read your history, learn your voice, and
-          personalize everything for you. This is required to use the app.
+          Yoinky works from your real posts. Connect either account so it can learn your voice and personalize your
+          drafts. You can add the other platform later in Settings.
         </div>
         {connectError && (
           <div className={styles.error}>
@@ -198,7 +209,10 @@ function Gate({ connected, reading, failed }: { connected: boolean; reading: boo
           <XLogo size={17} />
           Continue with X
         </a>
-        <div className={styles.note}>we never post without your say-so.</div>
+        <a className={styles.xBtn} href="/api/auth/linkedin/start">
+          Continue with LinkedIn
+        </a>
+        <div className={styles.note}>We never post without your say-so.</div>
         <EscapeRow />
       </div>
     </Modal>
@@ -206,17 +220,15 @@ function Gate({ connected, reading, failed }: { connected: boolean; reading: boo
 }
 
 export function ConnectXGate({
-  connected,
-  reading,
-  failed,
+  x,
+  linkedIn,
 }: {
-  connected: boolean;
-  reading: boolean;
-  failed: boolean;
+  x: Connection;
+  linkedIn: Connection;
 }) {
   return (
     <Suspense fallback={null}>
-      <Gate connected={connected} reading={reading} failed={failed} />
+      <Gate x={x} linkedIn={linkedIn} />
     </Suspense>
   );
 }

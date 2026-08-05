@@ -59,7 +59,9 @@ export {
   finalizeLinkedInConnect,
   connectLinkedInProfileFromWeb,
   getXConnectStatus,
+  getSocialConnectStatus,
   type XConnectStatus,
+  type SocialConnectStatus,
 } from "./web/x-signin.js";
 
 // Conversational brain, web-flavored (+ the streamed variant the chat UI uses)
