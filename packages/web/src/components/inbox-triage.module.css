@@ -6,6 +6,16 @@
   background: var(--chat-bg);
 }
 
+.bannerError {
+  margin: 10px 12px 0;
+  padding: 10px 12px;
+  border: 0.5px solid rgba(180, 60, 90, 0.35);
+  border-radius: 10px;
+  background: rgba(180, 60, 90, 0.08);
+  color: #b43c5a;
+  font-size: 13px;
+}
+
 .shell {
   display: grid;
   grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);

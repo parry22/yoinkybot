@@ -104,8 +104,19 @@ export async function buildTrackedCtaUrl(userId:string,workspaceId:string,action
 
 export async function listConversionActions(userId:string,workspaceId:string):Promise<ConversionActionView[]> {
   await requireWorkspaceRole(userId,workspaceId,"viewer");
-  const rows=await query<{id:string;name:string;action_type:string;destination:string;commitment_level:"low"|"medium"|"high";status:string}>(`SELECT id,name,action_type,destination,commitment_level,status FROM conversion_actions WHERE workspace_id=$1 ORDER BY created_at DESC`,[workspaceId]);
-  return rows.map(row=>({id:row.id,name:row.name,actionType:row.action_type,destination:row.destination,commitmentLevel:row.commitment_level,status:row.status}));
+  const rows=await query<{id:string;name:string;action_type:string;destination:string;commitment_level:"low"|"medium"|"high";status:string;tracking_token_encrypted:string|null}>(`SELECT id,name,action_type,destination,commitment_level,status,tracking_token_encrypted FROM conversion_actions WHERE workspace_id=$1 ORDER BY created_at DESC`,[workspaceId]);
+  return rows.map(row=>{
+    let url: string | undefined;
+    if (row.tracking_token_encrypted) {
+      try {
+        const token = open(JSON.parse(row.tracking_token_encrypted) as Sealed);
+        url = trackedUrl(row.destination, row.id, token, { workspaceId });
+      } catch {
+        url = undefined;
+      }
+    }
+    return {id:row.id,name:row.name,actionType:row.action_type,destination:row.destination,commitmentLevel:row.commitment_level,status:row.status,trackedUrl:url};
+  });
 }
 
 export async function recordConversionEvent(input:{actionId:string;token:string;assetId?:string|null;publicationId?:string|null;campaignId?:string|null;eventType:string;deduplicationKey:string;occurredAt:string;value?:number|null;currency?:string|null;metadata?:Record<string,unknown>}):Promise<{id:string;duplicate:boolean}>{

@@ -177,6 +177,13 @@
   margin: 6px 0 4px 8px;
 }
 
+.menuError {
+  margin: 0 8px 8px;
+  color: #b43c5a;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .menuItem {
   display: flex;
   align-items: center;

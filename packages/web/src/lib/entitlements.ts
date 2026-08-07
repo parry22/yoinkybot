@@ -7,6 +7,9 @@ import { entitlementsFor, isPaidOrExempt, type Entitlements, type User } from "@
  * walled - the caller then returns a 402. Mirrors the Telegram `upgradeWall`
  * (both go through `isPaidOrExempt`), closing the gap where web routes ran paid
  * work (twitterapi.io / LLM) for free/expired users.
+ *
+ * Expired/free users retain read-only access to company knowledge, analytics, and
+ * similar views by design; only mutating API routes call this gate.
  */
 export async function requirePaid(user: User): Promise<Entitlements | null> {
   const allowed = await isPaidOrExempt({ id: user.id, telegram_id: user.telegram_id });

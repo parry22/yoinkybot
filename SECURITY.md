@@ -13,7 +13,8 @@ Security fixes are applied to the latest commit on `main`. Self-hosters should k
 ## Hosted production controls
 
 - **Paywall fail-fast.** When `SELF_HOSTED=false` and `NODE_ENV=production`, the process throws if `PAYWALL_ENABLED` is not truthy. Self-hosted installs set `SELF_HOSTED=true` and leave the paywall off.
-- **OAuth token encryption.** Access/refresh tokens on `connected_accounts` are sealed with AES-256-GCM. Set `OAUTH_TOKEN_ENCRYPTION_KEY` (preferred) or `BYOK_ENCRYPTION_KEY` (32-byte key, base64). Seal/open refuses to run without a key.
+- **OAuth token encryption.** Access/refresh tokens on `connected_accounts` are sealed with AES-256-GCM. Set `OAUTH_TOKEN_ENCRYPTION_KEY` (preferred) or `BYOK_ENCRYPTION_KEY` (32-byte key, base64). Hosted production throws at boot without a valid key; token writers refuse plaintext. Existing plaintext rows require reconnect, not automatic migration.
+- **Expired-account policy.** Hosted paywall gates mutating API routes (`requirePaid` → 402). Expired/free users retain read-only access to company knowledge, analytics, and similar views by design until a stricter policy is chosen.
 - **Cron auth.** `/api/internal/media-cleanup` requires `Authorization: Bearer <CRON_SECRET>` compared with `crypto.timingSafeEqual`.
 - **Private Blob.** Media stored as private Vercel Blob needs `BLOB_READ_WRITE_TOKEN` on the web uploader and on the Railway publisher (`social/media.ts` fetches with Bearer).
 - **Conversion webhook.** Public `POST /api/conversions/webhook` verifies an opaque token, a 24-hour timestamp window, workspace ownership of referenced entities, and workspace-scoped dedupe (`UNIQUE (workspace_id, deduplication_key)`). Rate limiting is fail-closed. A browser helper lives at `/conversion-tracker.js`.

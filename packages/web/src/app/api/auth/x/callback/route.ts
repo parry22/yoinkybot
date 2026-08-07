@@ -1,13 +1,10 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { finalizeXConnect, xDeveloperCredentialsForUser } from "@yoink/backend/web";
+import { consumeOAuthState, finalizeXConnect, xDeveloperCredentialsForUser } from "@yoink/backend/web";
 import { getSessionUser } from "@/lib/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
-
-const X_OAUTH_COOKIE = "x_oauth";
 
 /**
  * X OAuth callback - connect only. Identity is Clerk's now, so this requires an
@@ -19,37 +16,20 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const origin = url.origin;
   const code = url.searchParams.get("code");
-  const state = url.searchParams.get("state");
+  const state = url.searchParams.get("state") ?? undefined;
 
   const existing = await getSessionUser();
   if (!existing) return NextResponse.redirect(new URL("/sign-in", origin));
 
-  /**
-   * `kind` separates "try again" from "an operator has to fix something".
-   *
-   * Everything used to funnel into connect_error=1, whose copy says "please try
-   * again" - advice that is actively wrong for a 401. X returns 401
-   * unauthorized_client when the client credentials it was handed are not the
-   * ones it issued, and no amount of retrying changes that. Telling the user to
-   * retry in that case wastes their time and hides a config bug from us.
-   *
-   * The distinction is safe to expose: it says which side the fault is on, and
-   * nothing about the credentials themselves.
-   */
   const fail = (reason: string, kind: "retry" | "config" = "retry") => {
     console.error("x oauth callback:", reason);
     return NextResponse.redirect(new URL(`/app/integrations?connect_error=${kind}`, origin));
   };
 
-  const jar = await cookies();
-  const raw = jar.get(X_OAUTH_COOKIE)?.value;
-  let saved: { state?: string; verifier?: string } | null = null;
-  try {
-    saved = raw ? JSON.parse(raw) : null;
-  } catch {
-    saved = null;
+  const pend = await consumeOAuthState(state, "web_x");
+  if (!code || !pend || pend.userId !== existing.id || !pend.verifier) {
+    return fail("bad state");
   }
-  if (!code || !state || !saved?.verifier || saved.state !== state) return fail("bad state");
 
   const own = await xDeveloperCredentialsForUser(existing.id);
   const clientId = own?.clientId ?? process.env.X_CLIENT_ID;
@@ -66,20 +46,12 @@ export async function GET(req: Request) {
         grant_type: "authorization_code",
         code,
         redirect_uri: redirectUri,
-        code_verifier: saved.verifier,
+        code_verifier: pend.verifier,
         client_id: clientId,
       }),
     });
     if (!tokRes.ok) {
-      // Log X's own error body, not just the status. "401" alone sent us hunting
-      // through PKCE, cookies and redirect URIs; X actually says
-      // `unauthorized_client / Missing valid authorization header`, which names
-      // the client credentials directly and would have ended that hunt at once.
       const body = await tokRes.text().catch(() => "");
-      // 401 = X does not recognise the client credentials we sent. Since X only
-      // issues a code for a client_id it knows, a 401 here means the SECRET is
-      // stale or mismatched - an operator fix, never a user retry.
-      // 400 = a genuinely spent/expired code, which retrying does resolve.
       return fail(
         `token exchange ${tokRes.status}: ${body.slice(0, 300)}`,
         tokRes.status === 401 || tokRes.status === 403 ? "config" : "retry",
@@ -104,10 +76,7 @@ export async function GET(req: Request) {
       scope: tok.scope,
     });
 
-    // Land back on Integrations so status and errors are visible.
-    const res = NextResponse.redirect(new URL("/app/integrations?connected=x", origin));
-    res.cookies.set(X_OAUTH_COOKIE, "", { path: "/", maxAge: 0 });
-    return res;
+    return NextResponse.redirect(new URL("/app/integrations?connected=x", origin));
   } catch (err) {
     return fail(String(err));
   }

@@ -6,7 +6,7 @@ import { randomBytes } from "node:crypto";
 import { query, queryOne } from "../db/pool.js";
 import type { Platform } from "./types.js";
 
-export type OAuthStatePlatform = Platform | "web_linkedin";
+export type OAuthStatePlatform = Platform | "web_linkedin" | "web_x";
 
 export interface OAuthStateRecord {
   userId: string;

@@ -1,5 +1,38 @@
 import { z } from "zod";
 
+interface OAuthEncryptionConfig {
+  OAUTH_TOKEN_ENCRYPTION_KEY?: string;
+  BYOK_ENCRYPTION_KEY?: string;
+}
+
+/** True only when the key OAuth encryption will actually select is valid AES-256 material. */
+export function oauthEncryptionKeyUsable(input: OAuthEncryptionConfig): boolean {
+  const dedicated = input.OAUTH_TOKEN_ENCRYPTION_KEY?.trim();
+  const fallback = input.BYOK_ENCRYPTION_KEY?.trim();
+  const raw = dedicated || fallback;
+  if (!raw) return false;
+  const decoded = /^[0-9a-fA-F]{64}$/.test(raw)
+    ? Buffer.from(raw, "hex")
+    : Buffer.from(raw, "base64");
+  return decoded.length === 32;
+}
+
+export function assertHostedOAuthEncryption(input: OAuthEncryptionConfig & {
+  NODE_ENV: string;
+  SELF_HOSTED: boolean;
+}): void {
+  if (
+    input.NODE_ENV === "production" &&
+    !input.SELF_HOSTED &&
+    !oauthEncryptionKeyUsable(input)
+  ) {
+    throw new Error(
+      "OAUTH_TOKEN_ENCRYPTION_KEY (or BYOK_ENCRYPTION_KEY) must be a valid 32-byte key in hosted production. " +
+        "Generate one with: openssl rand -base64 32. Self-hosted installs may keep plaintext OAuth storage.",
+    );
+  }
+}
+
 const schema = z.object({
   DATABASE_URL: z.string().default("postgres://localhost:5432/yoink"),
   PORT: z.coerce.number().default(3001),
@@ -406,6 +439,8 @@ export const isDev = config.NODE_ENV !== "production";
 function warnOnDangerousConfig(): void {
   if (config.NODE_ENV !== "production") return;
   const warn = (msg: string) => console.warn(`⚠️  config: ${msg}`);
+
+  assertHostedOAuthEncryption(config);
 
   if (!config.SELF_HOSTED && !config.PAYWALL_ENABLED) {
     throw new Error(

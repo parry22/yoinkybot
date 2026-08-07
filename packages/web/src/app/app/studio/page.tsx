@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/session";
-import { listKnowledgeObjects, resolveWorkspaceContext } from "@yoink/backend/web";
+import { listKnowledgeObjects, resolveWorkspaceContext, roleAtLeast } from "@yoink/backend/web";
 import { Studio } from "@/components/studio";
 
 export const dynamic = "force-dynamic";
@@ -12,10 +12,11 @@ export default async function StudioPage() {
   const workspace = await resolveWorkspaceContext(user.id);
   if (!workspace) redirect("/app/workspaces/new");
   const knowledge = await listKnowledgeObjects(user.id, workspace.id).catch(() => []);
+  const canGenerate = roleAtLeast(workspace.role, "editor");
 
   return (
     <Suspense fallback={<div style={{ padding: 32 }}>Loading studio…</div>}>
-      <Studio workspaceName={workspace.name} knowledge={knowledge} />
+      <Studio workspaceName={workspace.name} knowledge={knowledge} canGenerate={canGenerate} />
     </Suspense>
   );
 }

@@ -62,7 +62,13 @@ function preview(text: string, max = 100) {
   return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
 }
 
-export function AssetsLibrary({ assets: initialAssets }: { assets: ContentAssetView[] }) {
+export function AssetsLibrary({
+  assets: initialAssets,
+  canReview,
+}: {
+  assets: ContentAssetView[];
+  canReview: boolean;
+}) {
   const now = new Date();
   const [assets, setAssets] = useState(initialAssets);
   const [year, setYear] = useState(now.getFullYear());
@@ -328,17 +334,21 @@ export function AssetsLibrary({ assets: initialAssets }: { assets: ContentAssetV
                     </div>
                     <h4>{asset.title}</h4>
                     <p>{preview(asset.content)}</p>
-                    <button
-                      type="button"
-                      className={styles.publish}
-                      disabled={busyId === asset.id || liveChannels.length === 0}
-                      onClick={() => void publish(asset)}
-                    >
-                      <HugeiconsIcon icon={Tick02Icon} size={14} />
-                      {busyId === asset.id
-                        ? "Publishing…"
-                        : `Publish · ${liveChannels.map((id) => channelLabel(id)).join(", ")}`}
-                    </button>
+                    {canReview ? (
+                      <button
+                        type="button"
+                        className={styles.publish}
+                        disabled={busyId === asset.id || liveChannels.length === 0}
+                        onClick={() => void publish(asset)}
+                      >
+                        <HugeiconsIcon icon={Tick02Icon} size={14} />
+                        {busyId === asset.id
+                          ? "Publishing…"
+                          : `Publish · ${liveChannels.map((id) => channelLabel(id)).join(", ")}`}
+                      </button>
+                    ) : (
+                      <span className={styles.muted}>Editor access required to approve and schedule.</span>
+                    )}
                   </article>
                 ))}
               </div>

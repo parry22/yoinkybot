@@ -86,4 +86,18 @@ describe("oauth state (single-consume)", () => {
     });
     expect(await consumeOAuthState(state, "linkedin")).toBeNull();
   });
+
+  it("supports web_x platform", async () => {
+    const state = await createOAuthState({
+      userId: "11111111-1111-1111-1111-111111111111",
+      platform: "web_x",
+      verifier: "pkce-verifier",
+    });
+    expect(await consumeOAuthState(state, "web_x")).toEqual({
+      userId: "11111111-1111-1111-1111-111111111111",
+      platform: "web_x",
+      verifier: "pkce-verifier",
+      returnTo: null,
+    });
+  });
 });

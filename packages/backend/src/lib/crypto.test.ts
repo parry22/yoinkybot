@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeAll } from "vitest";
+import { describe, expect, it, beforeAll, vi } from "vitest";
 
 // A fixed 32-byte key, set BEFORE config.ts is imported (it parses env at module
 // load). base64 of 32 zero-ish bytes is fine for a round-trip test.
@@ -118,5 +118,22 @@ describe("token-crypto encrypt/decrypt", () => {
       accessToken: "enc-access",
       refreshToken: "enc-refresh",
     });
+  });
+
+  it("refuses plaintext writes in hosted production without a key", async () => {
+    vi.doMock("../config.js", () => ({
+      config: { NODE_ENV: "production", SELF_HOSTED: false },
+    }));
+    vi.doMock("../lib/crypto.js", () => ({
+      oauthEncryptionConfigured: () => false,
+      sealForPurpose: vi.fn(),
+      openForPurpose: vi.fn(),
+    }));
+    vi.resetModules();
+    const { tokenWriteParams } = await import("../social/token-crypto.js");
+    expect(() => tokenWriteParams("plain-access")).toThrow(/Refusing to store OAuth tokens in plaintext/);
+    vi.doUnmock("../config.js");
+    vi.doUnmock("../lib/crypto.js");
+    vi.resetModules();
   });
 });

@@ -1,4 +1,10 @@
-/* Studio-only controls layered on top of chat.module.css layout. */
+.readOnlyNote {
+  margin: 0 0 8px;
+  padding: 0 4px;
+  color: var(--ink-500);
+  font-size: 13px;
+  line-height: 1.45;
+}
 
 .composerControls {
   display: flex;

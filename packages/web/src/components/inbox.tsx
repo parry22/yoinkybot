@@ -142,6 +142,7 @@ export function Inbox({
   const initialQueue = initialItems.filter((item) => item.status === "proposed" || item.status === "reviewed");
   const [demo, setDemo] = useState(() => (demosAllowed() && initialQueue.length === 0 ? DEMO_ITEMS : []));
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState("");
   const [filter, setFilter] = useState<ClassFilter>("all");
   const [activeId, setActiveId] = useState<string | null>(() => {
     if (demosAllowed() && initialQueue.length === 0) return DEMO_ITEMS[0]?.id ?? null;
@@ -190,15 +191,18 @@ export function Inbox({
 
   async function act(objectId: string, status: "approved" | "rejected" | "reviewed") {
     setBusyId(objectId);
+    setError("");
     const response = await fetch("/api/knowledge", {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ objectId, status }),
     });
-    const data = (await response.json().catch(() => ({}))) as { object?: KnowledgeObjectView };
+    const data = (await response.json().catch(() => ({}))) as { object?: KnowledgeObjectView; error?: string };
     if (response.ok && data.object) {
       setItems((current) => current.map((item) => (item.id === objectId ? data.object! : item)));
       setActiveId((current) => (current === objectId ? null : current));
+    } else {
+      setError(data.error ?? "Could not update this item.");
     }
     setBusyId(null);
   }
@@ -213,6 +217,7 @@ export function Inbox({
 
   return (
     <div className={styles.page}>
+      {error && <div className={styles.bannerError}>{error}</div>}
       <div className={`${styles.shell} ${activeId ? styles.shellDetailOpen : ""}`}>
         <aside className={styles.listPane}>
           <div className={styles.filters} role="tablist" aria-label="Inbox classification">

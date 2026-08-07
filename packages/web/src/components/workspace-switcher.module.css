@@ -130,6 +130,13 @@
   font-size: 11px;
 }
 
+.menuError {
+  margin: 4px 8px 8px;
+  color: #b43c5a;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .item,
 .create {
   display: flex;

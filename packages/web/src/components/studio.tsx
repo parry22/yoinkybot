@@ -52,9 +52,11 @@ function preview(text: string, max = 90) {
 export function Studio({
   workspaceName,
   knowledge,
+  canGenerate,
 }: {
   workspaceName: string;
   knowledge: KnowledgeObjectView[];
+  canGenerate: boolean;
 }) {
   const searchParams = useSearchParams();
   const seedId = searchParams.get("knowledge");
@@ -258,6 +260,7 @@ export function Studio({
                     key={item.title}
                     type="button"
                     className={chat.suggest}
+                    disabled={!canGenerate}
                     onClick={() => void send(item.title)}
                   >
                     <div className={chat.suggestTitle}>{item.title}</div>
@@ -285,6 +288,9 @@ export function Studio({
       </div>
 
       <form className={chat.composerWrap} onSubmit={onSubmit}>
+        {!canGenerate && (
+          <p className={styles.readOnlyNote}>Editor access is required to generate drafts in Studio.</p>
+        )}
         {cards.length > 0 && (
           <div className={styles.knowledgeRow}>
             {cards.slice(0, 10).map((card) => {
@@ -296,6 +302,7 @@ export function Studio({
                   className={`${styles.chip} ${active ? styles.chipActive : ""}`}
                   onClick={() => toggleKnowledge(card.id)}
                   title={card.title}
+                  disabled={!canGenerate}
                 >
                   {preview(card.title, 26)}
                 </button>
@@ -313,6 +320,7 @@ export function Studio({
             onKeyDown={onKeyDown}
             placeholder="Ask for a draft…"
             rows={1}
+            disabled={!canGenerate}
           />
           <div className={chat.composerFooter}>
             <div className={styles.composerControls}>
@@ -322,6 +330,7 @@ export function Studio({
                 value={format}
                 options={FORMATS.map((item) => ({ value: item.id, label: item.label }))}
                 onChange={(value) => setFormat(value as (typeof FORMATS)[number]["id"])}
+                disabled={!canGenerate}
               />
               <MenuSelect
                 compact
@@ -329,6 +338,7 @@ export function Studio({
                 value={tone}
                 options={TONES.map((item) => ({ value: item.id, label: item.label }))}
                 onChange={(value) => setTone(value as (typeof TONES)[number]["id"])}
+                disabled={!canGenerate}
               />
               {error && (
                 <span className={chat.hintError}>
@@ -348,13 +358,13 @@ export function Studio({
               <button type="button" className={styles.iconBtn} onClick={() => void copyLast()} disabled={messages.length === 0} title="Copy last draft">
                 <HugeiconsIcon icon={copied ? Tick02Icon : Copy01Icon} size={15} />
               </button>
-              <button type="button" className={styles.iconBtn} onClick={() => void createVariants()} disabled={busy} title="Create variants">
+              <button type="button" className={styles.iconBtn} onClick={() => void createVariants()} disabled={busy || !canGenerate} title="Create variants">
                 <HugeiconsIcon icon={Layers01Icon} size={15} />
               </button>
               <button
                 type="submit"
                 className={chat.send}
-                disabled={busy || (!input.trim() && selected.length === 0)}
+                disabled={busy || !canGenerate || (!input.trim() && selected.length === 0)}
                 aria-label="Send"
               >
                 <HugeiconsIcon icon={ArrowUp01Icon} size={16} strokeWidth={2} />

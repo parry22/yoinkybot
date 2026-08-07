@@ -22,20 +22,20 @@ function hash(str: string) {
   return Math.abs(h);
 }
 
-export function buildBrainNodes(objects: KnowledgeObjectView[]): BrainNode[] {
-  const source =
-    objects.length > 0
-      ? objects
-      : ([
-          { id: "demo-1", title: "Pricing objection", objectType: "objection" },
-          { id: "demo-2", title: "Founder story", objectType: "story" },
-          { id: "demo-3", title: "ROI claim", objectType: "claim" },
-          { id: "demo-4", title: "Customer proof", objectType: "proof" },
-          { id: "demo-5", title: "Market signal", objectType: "market_signal" },
-          { id: "demo-6", title: "Capability", objectType: "capability" },
-          { id: "demo-7", title: "Insight", objectType: "insight" },
-          { id: "demo-8", title: "Framework", objectType: "framework" },
-        ] as Array<Pick<KnowledgeObjectView, "id" | "title" | "objectType">>);
+export function buildBrainNodes(objects: KnowledgeObjectView[], allowDemoNodes = false): BrainNode[] {
+  const demoSource = [
+    { id: "demo-1", title: "Pricing objection", objectType: "objection" },
+    { id: "demo-2", title: "Founder story", objectType: "story" },
+    { id: "demo-3", title: "ROI claim", objectType: "claim" },
+    { id: "demo-4", title: "Customer proof", objectType: "proof" },
+    { id: "demo-5", title: "Market signal", objectType: "market_signal" },
+    { id: "demo-6", title: "Capability", objectType: "capability" },
+    { id: "demo-7", title: "Insight", objectType: "insight" },
+    { id: "demo-8", title: "Framework", objectType: "framework" },
+  ] as Array<Pick<KnowledgeObjectView, "id" | "title" | "objectType">>;
+
+  const source = objects.length > 0 ? objects : allowDemoNodes ? demoSource : [];
+  if (source.length === 0) return [];
 
   const count = Math.min(source.length, 28);
   const golden = Math.PI * (3 - Math.sqrt(5));

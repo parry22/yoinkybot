@@ -15,6 +15,7 @@ export function WorkspaceSwitcher({
 }) {
   const [open, setOpen] = useState(false);
   const [switching, setSwitching] = useState<string | null>(null);
+  const [error, setError] = useState("");
   const wrapRef = useRef<HTMLDivElement>(null);
   const active = workspaces.find((workspace) => workspace.active) ?? workspaces[0];
 
@@ -42,6 +43,7 @@ export function WorkspaceSwitcher({
       return;
     }
     setSwitching(workspaceId);
+    setError("");
     const response = await fetch("/api/workspaces", {
       method: "PATCH",
       headers: { "content-type": "application/json" },
@@ -51,6 +53,8 @@ export function WorkspaceSwitcher({
       window.location.assign("/app");
       return;
     }
+    const data = (await response.json().catch(() => ({}))) as { error?: string };
+    setError(data.error ?? "Could not switch workspace.");
     setSwitching(null);
   }
 
@@ -77,6 +81,7 @@ export function WorkspaceSwitcher({
 
       {open && (
         <div className={`${styles.menu} ${compact ? styles.menuCompact : ""}`} role="menu">
+          {error && <p className={styles.menuError}>{error}</p>}
           <p className={styles.menuLabel}>Workspaces</p>
           {workspaces.map((workspace) => (
             <button

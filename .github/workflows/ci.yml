@@ -44,9 +44,8 @@ jobs:
           BYOK_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 
       - name: Dependency audit (prod, high+)
-        continue-on-error: true
         run: |
-          pnpm audit --prod --audit-level=high 2>&1 | tee audit-summary.txt || true
+          pnpm audit --prod --audit-level=high 2>&1 | tee audit-summary.txt
 
       - name: Upload audit summary
         if: always()

@@ -5,6 +5,7 @@
  * configured (clears plaintext). Readers use decryptToken, which prefers the
  * encrypted columns and falls back to legacy plaintext during dual-read rollout.
  */
+import { config } from "../config.js";
 import { oauthEncryptionConfigured, openForPurpose, sealForPurpose } from "../lib/crypto.js";
 
 const PURPOSE_ACCESS = "oauth.access";
@@ -114,6 +115,12 @@ export function tokenWriteParams(
       post_refresh_token_iv: refresh?.iv ?? null,
       post_refresh_token_tag: refresh?.tag ?? null,
     };
+  }
+  if (config.NODE_ENV === "production" && !config.SELF_HOSTED) {
+    throw new Error(
+      "Refusing to store OAuth tokens in plaintext in hosted production. " +
+        "Set OAUTH_TOKEN_ENCRYPTION_KEY or BYOK_ENCRYPTION_KEY.",
+    );
   }
   return {
     post_access_token: accessToken,

@@ -167,7 +167,7 @@ export function KnowledgeLibrary({
     });
   }, [objects, query, typeFilter]);
 
-  const nodes = useMemo(() => buildBrainNodes(objects), [objects]);
+  const nodes = useMemo(() => buildBrainNodes(objects, showDemoFloats()), [objects]);
   const selected = objects.find((object) => object.id === selectedId) ?? null;
   const panelOpen = showCapture || Boolean(selected);
 

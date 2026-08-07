@@ -32,6 +32,7 @@ export function AccountSwitcher({
   const [open, setOpen] = useState(false);
   const [switchingTo, setSwitchingTo] = useState<string | null>(null);
   const [switchingWorkspace, setSwitchingWorkspace] = useState<string | null>(null);
+  const [workspaceError, setWorkspaceError] = useState("");
   const wrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -82,6 +83,7 @@ export function AccountSwitcher({
       return;
     }
     setSwitchingWorkspace(workspaceId);
+    setWorkspaceError("");
     const response = await fetch("/api/workspaces", {
       method: "PATCH",
       headers: { "content-type": "application/json" },
@@ -91,6 +93,8 @@ export function AccountSwitcher({
       window.location.assign("/app");
       return;
     }
+    const data = (await response.json().catch(() => ({}))) as { error?: string };
+    setWorkspaceError(data.error ?? "Could not switch workspace.");
     setSwitchingWorkspace(null);
   }
 
@@ -136,6 +140,7 @@ export function AccountSwitcher({
             <>
               <div className={styles.divider} />
               <p className={styles.menuLabel}>Workspaces</p>
+              {workspaceError && <p className={styles.menuError}>{workspaceError}</p>}
               {workspaces.map((workspace) => (
                 <button
                   key={workspace.id}
