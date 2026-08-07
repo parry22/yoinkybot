@@ -17,7 +17,7 @@ export function ErrorState({
   message,
   digest,
   onRetry,
-  homeHref = "/app/compose",
+  homeHref = "/app",
   homeLabel = "Back to Yoinky",
 }: {
   title: string;

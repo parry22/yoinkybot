@@ -2,7 +2,7 @@ import { ErrorState } from "@/components/error-state";
 
 /**
  * 404. Renders inside the root layout only (a missing /app/* route never reaches
- * the app shell), so it deliberately points back at Compose - the app's landing
+ * the app shell), so it deliberately points back at Inbox - the app's landing
  * surface - rather than at the marketing site.
  */
 export default function NotFound() {

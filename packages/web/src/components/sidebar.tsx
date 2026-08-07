@@ -10,16 +10,6 @@ import {
   FolderLibraryIcon,
   Plug01Icon,
   Settings05Icon,
-  SparklesIcon,
-  Note01Icon,
-  Share01Icon,
-  Analytics01Icon,
-  Edit02Icon,
-  Calendar03Icon,
-  WorkflowSquare06Icon,
-  FlashIcon,
-  ChartIncreaseIcon,
-  RadarIcon,
 } from "@hugeicons/core-free-icons";
 import type { TrialInfo, WorkspaceSummary } from "@yoink/backend/web";
 import { TrialPill } from "./trial-banner";
@@ -34,19 +24,6 @@ const PRIMARY_NAV: NavItem[] = [
   { href: "/app/studio", label: "Studio", icon: QuillWrite02Icon },
   { href: "/app/assets", label: "Assets", icon: FolderLibraryIcon },
   { href: "/app/integrations", label: "Integrations", icon: Plug01Icon },
-];
-
-const SECONDARY_NAV: NavItem[] = [
-  { href: "/app/narrative", label: "Narrative", icon: SparklesIcon },
-  { href: "/app/briefs", label: "Briefs", icon: Note01Icon },
-  { href: "/app/distribution", label: "Distribution", icon: Share01Icon },
-  { href: "/app/analytics", label: "Analytics", icon: Analytics01Icon },
-  { href: "/app/compose", label: "Compose", icon: Edit02Icon },
-  { href: "/app/scheduled", label: "Scheduled", icon: Calendar03Icon },
-  { href: "/app/automations", label: "Automations", icon: WorkflowSquare06Icon },
-  { href: "/app/inspiration", label: "Inspiration", icon: FlashIcon },
-  { href: "/app/growth", label: "Growth", icon: ChartIncreaseIcon },
-  { href: "/app/buyers-radar", label: "Buyers Radar", icon: RadarIcon },
 ];
 
 function NavLink({
@@ -106,10 +83,6 @@ export function Sidebar({
 
       <nav className={styles.nav}>
         {PRIMARY_NAV.map((item) => (
-          <NavLink key={item.href} item={item} active={isActive(item.href)} onNavigate={onNavigate} />
-        ))}
-        <div className={styles.navDivider} aria-hidden="true" />
-        {SECONDARY_NAV.map((item) => (
           <NavLink key={item.href} item={item} active={isActive(item.href)} onNavigate={onNavigate} />
         ))}
       </nav>

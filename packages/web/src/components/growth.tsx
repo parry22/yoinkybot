@@ -103,7 +103,7 @@ export function Growth({ data }: { data: Data }) {
             <span className={styles.urgentText}>
               Your {data.streak.current}-week streak is at risk - ship one post to keep it.
             </span>
-            <a href="/app/compose" className={styles.urgentCta}>Compose</a>
+            <a href="/app/studio" className={styles.urgentCta}>Studio</a>
           </div>
         )}
 

@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState, type ComponentType } from "react";
-import Link from "next/link";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   ArrowLeft01Icon,
@@ -255,9 +254,6 @@ export function AssetsLibrary({
 
         <div className={styles.spacer} />
 
-        <Link href="/app/distribution" className={styles.distLink}>
-          Distribution
-        </Link>
         <button
           type="button"
           className={`${styles.draftBtn} ${draftsOpen ? styles.draftBtnOn : ""}`}

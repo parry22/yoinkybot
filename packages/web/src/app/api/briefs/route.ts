@@ -153,7 +153,7 @@ export async function POST(req: Request) {
     if (error instanceof Error) {
       const message = error.message;
       const href =
-        message.includes("narrative") ? "/app/narrative"
+        message.includes("narrative") || message.includes("brief") ? "/app/studio"
         : message.includes("insight") || message.includes("Knowledge") || message.includes("proof") || message.includes("claim")
           ? "/app/knowledge"
           : message.includes("expert") ? "/app/settings"

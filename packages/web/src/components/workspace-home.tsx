@@ -100,7 +100,7 @@ export function WorkspaceHome({
           <section className={styles.signalPanel}>
             <div className={styles.signalHead}>
               <h2>Recent conversions</h2>
-              <Link href="/app/distribution">Open</Link>
+              <Link href="/app/assets">Open</Link>
             </div>
             {home.recentConversions.length === 0 ? (
               <p className={styles.emptySignal}>No tracked conversions yet.</p>

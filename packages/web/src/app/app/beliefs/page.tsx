@@ -32,7 +32,7 @@ export default async function BeliefsPage() {
             <div className={styles.emptyTitle}>No positions yet.</div>
             <p>
               Once you&apos;ve dropped a few takes (or connected an account), Yoinky surfaces the beliefs you keep
-              returning to. <Link href="/app/compose" style={{ color: "var(--accent)" }}>Start in Compose →</Link>
+              returning to. <Link href="/app/studio" style={{ color: "var(--accent)" }}>Start in Studio →</Link>
             </p>
           </div>
         ) : (
