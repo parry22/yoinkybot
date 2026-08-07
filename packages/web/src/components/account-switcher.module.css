@@ -8,6 +8,11 @@
   padding-top: 12px;
 }
 
+.wrapCompact {
+  margin-top: 0;
+  padding-top: 0;
+}
+
 .trigger {
   display: flex;
   align-items: center;
@@ -24,6 +29,66 @@
   text-align: left;
   cursor: pointer;
   transition: background 120ms ease, border-color 120ms ease;
+}
+
+.triggerCompact {
+  width: 44px;
+  min-height: 44px;
+  height: 44px;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 14px;
+  background: transparent;
+}
+
+.triggerCompact:hover:not(:disabled) {
+  background: rgba(20, 20, 20, 0.05);
+  border-color: transparent;
+}
+
+.triggerCompact .triggerText,
+.triggerCompact .chev {
+  display: none;
+}
+
+.triggerCompact .avatar {
+  width: 28px;
+  height: 28px;
+}
+
+.menuCompact {
+  left: calc(100% + 10px);
+  right: auto;
+  bottom: 0;
+  width: 280px;
+}
+
+@media (max-width: 1000px) {
+  .wrapCompact {
+    width: 100%;
+  }
+
+  .triggerCompact {
+    width: 100%;
+    min-height: 48px;
+    height: auto;
+    justify-content: flex-start;
+    gap: 9px;
+    padding: 8px;
+  }
+
+  .triggerCompact .triggerText,
+  .triggerCompact .chev {
+    display: flex;
+  }
+
+  .menuCompact {
+    left: 0;
+    right: 0;
+    bottom: 100%;
+    width: auto;
+  }
 }
 
 .trigger:hover:not(:disabled) {
@@ -148,6 +213,17 @@
 .tick {
   flex-shrink: 0;
   color: var(--accent);
+}
+
+.workspaceMark {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  flex-shrink: 0;
 }
 
 .switching {

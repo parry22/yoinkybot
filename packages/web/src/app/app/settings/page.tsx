@@ -1,13 +1,13 @@
 import { redirect } from "next/navigation";
 import { SignOutButton } from "@clerk/nextjs";
 import { getSessionUser } from "@/lib/session";
-import { listConnectedAccounts, billingOverview, config } from "@yoink/backend/web";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { listConnectedAccounts, billingOverview, config,getWorkspaceAdmin,resolveWorkspaceContext } from "@yoink/backend/web";
 import { TelegramConnectButton } from "@/components/telegram-connect";
 import { LinkedInConnectRow, XConnectRow } from "@/components/connect-accounts";
 import { ManageAccountButton } from "@/components/account-manage";
 import { PlanPicker } from "@/components/plan-picker";
-import styles from "@/components/panel.module.css";
+import styles from "@/components/settings-shell.module.css";
+import { WorkspaceSettings } from "@/components/workspace-settings";
 
 type PlanKey = "open_source" | "growth" | "scale" | "founding";
 
@@ -37,11 +37,13 @@ export default async function SettingsPage({
   const user = await getSessionUser();
   if (!user) redirect("/sign-in");
 
-  const [accounts, billing, sp] = await Promise.all([
+  const [accounts, billing, sp,workspace] = await Promise.all([
     listConnectedAccounts(user.id).catch(() => []),
     billingOverview(user.id).catch(() => null),
     searchParams,
+    resolveWorkspaceContext(user.id),
   ]);
+  const workspaceAdmin=workspace?await getWorkspaceAdmin(user.id,workspace.id):null;
   const x = accounts.find((a) => a.platform === "x") ?? null;
   const linkedIn = accounts.find((a) => a.platform === "linkedin") ?? null;
 
@@ -83,30 +85,32 @@ export default async function SettingsPage({
   return (
     <div className={styles.page}>
       <div className={styles.inner}>
-        <div className={styles.head}>
-          <div>
-            <div className={styles.title}>Settings</div>
-            <div className={styles.subtitle}>Your account and how Yoinky reaches you.</div>
-          </div>
-        </div>
+        <header className={styles.header}>
+          <p className={styles.lede}>Connections, billing, and how Yoinky captures and publishes for this workspace.</p>
+        </header>
 
-        <div className={styles.section}>
+        <section className={styles.section}>
+          <div className={styles.sectionLabel}>Organization and workspace</div>
+          {workspaceAdmin ? <WorkspaceSettings initial={workspaceAdmin} /> : (
+            <p className={styles.sectionBody}>No workspace loaded yet.</p>
+          )}
+        </section>
+
+        <section className={styles.section}>
           <div className={styles.sectionLabel}>Account</div>
-          <div className={styles.sectionBody} style={{ marginBottom: 12 }}>{user.email ?? (x ? x.handle : "your account")}</div>
+          <p className={styles.sectionBodyStrong}>{user.email ?? (x ? x.handle : "your account")}</p>
           <ManageAccountButton />
-        </div>
+        </section>
 
-        <div className={styles.section}>
+        <section className={styles.section}>
           <div className={styles.sectionLabel}>{config.SELF_HOSTED ? "Plan" : "Plan & billing"}</div>
-          <div className={styles.sectionBody} style={{ marginBottom: 12 }}>{billingStatus}</div>
+          <p className={styles.sectionBody}>{billingStatus}</p>
           {!config.SELF_HOSTED && sp?.billing_error && (
-            <div className={styles.sectionBody} style={{ color: "#e5484d", marginBottom: 12 }}>
-              Something went wrong opening billing. Please try again.
-            </div>
+            <p className={styles.errorText}>Something went wrong opening billing. Please try again.</p>
           )}
 
           {!config.SELF_HOSTED && t?.plan === "founding" ? (
-            <div className={styles.sectionBody}>You're on the Founding plan - thank you for being early.</div>
+            <p className={styles.sectionBody}>You&apos;re on the Founding plan — thank you for being early.</p>
           ) : (
             <PlanPicker
               currentKey={currentPlanKey(t?.status === "active" ? t.plan : null, t?.intendedPlan ?? null)}
@@ -121,50 +125,44 @@ export default async function SettingsPage({
           )}
 
           {!config.SELF_HOSTED && billing?.hasDodoSubscription && (
-            <div style={{ marginTop: 14 }}>
+            <div className={styles.actions}>
               <a href="/api/billing/portal" className="btnGhost" style={linkBtn}>
-                Manage plan - update card, switch, or cancel
+                Manage plan — update card, switch, or cancel
               </a>
             </div>
           )}
-        </div>
+        </section>
 
-        <div className={styles.section}>
+        <section className={styles.section}>
           <div className={styles.sectionLabel}>Connected X</div>
-          <div className={styles.sectionBody} style={{ marginBottom: 12 }}>
-            Yoinky reads your X to learn your voice and personalize everything, and refreshes it twice a day on its own.
-            Reconnecting is only for switching accounts or restoring posting access.
-          </div>
+          <p className={styles.sectionBody}>
+            Yoinky reads your X to learn voice and personalize drafts, and refreshes it twice a day.
+            Reconnect only to switch accounts or restore posting access.
+          </p>
           <XConnectRow account={x ? { handle: x.handle, status: x.status } : null} />
-        </div>
+        </section>
 
-        <div className={styles.section}>
+        <section className={styles.section}>
           <div className={styles.sectionLabel}>LinkedIn</div>
-          <div className={styles.sectionBody} style={{ marginBottom: 12 }}>
-            Connect LinkedIn to publish and schedule posts from Yoinky.
-          </div>
+          <p className={styles.sectionBody}>Connect LinkedIn when you are ready to publish from generated assets.</p>
           <LinkedInConnectRow account={linkedIn ? { handle: linkedIn.handle, status: linkedIn.status } : null} />
-        </div>
+        </section>
 
-        <div className={styles.section}>
-          <div className={styles.sectionLabel}>Telegram add-on</div>
-          <div className={styles.sectionBody} style={{ marginBottom: 12 }}>
-            Telegram is your capture and proactive-nudge line: drop thoughts on the go, and get trend moments,
-            consistency flags, and daily reads in your DMs.
-          </div>
+        <section className={styles.section}>
+          <div className={styles.sectionLabel}>Telegram capture</div>
+          <p className={styles.sectionBody}>
+            Drop thoughts on the go. Capture is the front door to Inbox — not a separate product surface.
+          </p>
           <TelegramConnectButton linked={Boolean(user.telegram_id)} />
-        </div>
+        </section>
 
-        <div className={styles.section}>
-          <div className={styles.sectionLabel}>Appearance</div>
-          <ThemeToggle />
+        <div className={styles.actions}>
+          <SignOutButton redirectUrl="/sign-in">
+            <button type="button" className="btnGhost">
+              Sign out
+            </button>
+          </SignOutButton>
         </div>
-
-        <SignOutButton redirectUrl="/sign-in">
-          <button type="button" className="btnGhost">
-            Sign out
-          </button>
-        </SignOutButton>
       </div>
     </div>
   );

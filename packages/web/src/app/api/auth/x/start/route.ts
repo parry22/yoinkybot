@@ -28,7 +28,7 @@ export async function GET(req: Request) {
   // tells the user retrying won't help (see the callback route's `fail`).
   if (!clientId) {
     console.error("x oauth start: X_CLIENT_ID is not set");
-    return NextResponse.redirect(new URL("/app?connect_error=config", origin));
+    return NextResponse.redirect(new URL("/app/integrations?connect_error=config", origin));
   }
 
   const state = b64url(randomBytes(16));

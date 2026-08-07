@@ -1,0 +1,98 @@
+/* Studio-only controls layered on top of chat.module.css layout. */
+
+.composerControls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.chip {
+  height: 28px;
+  padding: 0 11px;
+  border: 0.5px solid var(--stroke);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink-700);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.chip:hover {
+  border-color: var(--ink-500);
+  color: var(--ink-900);
+}
+
+.chipActive {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.knowledgeRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  width: var(--content-width, min(720px, 92%));
+  margin: 0 auto 8px;
+}
+
+.footerActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.iconBtn {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-600);
+  cursor: pointer;
+}
+
+.iconBtn:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--ink-900);
+}
+
+.iconBtn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.draftMeta {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--ink-500);
+  font-size: 12px;
+}
+
+.prereqLink {
+  color: inherit;
+  font-weight: 520;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+@media (max-width: 1000px) {
+  .composerControls {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .footerActions {
+    margin-left: auto;
+  }
+
+  .knowledgeRow {
+    width: 100%;
+    padding: 0 2px;
+  }
+}

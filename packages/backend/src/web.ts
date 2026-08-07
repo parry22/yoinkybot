@@ -210,3 +210,119 @@ export {
 export { moderateText, assertClean, ModerationError, MODERATION_MESSAGE } from "./moderation/filter.js";
 
 export { config } from "./config.js";
+
+// Company Narrative Engine tenancy. All workspace-aware web operations resolve
+// membership here before touching company knowledge or generated assets.
+export {
+  ensurePersonalWorkspace,
+  listWorkspacesForUser,
+  resolveWorkspaceContext,
+  requireWorkspaceRole,
+  setActiveWorkspace,
+  setTelegramWorkspaceContext,
+  resolveTelegramCaptureWorkspace,
+  createCompanyWorkspace,
+  resolveDefaultExpert,
+  listExperts,
+  getWorkspaceAdmin,
+  getWorkspaceHome,
+  setWorkspaceTelegramDelivery,
+  updateWorkspaceProfile,
+  updateWorkspaceSource,
+  addWorkspaceMemberByEmail,
+  updateWorkspaceMemberRole,
+  addWorkspaceExpert,
+  exportWorkspaceData,
+  deleteCompanyWorkspace,
+} from "./workspaces/service.js";
+export { roleAtLeast, WorkspaceAccessError } from "./workspaces/permissions.js";
+export type {
+  WorkspaceRole,
+  WorkspaceType,
+  WorkspaceSummary,
+  WorkspaceContext,
+  ExpertType,
+  ExpertView,
+  CreateCompanyWorkspaceInput,
+  WorkspaceMemberView,
+  WorkspaceSourceView,
+  WorkspaceAdminView,
+  WorkspaceHomeView,
+} from "./workspaces/types.js";
+
+export {
+  listKnowledgeObjects,
+  extractTranscriptToKnowledge,
+  reviewKnowledgeObject,
+  canPermissionEnterGeneration,
+} from "./knowledge/service.js";
+export { KNOWLEDGE_OBJECT_TYPES, PERMISSION_LEVELS, WORKSPACE_SOURCE_TYPES } from "./knowledge/types.js";
+export type {
+  KnowledgeObjectType,
+  KnowledgeStatus,
+  KnowledgeObjectView,
+  PermissionLevel,
+  TranscriptInput,
+  WorkspaceSourceType,
+} from "./knowledge/types.js";
+
+export {
+  listNarrativeSystems,
+  generateNarrativeProposal,
+  updateNarrativeDraft,
+  getNarrativeArchitecture,
+  createWorkspaceAudience,
+  createBuyerJourneyQuestion,
+  reviewRegisteredClaim,
+} from "./narrative/service.js";
+export type { NarrativeSystemView, NarrativeFields, EditorialTerritoryView, NarrativeArchitectureView, WorkspaceAudienceView, BuyerJourneyQuestionView, NarrativeMessageView, ClaimRegistryView } from "./narrative/types.js";
+
+export {
+  listContentBriefs,
+  generateLinkedInBrief,
+  generateBriefOptions,
+  approveContentBrief,
+  updateContentBrief,
+  listContentAssets,
+  draftFromBrief,
+  runAssetChecks,
+  approveContentAsset,
+  rejectContentAsset,
+  reviewContentAsset,
+  reviseContentAsset,
+  scheduleContentAsset,
+  atomizeContentAsset,
+  ensureStudioReady,
+  studioGenerate,
+} from "./production/service.js";
+export { CONTENT_ASSET_TYPES } from "./production/types.js";
+export type { ContentBriefView, ContentAssetView, ContentAssetType, AssetCheckResult, AssetStatus } from "./production/types.js";
+export type { StudioGenerateInput } from "./production/service.js";
+
+export {
+  listDistributionSteps,
+  listCampaigns,
+  createCampaign,
+  recommendCampaignDistributionPlan,
+  recommendDistributionPlan,
+  updateDistributionStep,
+  createConversionAction,
+  buildTrackedCtaUrl,
+  listConversionActions,
+  recordConversionEvent,
+  recordManualInfluence,
+  listConversionEvents,
+} from "./distribution/service.js";
+export type { CampaignView, DistributionStepView, ConversionActionView, ConversionEventView } from "./distribution/types.js";
+
+export { getWorkspaceIntelligence, listEditorialReviews, generateEditorialReview } from "./editorial/service.js";
+export type {
+  ProductionHealth,
+  KnowledgePerformanceRow,
+  TerritoryPerformanceRow,
+  SourceUtilizationRow,
+  EditorialReviewView,
+  WorkspaceIntelligenceView,
+  KnowledgeTypeSummary,
+  ConversionRateRow,
+} from "./editorial/types.js";

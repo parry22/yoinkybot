@@ -9,7 +9,7 @@ const COOKIE = "linkedin_oauth";
 export async function GET(req: Request) {
   const origin = new URL(req.url).origin;
   const clientId = process.env.LINKEDIN_CLIENT_ID;
-  if (!clientId) return NextResponse.redirect(new URL("/app/settings?connect_error=config", origin));
+  if (!clientId) return NextResponse.redirect(new URL("/app/integrations?connect_error=config", origin));
   const state = randomBytes(24).toString("base64url");
   const redirectUri = `${origin}/api/auth/linkedin/callback`;
   const params = new URLSearchParams({

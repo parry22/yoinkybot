@@ -7,6 +7,7 @@ import { deliverTurnOutput, chatToolExecutor } from "../telegram/actions.js";
 import { dmChannel, withTyping } from "../telegram/bot.js";
 import { runAsUser } from "../byok/context.js";
 import { isByokUser } from "../byok/keys.js";
+import { extractTranscriptToKnowledge } from "../knowledge/service.js";
 
 /**
  * Voice captures store a Telegram file URL in audio_url. This job downloads the
@@ -19,8 +20,8 @@ import { isByokUser } from "../byok/keys.js";
  * so a question asked out loud was silently swallowed instead of answered.
  */
 export async function handleTranscribe(job: TranscribeJob): Promise<void> {
-  const capture = await queryOne<{ id: string; audio_url: string | null; source: string }>(
-    `UPDATE captures SET status = 'transcribing' WHERE id = $1 RETURNING id, audio_url, source`,
+  const capture = await queryOne<{ id: string; audio_url: string | null; source: string;workspace_id:string|null;speaker_expert_id:string|null;permission_level:"public"|"internal"|"restricted"|"confidential"|"never_use_for_generation";metadata:Record<string,unknown> }>(
+    `UPDATE captures SET status = 'transcribing' WHERE id = $1 RETURNING id, audio_url, source,workspace_id,speaker_expert_id,permission_level,metadata`,
     [job.captureId],
   );
   if (!capture?.audio_url) return;
@@ -53,7 +54,12 @@ export async function handleTranscribe(job: TranscribeJob): Promise<void> {
        WHERE id = $1`,
       [capture.id, text, out.provider],
     );
-    await getBoss().send(QUEUES.extract, { captureId: capture.id, userId: job.userId });
+    const company=capture.workspace_id?await queryOne<{workspace_type:string;name:string}>(`SELECT workspace_type,name FROM workspaces WHERE id=$1`,[capture.workspace_id]):null;
+    if(capture.workspace_id&&company?.workspace_type==="company"){
+      await extractTranscriptToKnowledge(job.userId,capture.workspace_id,{existingCaptureId:capture.id,title:typeof capture.metadata.title==="string"?capture.metadata.title:`Voice note, ${new Date().toISOString().slice(0,10)}`,transcript:text,sourceType:"voice_note",speakerExpertId:capture.speaker_expert_id,permissionLevel:capture.permission_level});
+    }else{
+      await getBoss().send(QUEUES.extract, { captureId: capture.id, userId: job.userId });
+    }
   } catch (err) {
     await query(`UPDATE captures SET status = 'failed' WHERE id = $1`, [capture.id]);
     throw err;

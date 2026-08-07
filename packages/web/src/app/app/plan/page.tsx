@@ -25,8 +25,8 @@ export default async function PlanPage() {
           <div className={styles.empty}>
             <div className={styles.emptyTitle}>No plan yet.</div>
             <p>
-              A plan is built from your diagnosis. Finish setup first.{" "}
-              <Link href="/app/onboarding" style={{ color: "var(--accent)" }}>Finish setup →</Link>
+              A plan is built from your diagnosis. Connect an account in Settings to get started.{" "}
+              <Link href="/app/settings" style={{ color: "var(--accent)" }}>Open Settings →</Link>
             </p>
           </div>
         </div>

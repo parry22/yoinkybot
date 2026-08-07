@@ -20,6 +20,47 @@ setup; this doc is the how-it-actually-works.
 
 ## 1. Shape of the system
 
+### Company Narrative Engine
+
+The company product is additive to the original personal creator product. Every
+user still receives a personal workspace, while organization members may also
+work inside one or more company workspaces. Workspace context is explicit on the
+web and in Telegram; no service is allowed to infer a company workspace from a
+name or from the user's most recent personal action.
+
+The governed company loop is:
+
+```text
+sources -> reviewed knowledge -> active narrative -> grounded briefs
+        -> checked assets -> deterministic distribution -> tracked conversion
+        -> immutable editorial review
+```
+
+The domain services live under `packages/backend/src/{workspaces,knowledge,narrative,production,editorial,distribution}/`
+(plus the shared web barrel). Migrations `0043` through `0053`
+add organizations, workspaces, roles, expert voices, structured knowledge,
+narrative versions, briefs, assets, distribution, conversion, analytics and
+expanded Studio asset formats.
+The migrations are additive and retain the existing creator tables and flows.
+
+Security rules are enforced in code and the database:
+
+- every company read and mutation resolves workspace membership and role first
+- confidential sources never enter prompts without an allowed workspace role
+- `never_use` knowledge is excluded from all generation paths
+- high-risk and regulated claims require an admin plus approved same-workspace proof
+- claim, proof, CTA, brief, asset, publication and conversion relationships use
+  same-workspace foreign keys where PostgreSQL can enforce them
+- tracked action tokens are encrypted at rest and conversion events validate
+  workspace ownership, entity lineage, timestamps and deduplication keys
+- Telegram only exposes company items when workspace access, delivery settings
+  and the item's permission level all allow it
+
+The real-database integration suite in
+`src/company-domain.integration.test.ts` is the release gate for isolation and
+end-to-end lineage. `src/personal-compatibility.test.ts` characterizes the
+creator contracts that must survive company-engine changes.
+
 One Fastify monolith (`packages/backend`), one Postgres (with pgvector), one
 Telegram bot. **Single process, single instance** — pg-boss cron and the Telegram
 webhook both assume exactly one running replica. Do not scale horizontally.
@@ -169,6 +210,7 @@ full prior implementation if it ever needs to come back.
 |---|---|---|
 | Telegram bot | `src/telegram/` | grammY bot, command handlers, conversation state. Commands stay deliberately lean; Compose-like capabilities are plain-language chat tools, including X/LinkedIn drafting, X→LinkedIn repurposing with media, and scheduling. No separate LinkedIn command was added. |
 | Strategist flow | `src/strategist/` | The a16z Personal Brand Strategist onboarding. Profile-first arc: profiling (Stages 1-6, 7 fields) → connect → **brand diagnosis (terminal free step)** → paywall/steady-state. The three-month plan was removed from the funnel 2026-07-13 (see §3b). `session-machine.ts` is the state machine; `state.ts` persists it; `profile.ts` owns the stated profile; `gap.ts` computes the stated-vs-actual gap. See §3b. |
+| Company engine | `src/company/` | Workspace access, sources, structured knowledge, narrative versions, briefs, assets, distribution, tracked conversion, lineage and company analytics. Models propose; deterministic services enforce approval, permissions and ownership. |
 | Capture pipeline | `src/capture/` | Immutable capture of user input + imports (X via twitterapi.io→Apify, LinkedIn via Apify). Captures are never mutated. |
 | Memory core | `src/memory/` | Extraction → embed → link → search (RRF hybrid). `positions.ts` (stated positions), `confidence.ts`, `forget.ts` (hard delete), `classification.ts` (rhetorical mode/sincerity/motive taxonomy + gating helper), `corrections.ts` (user-correction mechanism + monthly recalibration). See §3d. |
 | Voice | `src/voice/` | Voice profile from a user's own corpus; used to ground drafting. |
@@ -1102,26 +1144,28 @@ is a **symlink to `packages/backend/.env`** — one source of truth. Clerk keys
 `NEXT_PUBLIC_CLERK_SIGN_IN_URL`/`SIGN_UP_URL`) live there too and are **required**
 for the web app to boot. Dev port is **3002** (backend stays 3001).
 
-**Screens** (`src/app/app/*`, real `/app` segment — not a route group). `/app`
-is a redirect to `/app/agent` (chat lives there now, see below — there is no
-more standalone chat page). Sidebar groups: **Agent** — `/app/compose` (X-only
-draft composer → `/api/draft` → `runWebDraft`→`runDraft`, respects the
-paywall/allowance and the voice-profile gate; lists persisted drafts), `/app/automations`
-("Auto Agent"). **Grow** — `/app/growth` (see §3m), `/app/inspiration`,
-`/app/buyers-radar` (UI-only preview, see below), `/app/analytics`. **Account** —
-`/app/scheduled`, `/app/settings` (account info, editable stated profile, connect X,
-Telegram connect button, appearance toggle — see below). `/app/onboarding` is the
-gamified popup wizard (see below); `/app/diagnosis`, `/app/plan`, `/app/beliefs`
-still exist as standalone routes (now largely fused into `/app/growth`) but aren't
-linked in the sidebar. `/sign-in` + `/sign-up` are public (Clerk); `/` redirects.
+**Screens — knowledge-first shell (2026-08-07).** Primary nav is a floating icon
+rail: **Inbox** (`/app`) → **Knowledge** (`/app/knowledge`) → **Studio**
+(`/app/studio`) → **Assets** (`/app/assets`) → **Integrations**
+(`/app/integrations`) → **Settings** (`/app/settings`). Light mode only
+(DM Sans, warm tinted `--surface` tokens). Knowledge shows a decorative neon
+brain stage on desktop (hidden ≤1000px) with the functional library/capture
+panel beside it. Studio uses custom `MenuSelect` format/tone menus and real
+`studio_generate` production. Assets is a calendar with X/LinkedIn publish
+paths. Inbox is list↔detail triage with classification chips. Mobile (≤1000px):
+`MobileHeader` hamburger + slide-in drawer, body scroll lock, safe-area
+padding; Inbox/Knowledge use full-screen detail sheets with Back.
 
-**Design.** Ported from the WeaveOS reference (Geist, warm off-white canvas,
-hairline `0.5px` strokes, `20px` radii, sidebar + workspace). The reference's
-only accent was glossy black; per the brief it's recolored to a single **pink**
-token — `--accent` / `--accent-2` in `globals.css` (swap those two to rebrand).
-A dark theme was added (the original was light-only); the toggle lives in
-**Settings** now (`components/theme-toggle.tsx`, extracted from the sidebar),
-stamps `data-theme` on `<html>`, persists to `localStorage`.
+**Legacy screens** (`src/app/app/*`). Older Agent/Grow routes still exist
+(`/app/compose`, `/app/automations`, `/app/growth`, `/app/inspiration`,
+`/app/buyers-radar`, `/app/analytics`, `/app/scheduled`, `/app/onboarding`,
+`/app/diagnosis`, `/app/plan`, `/app/beliefs`, `/app/briefs`, `/app/narrative`,
+`/app/distribution`) but are no longer the primary rail. `/sign-in` + `/sign-up`
+are public (Clerk); `/` redirects.
+
+**Design.** Warm off-white / tinted surfaces, hairline strokes, pink
+`--accent` / `--accent-2`. Dark mode was removed from the product shell
+(2026-08-06); keep light-only unless the product brief changes.
 
 **LinkedIn returned to the web app (2026-08-04).** Compose reaches it through the
 shared conversational `draft_post` / `repurpose_x_post` tools, Auto Agent stores
@@ -2806,6 +2850,42 @@ connections — a pool `error` listener (an unhandled EventEmitter error kills t
 process, so a routine pooler recycle was a latent crash), and a nightly `pg_dump`
 in Actions that verifies the archive's table of contents before calling itself a
 backup.
+
+### 6ac. Company Narrative Engine (2026-08-06)
+
+The creator product is preserved behind an additive tenancy layer. `organizations`,
+`workspaces`, organization/workspace membership and `experts` establish the boundary;
+existing users receive a personal workspace and linked founder expert. New domain
+services must call `requireWorkspaceRole` and scope every object lookup by
+`workspace_id`. Composite same-workspace foreign keys in migration `0047` provide a
+second database-level boundary for knowledge, briefs and assets.
+
+The first complete company loop is:
+
+```text
+workspace source -> capture -> reviewed knowledge -> active narrative -> approved brief
+-> checked asset -> native derivatives -> publication -> conversion -> editorial review
+```
+
+Migrations `0043` through `0049` are the additive company domain. Source permission
+propagates into every extracted knowledge object. `never_use_for_generation`,
+`restricted` and `confidential` sources fail closed during production. Claims are
+proposed by models but require a human registry approval. Content lineage is stored as
+edges rather than flattened prompt context.
+
+Phase E keeps execution bounded. `distribution_steps` are deterministic tasks and
+recommendations; only the existing official X and LinkedIn scheduling path publishes.
+Conversion actions issue a random opaque token whose SHA-256 digest is stored. The
+public event endpoint verifies that token, the 24-hour timestamp window, the event
+vocabulary, entity ownership and a workspace-scoped deduplication key. Manual leads,
+opportunities and revenue use `influence_kind='influenced'`; the UI never calls them
+attributed.
+
+Phase F computes facts in SQL before the model sees them. Knowledge activation,
+territory use, source utilisation, production cycle times and commercial influence
+retain joins back to their underlying objects. The model may summarise those facts in
+an `editorial_review`, but each review stores its facts snapshot and prior reviews are
+never overwritten.
 
 ---
 

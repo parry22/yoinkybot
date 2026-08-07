@@ -45,5 +45,18 @@ provider (merchant of record, covers India + international in one integration).
 - Dodo checkout sessions + Standard-Webhooks-verified webhook → `subscriptions` table → entitlements.
 - Per-user usage metering (tokens, model, cost) via the LLM gateway from day one.
 
-## Phase 7 — Agency/team (not built)
-- Prepped only: `profile_id` (memory owner) vs `user_id` (access) separation noted in schema comments.
+## Phase 7 - Company Narrative Engine
+- Additive organizations, personal/company workspaces, members, role checks and distinct expert voices.
+- Permissioned transcript sources produce reviewable, source-linked knowledge objects. Claims never auto-approve.
+- Versioned narrative systems, audiences, editorial territories and claim registry.
+- Grounded briefs produce checked assets and channel-native derivatives with capture-to-publication lineage.
+- Distribution steps are deterministic tasks. Existing X and LinkedIn publishers remain the only native execution paths.
+- Tracked CTA events validate opaque action tokens, entity ownership, timestamps and deduplication keys.
+- Manual lead, opportunity and revenue records are labelled influenced, never causally attributed.
+- Workspace analytics expose production health, knowledge activation, territory performance, source utilisation and stored editorial reviews.
+- Database: additive migrations `0043` through `0053` (studio asset formats), including same-workspace foreign keys, audit logs, encrypted tracked-action tokens and performance snapshots.
+- Web shell (2026-08-07): knowledge-first light UI — Inbox triage, Knowledge brain stage + library, Studio generation, Assets calendar, Integrations hub, workspace Settings. DM Sans typography, warm tinted surfaces, custom `MenuSelect` controls, mobile drawer at ≤1000px.
+- Security gate: real Postgres tests prove cross-workspace reads and writes fail, viewers cannot edit, contributors cannot approve high-risk claims, confidential/never-use material stays out of generation, and Telegram respects delivery permissions.
+- Lineage gate: a founder transcript completes capture -> knowledge -> brief -> asset -> publication -> conversion with every relationship traceable to one workspace.
+- Compatibility gate: personal drafts, X and LinkedIn scheduling, Auto Agent interviews, Telegram capture, creator analytics and Growth/Scale billing retain their characterized contracts.
+- Product gate: existing creator flows still work; the founder-transcript slice completes through narrative, assets, distribution, conversion and editorial learning.

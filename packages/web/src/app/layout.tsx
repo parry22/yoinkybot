@@ -1,25 +1,23 @@
 import type { Metadata } from "next";
-import { Geist } from "next/font/google";
+import { DM_Sans } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
 
-const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
+const dmSans = DM_Sans({
+  variable: "--font-dm-sans",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+});
 
 export const metadata: Metadata = {
   title: "Yoinky",
   description:
-    "Your narrative engine - connect your accounts, get diagnosed, build a plan, and ship content that stays on-brand.",
+    "Turn company knowledge into a governed narrative, grounded briefs, and traceable content across X and LinkedIn.",
 };
-
-// Set the saved theme before first paint to avoid a flash of the wrong theme.
-const themeInit = `(function(){try{var t=localStorage.getItem('yoink-theme');if(t==='light'||t==='dark'){document.documentElement.setAttribute('data-theme',t);}}catch(e){}})();`;
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={geistSans.variable} suppressHydrationWarning>
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: themeInit }} />
-      </head>
+    <html lang="en" className={dmSans.variable} suppressHydrationWarning>
       {/* ClerkProvider goes inside <body> (Core 3 / cache-components rule). */}
       <body>
         <ClerkProvider signInUrl="/sign-in" signUpUrl="/sign-up" afterSignOutUrl="/sign-in">

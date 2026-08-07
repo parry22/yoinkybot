@@ -1,6 +1,6 @@
 # Yoinky
 
-Yoinky is an open source narrative engine and AI ghostwriter for X and LinkedIn. It learns from your existing posts, remembers your ideas and positions, drafts in your voice, schedules content with media, watches for relevant moments, and works from both a web app and Telegram.
+Yoinky is an open source Company Narrative Engine. It turns founder insight, customer evidence and company activity into structured intellectual property, a governed narrative, grounded content briefs and traceable X and LinkedIn assets. The original personal creator product remains available inside an automatically created personal workspace.
 
 [Hosted app](https://app.meetyoinky.com) | [Website](https://meetyoinky.com) | [Roadmap](docs/PHASES.md) | [Deployment guide](DEPLOY.md)
 
@@ -16,15 +16,45 @@ There is no Lifetime plan. The free option is the complete open source codebase 
 
 ## What is included
 
+- Knowledge-first web shell (light mode): Inbox → Knowledge → Studio → Assets → Integrations → Settings
+- Personal and company workspaces with deterministic role-based access
+- Founder and expert profiles with separate voices
+- Transcript intake with source-linked insights, claims, proof, stories and customer language
+- Human review queues, permission inheritance and claim governance
+- Versioned narrative systems and editorial territories
+- Grounded LinkedIn briefs, founder-voice assets, evidence checks and full lineage
+- Studio generation across X, LinkedIn, newsletter, blog, carousel, video scripts, email, slides and more
+- Channel-native atomisation into X, LinkedIn and text artifacts without flattening provenance
+- Deterministic distribution plans, tracked CTAs and workspace-verified conversion events
+- Knowledge, territory and source-utilisation analytics with immutable editorial reviews
+- Workspace administration for members, roles, experts, Telegram permissions, export and safe deletion
 - Voice-matched drafting for X and LinkedIn
 - X-to-LinkedIn repurposing, including supported media
 - Compose, scheduling, and Auto Agent workflows
 - Memory, beliefs, positions, diagnosis, and content planning
 - Buyer Radar and trend research
 - X and LinkedIn publishing through official OAuth apps
-- Telegram capture, approvals, notifications, and proactive prompts
+- Telegram workspace switching, explicit company capture, permission-gated approvals, notifications and proactive prompts
 - PostgreSQL with pgvector for retrieval and memory
 - Optional analytics, billing, feedback, and speech-to-text integrations
+- Responsive mobile shell with hamburger nav drawer (≤1000px)
+
+## The company narrative loop
+
+```text
+Company activity
+→ Knowledge capture
+→ Structured knowledge
+→ Narrative architecture
+→ Content briefs
+→ Content production
+→ Distribution
+→ Conversion
+→ Measurement
+→ Better narrative decisions
+```
+
+Code controls workspace access, permissions, confidentiality, approval state and publication. Models extract, interpret and draft, but they cannot approve a claim or override a workspace boundary.
 
 ## Architecture
 
@@ -34,6 +64,10 @@ Yoinky is a pnpm monorepo with two applications over one PostgreSQL database:
 - `packages/backend`: Fastify API, Telegram bot, OAuth callbacks, pg-boss workers, and scheduled jobs on port 3001
 
 The backend applies database migrations at startup. Run one backend replica unless you move scheduling and worker coordination out of the process.
+
+When the marketing site shares this database, keep its CMS pool small. The
+included landing configuration caps Payload at two connections so the app,
+workers and CMS do not exhaust a low-tier Postgres session limit.
 
 ## Self-host in development
 
@@ -86,7 +120,7 @@ CLERK_SECRET_KEY=sk_test_your_key
 
 LLM_TRANSPORT=openrouter
 OPENROUTER_API_KEY=your_openrouter_key
-MODEL_CHAT=x-ai/grok-4.5
+MODEL_CHAT=x-ai/grok-4.3
 ```
 
 OpenRouter is the easiest BYOK route because one key can run Grok, OpenAI, Claude, and other compatible models by changing `MODEL_CHAT`. To use xAI directly, set `LLM_TRANSPORT=xai`, `XAI_API_KEY`, and `XAI_MODEL`.

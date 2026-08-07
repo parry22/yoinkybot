@@ -18,11 +18,11 @@ export async function GET(req: Request) {
   const state = url.searchParams.get("state");
   const savedState = (await cookies()).get(COOKIE)?.value;
   if (!code || !state || !savedState || state !== savedState) {
-    return NextResponse.redirect(new URL("/app/settings?connect_error=retry", origin));
+    return NextResponse.redirect(new URL("/app/integrations?connect_error=retry", origin));
   }
   const clientId = process.env.LINKEDIN_CLIENT_ID;
   const clientSecret = process.env.LINKEDIN_CLIENT_SECRET;
-  if (!clientId || !clientSecret) return NextResponse.redirect(new URL("/app/settings?connect_error=config", origin));
+  if (!clientId || !clientSecret) return NextResponse.redirect(new URL("/app/integrations?connect_error=config", origin));
 
   try {
     const redirectUri = `${origin}/api/auth/linkedin/callback`;
@@ -50,11 +50,11 @@ export async function GET(req: Request) {
       authorUrn: `urn:li:person:${me.sub}`,
       displayName: me.name,
     });
-    const response = NextResponse.redirect(new URL("/app/settings?connected=linkedin", origin));
+    const response = NextResponse.redirect(new URL("/app/integrations?connected=linkedin", origin));
     response.cookies.set(COOKIE, "", { path: "/", maxAge: 0 });
     return response;
   } catch (err) {
     console.error("linkedin oauth callback failed", err);
-    return NextResponse.redirect(new URL("/app/settings?connect_error=retry", origin));
+    return NextResponse.redirect(new URL("/app/integrations?connect_error=retry", origin));
   }
 }

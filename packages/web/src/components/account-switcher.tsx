@@ -1,46 +1,39 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useClerk, useSessionList, useUser } from "@clerk/nextjs";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { UnfoldMoreIcon, UserAdd01Icon, Settings02Icon, Logout03Icon, Tick02Icon } from "@hugeicons/core-free-icons";
+import {
+  Add01Icon,
+  Building02Icon,
+  Logout03Icon,
+  Settings02Icon,
+  Tick02Icon,
+  UnfoldMoreIcon,
+  UserAdd01Icon,
+  UserCircleIcon,
+} from "@hugeicons/core-free-icons";
+import type { WorkspaceSummary } from "@yoink/backend/web";
 import styles from "./account-switcher.module.css";
 
-/**
- * The account switcher, pinned to the bottom of the sidebar.
- *
- * WHY THIS IS A REAL FEATURE HERE, not just a login menu: a Clerk session maps
- * 1:1 to a `users` row via `clerk_user_id` (lib/session.ts), and everything -
- * the connected X account, the memory graph, the diagnosis, the plan, the
- * billing - hangs off that row. So switching accounts switches the entire
- * workspace. That's the agency/multi-brand case: run your own brand and a
- * client's without signing out and back in.
- *
- * ══════════════════════════════════════════════════════════════════════════
- * PREREQUISITE: the Clerk instance must have multi-session ENABLED.
- * As of writing, production has `single_session_mode: true`, which means Clerk
- * will only ever hold ONE session on the client - `sessions` below always has
- * length 1 and there is nothing to switch to. It's a dashboard-only toggle
- * (Clerk exposes no Backend API for it, same as social connections):
- *   Clerk dashboard → Configure → Sessions → "Multi-session handling".
- * Verify with:
- *   curl -s "https://clerk.meetyoinky.com/v1/environment?_clerk_js_version=5" \
- *     -H "Origin: https://app.meetyoinky.com" | jq .auth_config.single_session_mode
- * The component is written to be CORRECT EITHER WAY - with one session it is a
- * clean account menu, and it grows the switcher list the moment a second
- * session can exist. Nothing here breaks or misleads while the toggle is off.
- * ══════════════════════════════════════════════════════════════════════════
- */
-export function AccountSwitcher({ onNavigate }: { onNavigate?: () => void }) {
+export function AccountSwitcher({
+  onNavigate,
+  compact = false,
+  workspaces = [],
+}: {
+  onNavigate?: () => void;
+  compact?: boolean;
+  workspaces?: WorkspaceSummary[];
+}) {
   const { user, isLoaded: userLoaded } = useUser();
   const { sessions, setActive, isLoaded: sessionsLoaded } = useSessionList();
   const { openUserProfile, openSignIn, signOut } = useClerk();
   const [open, setOpen] = useState(false);
   const [switchingTo, setSwitchingTo] = useState<string | null>(null);
+  const [switchingWorkspace, setSwitchingWorkspace] = useState<string | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
 
-  // Close on outside click / Escape. Both matter: this sits at the very bottom
-  // of a fixed drawer on mobile, where a stray tap elsewhere should dismiss it.
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
@@ -64,9 +57,6 @@ export function AccountSwitcher({ onNavigate }: { onNavigate?: () => void }) {
   const email = (u: { primaryEmailAddress?: { emailAddress: string } | null }) =>
     u.primaryEmailAddress?.emailAddress ?? "";
 
-  // Every OTHER signed-in session. Empty under single-session mode, which is
-  // why the "Switch to" group below renders conditionally rather than showing
-  // an empty heading.
   const others = (sessions ?? []).filter((s) => s.user && s.user.id !== user.id);
 
   async function switchTo(sessionId: string) {
@@ -75,12 +65,6 @@ export function AccountSwitcher({ onNavigate }: { onNavigate?: () => void }) {
     try {
       await setActive({
         session: sessionId,
-        // A FULL document load, deliberately - not router.push. Switching the
-        // session changes which `users` row every server component reads, and
-        // Next's client router cache would happily serve the previous account's
-        // rendered output (their drafts, their diagnosis, their plan). Showing
-        // one account's data under another's name is the one failure this
-        // feature must not have, so correctness beats the snappier transition.
         navigate: async ({ decorateUrl }) => {
           window.location.href = decorateUrl("/app");
         },
@@ -91,10 +75,29 @@ export function AccountSwitcher({ onNavigate }: { onNavigate?: () => void }) {
     }
   }
 
+  async function selectWorkspace(workspaceId: string) {
+    const active = workspaces.find((workspace) => workspace.active);
+    if (workspaceId === active?.id) {
+      setOpen(false);
+      return;
+    }
+    setSwitchingWorkspace(workspaceId);
+    const response = await fetch("/api/workspaces", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ workspaceId }),
+    });
+    if (response.ok) {
+      window.location.assign("/app");
+      return;
+    }
+    setSwitchingWorkspace(null);
+  }
+
   return (
-    <div className={styles.wrap} ref={wrapRef}>
+    <div className={`${styles.wrap} ${compact ? styles.wrapCompact : ""}`} ref={wrapRef}>
       {open && (
-        <div className={styles.menu} role="menu">
+        <div className={`${styles.menu} ${compact ? styles.menuCompact : ""}`} role="menu">
           {others.length > 0 && (
             <>
               <p className={styles.menuLabel}>Switch to</p>
@@ -119,8 +122,6 @@ export function AccountSwitcher({ onNavigate }: { onNavigate?: () => void }) {
             </>
           )}
 
-          {/* Current account, marked - so the menu always answers "who am I?"
-            * even when there is only one session and nothing to switch to. */}
           <p className={styles.menuLabel}>Signed in as</p>
           <div className={`${styles.menuItem} ${styles.menuItemStatic}`}>
             <img src={user.imageUrl} alt="" className={styles.avatarSm} />
@@ -131,6 +132,48 @@ export function AccountSwitcher({ onNavigate }: { onNavigate?: () => void }) {
             <HugeiconsIcon icon={Tick02Icon} size={15} strokeWidth={2.2} className={styles.tick} />
           </div>
 
+          {workspaces.length > 0 && (
+            <>
+              <div className={styles.divider} />
+              <p className={styles.menuLabel}>Workspaces</p>
+              {workspaces.map((workspace) => (
+                <button
+                  key={workspace.id}
+                  type="button"
+                  role="menuitem"
+                  className={styles.menuItem}
+                  disabled={switchingWorkspace !== null}
+                  onClick={() => void selectWorkspace(workspace.id)}
+                >
+                  <span className={styles.workspaceMark}>
+                    <HugeiconsIcon
+                      icon={workspace.workspaceType === "company" ? Building02Icon : UserCircleIcon}
+                      size={15}
+                    />
+                  </span>
+                  <span className={styles.menuText}>
+                    <span className={styles.menuName}>{workspace.name}</span>
+                    <span className={styles.menuMail}>{workspace.role}</span>
+                  </span>
+                  {workspace.active && <HugeiconsIcon icon={Tick02Icon} size={15} className={styles.tick} />}
+                  {switchingWorkspace === workspace.id && <span className={styles.switching}>…</span>}
+                </button>
+              ))}
+              <Link
+                href="/app/workspaces/new"
+                role="menuitem"
+                className={styles.menuItem}
+                onClick={() => {
+                  setOpen(false);
+                  onNavigate?.();
+                }}
+              >
+                <HugeiconsIcon icon={Add01Icon} size={17} strokeWidth={1.8} />
+                <span className={styles.menuText}>Add workspace</span>
+              </Link>
+            </>
+          )}
+
           <div className={styles.divider} />
 
           <button
@@ -139,9 +182,6 @@ export function AccountSwitcher({ onNavigate }: { onNavigate?: () => void }) {
             className={styles.menuItem}
             onClick={() => {
               setOpen(false);
-              // Under multi-session this adds a second account and leaves the
-              // current one signed in. Under single-session Clerk handles the
-              // flow itself rather than us guessing at its behaviour.
               openSignIn({});
             }}
           >
@@ -180,11 +220,12 @@ export function AccountSwitcher({ onNavigate }: { onNavigate?: () => void }) {
 
       <button
         type="button"
-        className={styles.trigger}
+        className={`${styles.trigger} ${compact ? styles.triggerCompact : ""}`}
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
         title={email(user) || label(user)}
+        aria-label={email(user) || label(user)}
         disabled={!sessionsLoaded}
       >
         <img src={user.imageUrl} alt="" className={styles.avatar} />

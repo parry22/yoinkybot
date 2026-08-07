@@ -82,6 +82,14 @@ export const RATE_LIMITS = {
    * Generous enough for a real setup (three providers, a few typos each).
    */
   byok_save: { limit: 20, windowSec: 600 },
+  /** Company source extraction includes embeddings plus a structured model pass. */
+  company_knowledge: { limit: 6, windowSec: 600 },
+  /** Narrative proposals are frontier-model strategic generations. */
+  company_narrative: { limit: 4, windowSec: 600 },
+  /** One request may generate several grounded brief options. */
+  company_briefs: { limit: 4, windowSec: 600 },
+  /** Editorial reviews are durable, fact-backed monthly artifacts. */
+  company_editorial: { limit: 3, windowSec: 3600 },
 } as const satisfies Record<string, RateLimitRule>;
 
 export type RateLimitBucket = keyof typeof RATE_LIMITS;

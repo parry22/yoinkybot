@@ -38,7 +38,7 @@ export async function GET(req: Request) {
    */
   const fail = (reason: string, kind: "retry" | "config" = "retry") => {
     console.error("x oauth callback:", reason);
-    return NextResponse.redirect(new URL(`/app?connect_error=${kind}`, origin));
+    return NextResponse.redirect(new URL(`/app/integrations?connect_error=${kind}`, origin));
   };
 
   const jar = await cookies();
@@ -104,8 +104,8 @@ export async function GET(req: Request) {
       scope: tok.scope,
     });
 
-    // Land back in the app; the connect popup shows the "reading" animation.
-    const res = NextResponse.redirect(new URL("/app?connected=x", origin));
+    // Land back on Integrations so status and errors are visible.
+    const res = NextResponse.redirect(new URL("/app/integrations?connected=x", origin));
     res.cookies.set(X_OAUTH_COOKIE, "", { path: "/", maxAge: 0 });
     return res;
   } catch (err) {

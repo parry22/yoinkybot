@@ -149,3 +149,13 @@ The included `.github/workflows/backup.yml` can create nightly encrypted-platfor
 ## Hosted Growth and Scale
 
 The managed Yoinky service uses the same codebase with `SELF_HOSTED=false`, `PAYWALL_ENABLED=true`, and DodoPayments product IDs for Growth and Scale. Open Source installations should leave all Dodo variables empty.
+
+## Hosted deploy topology (production)
+
+| Surface | Host | URL | Trigger |
+| --- | --- | --- | --- |
+| Web (`packages/web`) | Vercel project `yoinky-web` | https://app.meetyoinky.com | Push to `main` (GitHub ↔ Vercel) |
+| Backend (repo root `Dockerfile`) | Railway service `backend` | https://bot.meetyoinky.com | Push to `main` (GitHub ↔ Railway) |
+| Manual fallback | `.github/workflows/deploy.yml` | — | `workflow_dispatch` only (needs `VERCEL_*` / `RAILWAY_TOKEN` secrets) |
+
+Deploy backend first when the release includes a new SQL migration (`0043`–`0053` and forward); the backend applies pending migrations on boot. Then confirm the web deployment.

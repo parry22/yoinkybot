@@ -62,6 +62,10 @@ export async function schedulePost(
     content: string;
     scheduledFor: Date;
     draftId?: string;
+    /** Company Narrative Engine asset provenance. */
+    contentAssetId?: string;
+    /** Optional workspace provenance for company publications. */
+    workspaceId?: string;
     /** Staged scheduled_post_media ids to bind to this post once it exists. */
     mediaIds?: string[];
   },
@@ -99,9 +103,9 @@ export async function schedulePost(
   }
 
   const row = await queryOne<{ id: string }>(
-    `INSERT INTO scheduled_posts (user_id, platform, content, draft_id, scheduled_for)
-     VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-    [userId, input.platform, content, input.draftId ?? null, when.toISOString()],
+    `INSERT INTO scheduled_posts (user_id, platform, content, draft_id, content_asset_id, workspace_id, scheduled_for)
+     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+    [userId, input.platform, content, input.draftId ?? null, input.contentAssetId ?? null, input.workspaceId ?? null, when.toISOString()],
   );
   if (!row) return { ok: false, reason: "couldn't save that" };
 

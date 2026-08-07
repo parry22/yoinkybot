@@ -1,92 +1,40 @@
 /*
- * Design system ported from the WeaveOS reference (warm off-white canvas,
- * hairline strokes, Geist type, 20px radii) - with the single change the brief
- * asked for: the glossy BLACK primary action becomes glossy PINK. The pink lives
- * in one place, --accent (+ --accent-2 for the gradient tail); swap those two to
- * rebrand. A dark theme is added since the original was light-only.
+ * Light-only design system for the knowledge OS shell.
+ * Warm canvas, soft tinted surfaces, DM Sans, restrained pink accent.
  */
 
 :root {
-  /* Warm-neutral surfaces (verbatim from the reference) */
-  --main-bg: #f5f4f1;
-  --chat-bg: #fcfcfb;
-  --surface: #ffffff;
-  --stroke: #e7e7e7;
-  --hover: #f7f6f4;
+  --main-bg: #efece6;
+  --chat-bg: #f5f2ec;
+  --surface: #f1eee8;
+  --surface-raised: #eae6df;
+  --stroke: #ddd8cf;
+  --hover: #ebe7e0;
 
-  /* Monochrome "ink" type scale */
-  --ink-900: #141414;
-  --ink-700: #6e6e6c;
-  --ink-600: #7a7a78;
-  --ink-500: #9b9a99;
+  --ink-900: #1a1917;
+  --ink-700: #5c5a55;
+  --ink-600: #78766f;
+  --ink-500: #96938b;
 
-  /* Pink accent - the recolored primary action + active/selected states */
-  --accent: #ec4899;
-  --accent-2: rgba(236, 72, 153, 0.82);
+  --accent: #d9487d;
+  --accent-2: rgba(217, 72, 125, 0.88);
   --accent-ink: #ffffff;
-  --accent-soft: rgba(236, 72, 153, 0.1);
-  --accent-border: rgba(236, 72, 153, 0.38);
+  --accent-soft: rgba(217, 72, 125, 0.12);
+  --accent-border: rgba(217, 72, 125, 0.34);
 
-  --shadow-drawer: 0 18px 60px rgba(20, 20, 20, 0.16);
-  --radius-lg: 20px;
-  --radius-md: 14px;
+  --shadow-rail: 0 10px 36px rgba(26, 25, 23, 0.08), 0 1px 0 rgba(255, 255, 255, 0.45) inset;
+  --shadow-card: 0 1px 0 rgba(26, 25, 23, 0.03), 0 8px 22px rgba(26, 25, 23, 0.05);
+  --shadow-drawer: 0 18px 60px rgba(26, 25, 23, 0.12);
+  --radius-lg: 18px;
+  --radius-md: 12px;
+  --rail-width: 64px;
   color-scheme: light;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --main-bg: #070707;
-    --chat-bg: #101010;
-    --surface: #171718;
-    --stroke: #2a2a32;
-    --hover: rgba(255, 255, 255, 0.05);
-    --ink-900: #f3f2ef;
-    --ink-700: #a8a8af;
-    --ink-600: #97979f;
-    --ink-500: #77777f;
-    --accent-soft: rgba(236, 72, 153, 0.14);
-    --accent-border: rgba(236, 72, 153, 0.45);
-    --shadow-drawer: 0 18px 60px rgba(0, 0, 0, 0.5);
-    color-scheme: dark;
-  }
-}
-
-/* Explicit theme toggle wins over the media query, in both directions. */
-:root[data-theme="light"] {
-  --main-bg: #f5f4f1;
-  --chat-bg: #fcfcfb;
-  --surface: #ffffff;
-  --stroke: #e7e7e7;
-  --hover: #f7f6f4;
-  --ink-900: #141414;
-  --ink-700: #6e6e6c;
-  --ink-600: #7a7a78;
-  --ink-500: #9b9a99;
-  --accent-soft: rgba(236, 72, 153, 0.1);
-  --accent-border: rgba(236, 72, 153, 0.38);
-  --shadow-drawer: 0 18px 60px rgba(20, 20, 20, 0.16);
-  color-scheme: light;
-}
-
-:root[data-theme="dark"] {
-  --main-bg: #070707;
-  --chat-bg: #101010;
-  --surface: #171718;
-  --stroke: #2a2a32;
-  --hover: rgba(255, 255, 255, 0.05);
-  --ink-900: #f3f2ef;
-  --ink-700: #a8a8af;
-  --ink-600: #97979f;
-  --ink-500: #77777f;
-  --accent-soft: rgba(236, 72, 153, 0.14);
-  --accent-border: rgba(236, 72, 153, 0.45);
-  --shadow-drawer: 0 18px 60px rgba(0, 0, 0, 0.5);
-  color-scheme: dark;
 }
 
 html {
   height: 100%;
-  font-family: var(--font-geist-sans), "Inter", "Avenir Next", "Segoe UI", sans-serif;
+  font-family: var(--font-dm-sans), "Avenir Next", "Segoe UI", sans-serif;
+  letter-spacing: -0.011em;
 }
 
 html,
@@ -156,6 +104,7 @@ a {
   color: var(--ink-700);
   font: inherit;
   font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
   transition: color 120ms ease, background 120ms ease, border-color 120ms ease;
 }

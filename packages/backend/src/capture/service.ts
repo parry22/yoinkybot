@@ -30,6 +30,10 @@ export interface CreateCaptureInput {
   clientId?: string;
   /** Skip queueing (bulk imports and moment intake enqueue their own jobs). */
   enqueue?: boolean;
+  workspaceId?: string | null;
+  sourceId?: string | null;
+  speakerExpertId?: string | null;
+  permissionLevel?: "public"|"internal"|"restricted"|"confidential"|"never_use_for_generation";
 }
 
 function initialStatus(input: CreateCaptureInput): string {
@@ -45,8 +49,8 @@ export async function createCapture(
   input: CreateCaptureInput,
 ): Promise<{ capture: Capture; created: boolean }> {
   const inserted = (await queryOne(
-    `INSERT INTO captures (user_id, source, raw_text, audio_url, captured_at, metadata, status, client_id)
-     VALUES ($1,$2,$3,$4,COALESCE($5, now()),$6,$7,$8)
+    `INSERT INTO captures (user_id, source, raw_text, audio_url, captured_at, metadata, status, client_id,workspace_id,source_id,speaker_expert_id,permission_level)
+     VALUES ($1,$2,$3,$4,COALESCE($5, now()),$6,$7,$8,$9,$10,$11,$12)
      ON CONFLICT (user_id, client_id) WHERE client_id IS NOT NULL DO NOTHING
      RETURNING *`,
     [
@@ -58,6 +62,10 @@ export async function createCapture(
       JSON.stringify(input.metadata ?? {}),
       initialStatus(input),
       input.clientId ?? null,
+      input.workspaceId??null,
+      input.sourceId??null,
+      input.speakerExpertId??null,
+      input.permissionLevel??"internal",
     ],
   )) as unknown as Capture | undefined;
 

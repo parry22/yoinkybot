@@ -20,6 +20,14 @@ export interface Entitlements {
   viralPerDay: number | null;
   /** Auto Agent posts per publishing platform per calendar month. */
   automationPostsPerMonth: number | null;
+  /** Reserved company-workspace limits. Null means the plan has no product cap yet. */
+  activeWorkspaces: number | null;
+  membersPerWorkspace: number | null;
+  expertsPerWorkspace: number | null;
+  sourceIntegrationsPerWorkspace: number | null;
+  processedSourceMinutesPerMonth: number | null;
+  generatedAssetsPerMonth: number | null;
+  analyticsRetentionDays: number | null;
   // NOTE: `trendsPerDay` used to live here. It was identical on every paid tier
   // (config.MAX_DAILY_TREND_SENDS) and read by nothing - the trend sender caps
   // itself off config directly - so it was a documented promise no code kept.
@@ -51,6 +59,13 @@ const FREE: Entitlements = {
   buyerIntentsPerMonth: 0,
   viralPerDay: 0,
   automationPostsPerMonth: 0,
+  activeWorkspaces: 1,
+  membersPerWorkspace: 1,
+  expertsPerWorkspace: 1,
+  sourceIntegrationsPerWorkspace: 0,
+  processedSourceMinutesPerMonth: 0,
+  generatedAssetsPerMonth: 0,
+  analyticsRetentionDays: 30,
   maxResurfacePerWeek: 1,
   autoAgent: false,
   consistencyChecks: false,
@@ -69,6 +84,13 @@ const GROWTH: Omit<Entitlements, "plan"> = {
   // platform each month
   // that still come to you first.
   automationPostsPerMonth: 30,
+  activeWorkspaces: null,
+  membersPerWorkspace: null,
+  expertsPerWorkspace: null,
+  sourceIntegrationsPerWorkspace: null,
+  processedSourceMinutesPerMonth: null,
+  generatedAssetsPerMonth: null,
+  analyticsRetentionDays: null,
   maxResurfacePerWeek: 3,
   autoAgent: false,
   consistencyChecks: true,
@@ -92,6 +114,13 @@ const SCALE: Omit<Entitlements, "plan"> = {
   // 90/month per platform ≈ 3 a day: a real hands-off cadence, but still a
   // hard ceiling so a runaway automation can't post unbounded.
   automationPostsPerMonth: 90,
+  activeWorkspaces: null,
+  membersPerWorkspace: null,
+  expertsPerWorkspace: null,
+  sourceIntegrationsPerWorkspace: null,
+  processedSourceMinutesPerMonth: null,
+  generatedAssetsPerMonth: null,
+  analyticsRetentionDays: null,
   maxResurfacePerWeek: 5,
   autoAgent: true,
   consistencyChecks: true,

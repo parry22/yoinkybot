@@ -1,132 +1,55 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  BotIcon,
+  InboxIcon,
+  Knowledge01Icon,
   QuillWrite02Icon,
-  Calendar03Icon,
-  FireIcon,
-  RadarIcon,
-  Analytics01Icon,
-  Target01Icon,
+  FolderLibraryIcon,
+  Plug01Icon,
   Settings05Icon,
-  TelegramIcon,
-  ChatFeedbackIcon,
 } from "@hugeicons/core-free-icons";
-import type { TrialInfo } from "@yoink/backend/web";
+import type { TrialInfo, WorkspaceSummary } from "@yoink/backend/web";
 import { TrialPill } from "./trial-banner";
-import { useTelegramLink } from "./use-telegram-link";
-import { FeedbackModal } from "./feedback-modal";
 import { AccountSwitcher } from "./account-switcher";
 import styles from "./sidebar.module.css";
 
-type NavItem = { href: string; label: string; icon: typeof BotIcon };
+type NavItem = { href: string; label: string; icon: typeof InboxIcon };
 
-const AGENT_NAV: NavItem[] = [
-  { href: "/app/compose", label: "Compose", icon: QuillWrite02Icon },
-  { href: "/app/automations", label: "Auto Agent", icon: BotIcon },
-];
-
-const GROW_NAV: NavItem[] = [
-  { href: "/app/growth", label: "Growth", icon: Target01Icon },
-  { href: "/app/inspiration", label: "Inspiration", icon: FireIcon },
-  { href: "/app/buyers-radar", label: "Buyers Radar", icon: RadarIcon },
-  { href: "/app/analytics", label: "Analytics", icon: Analytics01Icon },
-];
-
-const ACCOUNT_NAV: NavItem[] = [
-  { href: "/app/scheduled", label: "Scheduled", icon: Calendar03Icon },
-  { href: "/app/settings", label: "Settings", icon: Settings05Icon },
+const PRIMARY_NAV: NavItem[] = [
+  { href: "/app", label: "Inbox", icon: InboxIcon },
+  { href: "/app/knowledge", label: "Knowledge", icon: Knowledge01Icon },
+  { href: "/app/studio", label: "Studio", icon: QuillWrite02Icon },
+  { href: "/app/assets", label: "Assets", icon: FolderLibraryIcon },
+  { href: "/app/integrations", label: "Integrations", icon: Plug01Icon },
 ];
 
 export function Sidebar({
   open,
   trial,
+  workspaces,
   onNavigate,
 }: {
-  /** Mobile drawer state - a no-op class on desktop, where the sidebar is always visible. */
   open: boolean;
-  /** Shown as a mobile-only pill (the persistent top bar covers Telegram there instead). */
   trial: TrialInfo | null;
-  /** Called after a nav link is tapped, so the mobile drawer closes on navigation. */
+  workspaces: WorkspaceSummary[];
   onNavigate: () => void;
 }) {
   const pathname = usePathname();
-  const { open: openTelegram, busy: tgBusy } = useTelegramLink();
-  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
-  function renderGroup(label: string, items: NavItem[], extra?: React.ReactNode) {
-    return (
-      <div key={label}>
-        <p className={styles.navLabel}>{label}</p>
-        {items.map((item) => {
-          const active = pathname.startsWith(item.href);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={onNavigate}
-              className={`${styles.navItem} ${active ? styles.navItemActive : ""}`}
-            >
-              <HugeiconsIcon icon={item.icon} size={18} strokeWidth={1.8} />
-              <span>{item.label}</span>
-            </Link>
-          );
-        })}
-        {extra}
-      </div>
-    );
+  function isActive(href: string) {
+    if (href === "/app") return pathname === "/app";
+    return pathname.startsWith(href);
   }
-
-  /* Telegram is one of the surfaces you talk to the agent through, so it sits
-   * with Compose and Auto Agent under "Agent" and looks exactly like them. It's
-   * a button rather than a Link because the destination is a one-time linking
-   * URL minted per click (see use-telegram-link.ts), not a static route. */
-  const telegramItem = (
-    <button
-      type="button"
-      className={styles.navItem}
-      onClick={() => {
-        openTelegram();
-        onNavigate();
-      }}
-      disabled={tgBusy}
-      title="Open the Yoinky bot in Telegram"
-    >
-      <HugeiconsIcon icon={TelegramIcon} size={18} strokeWidth={1.8} />
-      <span>{tgBusy ? "Opening…" : "Telegram"}</span>
-    </button>
-  );
-
-  /* Feedback sits under Account, right below Settings. It's a button (not a
-   * Link) because it opens a popup rather than navigating to a route. */
-  const feedbackItem = (
-    <button
-      type="button"
-      className={styles.navItem}
-      onClick={() => {
-        setFeedbackOpen(true);
-        onNavigate();
-      }}
-      title="Send a feature request or bug report"
-    >
-      <HugeiconsIcon icon={ChatFeedbackIcon} size={18} strokeWidth={1.8} />
-      <span>Feedback</span>
-    </button>
-  );
 
   return (
     <aside className={`${styles.sidebar} ${open ? styles.sidebarOpen : ""}`} aria-label="Yoinky navigation">
-      <div className={styles.brandRow}>
-        <img src="/favicon.png" alt="" className={styles.dot} />
-        Yoinky
+      <div className={styles.brand}>
+        <img src="/favicon.png" alt="Yoinky" className={styles.brandMark} />
       </div>
 
-      {/* Mobile-only: the top bar's compact Telegram icon covers Telegram there,
-       *  but the trial "Add card" CTA lives here instead, under the menu. */}
       {trial && (
         <div className={styles.mobileTrial}>
           <TrialPill trial={trial} />
@@ -134,18 +57,41 @@ export function Sidebar({
       )}
 
       <nav className={styles.nav}>
-        {renderGroup("Agent", AGENT_NAV, telegramItem)}
-        {renderGroup("Grow", GROW_NAV)}
-        {renderGroup("Account", ACCOUNT_NAV, feedbackItem)}
+        {PRIMARY_NAV.map((item) => {
+          const active = isActive(item.href);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              onClick={onNavigate}
+              className={`${styles.navItem} ${active ? styles.navItemActive : ""}`}
+              aria-label={item.label}
+              aria-current={active ? "page" : undefined}
+            >
+              <HugeiconsIcon icon={item.icon} size={20} strokeWidth={1.7} />
+              <span className={styles.navLabel} role="tooltip">
+                {item.label}
+              </span>
+            </Link>
+          );
+        })}
       </nav>
 
-      {/* Pinned to the floor of the sidebar via `margin-top: auto` - switching
-        * here swaps the whole workspace (a Clerk session maps 1:1 to a `users`
-        * row), which is why it sits apart from the nav groups rather than
-        * inside "Account". */}
-      <AccountSwitcher onNavigate={onNavigate} />
-
-      <FeedbackModal open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
+      <div className={styles.footer}>
+        <Link
+          href="/app/settings"
+          onClick={onNavigate}
+          className={`${styles.navItem} ${isActive("/app/settings") ? styles.navItemActive : ""}`}
+          aria-label="Settings"
+          aria-current={isActive("/app/settings") ? "page" : undefined}
+        >
+          <HugeiconsIcon icon={Settings05Icon} size={20} strokeWidth={1.7} />
+          <span className={styles.navLabel} role="tooltip">
+            Settings
+          </span>
+        </Link>
+        <AccountSwitcher onNavigate={onNavigate} compact workspaces={workspaces} />
+      </div>
     </aside>
   );
 }

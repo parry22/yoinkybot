@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import type { TrialInfo } from "@yoink/backend/web";
+import type { TrialInfo, WorkspaceSummary } from "@yoink/backend/web";
 import { Sidebar } from "./sidebar";
 import { TopBar } from "./topbar";
 import { MobileHeader } from "./mobile-header";
+import { PageMetaProvider } from "./page-meta";
 import styles from "@/app/app/shell.module.css";
 
 /**
@@ -15,7 +16,15 @@ import styles from "@/app/app/shell.module.css";
  * one place that actually owns `navOpen`. On desktop none of this state matters
  * (the sidebar is always visible via CSS; the mobile header renders nothing).
  */
-export function AppShell({ trial, children }: { trial: TrialInfo | null; children: React.ReactNode }) {
+export function AppShell({
+  trial,
+  workspaces,
+  children,
+}: {
+  trial: TrialInfo | null;
+  workspaces: WorkspaceSummary[];
+  children: React.ReactNode;
+}) {
   const [navOpen, setNavOpen] = useState(false);
   const pathname = usePathname();
 
@@ -34,18 +43,29 @@ export function AppShell({ trial, children }: { trial: TrialInfo | null; childre
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
+  useEffect(() => {
+    if (!navOpen) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [navOpen]);
+
   return (
-    <div className={styles.platform}>
-      <MobileHeader open={navOpen} onToggle={() => setNavOpen((v) => !v)} />
-      {navOpen && <div className={styles.backdrop} onClick={() => setNavOpen(false)} aria-hidden="true" />}
-      <Sidebar open={navOpen} trial={trial} onNavigate={() => setNavOpen(false)} />
-      <main className={styles.workspace}>
-        {/* No telegramUrl prop any more: all three Telegram entry points (sidebar,
-            mobile header, top bar) mint their own start-token link via
-            useTelegramLink, so the bare bot URL isn't threaded through here. */}
-        <TopBar trial={trial} />
-        <div className={styles.content}>{children}</div>
-      </main>
-    </div>
+    <PageMetaProvider>
+      <div className={styles.platform}>
+        <MobileHeader open={navOpen} onToggle={() => setNavOpen((v) => !v)} />
+        {navOpen && <div className={styles.backdrop} onClick={() => setNavOpen(false)} aria-hidden="true" />}
+        <Sidebar open={navOpen} trial={trial} workspaces={workspaces} onNavigate={() => setNavOpen(false)} />
+        <main className={styles.workspace}>
+          {/* No telegramUrl prop any more: all three Telegram entry points (sidebar,
+              mobile header, top bar) mint their own start-token link via
+              useTelegramLink, so the bare bot URL isn't threaded through here. */}
+          <TopBar trial={trial} />
+          <div className={styles.content}>{children}</div>
+        </main>
+      </div>
+    </PageMetaProvider>
   );
 }

@@ -1,0 +1,60 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.fieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.fieldGroup label {
+  color: var(--ink-700);
+  font-size: 13px;
+}
+
+.fieldGroup textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border: 0.5px solid var(--stroke);
+  border-radius: 12px;
+  outline: none;
+  resize: vertical;
+  background: var(--surface);
+  color: var(--ink-900);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.fieldGroup textarea:focus {
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.twoColumn {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  padding-top: 4px;
+}
+
+.error {
+  color: #d3455b;
+  font-size: 13px;
+}
+
+@media (max-width: 640px) {
+  .twoColumn {
+    grid-template-columns: 1fr;
+  }
+}
+

@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import { extractJson, salvageTruncatedJson, asObject, cost, reasoningEffort, hashForCacheKey, routeFor, type RouteEnv } from "./gateway.js";
 
 describe("cost (cached input bills ~6.7x cheaper)", () => {
+  it("prices the current OpenRouter frontier model", () => {
+    expect(cost("x-ai/grok-4.3", 1_000_000, 0, 1_000_000)).toBeCloseTo(3.75, 6);
+  });
   it("splits fresh vs cached input and adds output at the output rate", () => {
     // grok-4.5, priced live from the OpenRouter models API 2026-07-27:
     // $2 in / $0.30 cachedIn / $6 out per 1M. (The cached rate was recorded as

@@ -2,7 +2,7 @@
   "name": "yoink",
   "private": true,
   "version": "0.1.0",
-  "description": "Yoinky \u2014 Telegram-native personal brand strategist. Connect your accounts, get diagnosed, build a plan, ship content.",
+  "description": "Yoinky, the open source Company Narrative Engine for structured knowledge, governed narratives, and traceable content.",
   "scripts": {
     "dev": "pnpm --filter @yoink/backend dev",
     "dev:web": "pnpm --filter @yoink/web dev",

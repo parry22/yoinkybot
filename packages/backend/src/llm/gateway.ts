@@ -79,6 +79,7 @@ export interface LlmResponse {
 // $0.54/$1.76 when it is $0.812/$2.552. Re-check with:
 //   curl -s https://openrouter.ai/api/v1/models | jq '.data[] | select(.id=="x-ai/grok-4.5") | .pricing'
 const PRICE: Record<string, { in: number; cachedIn: number; out: number }> = {
+  "x-ai/grok-4.3": { in: 1.25, cachedIn: 0.3, out: 2.5 }, // OpenRouter id
   "x-ai/grok-4.5": { in: 2.0, cachedIn: 0.3, out: 6.0 }, // OpenRouter id
   "grok-4.5": { in: 2.0, cachedIn: 0.3, out: 6.0 }, // xAI-direct id
   "z-ai/glm-4.7-flash": { in: 0.06, cachedIn: 0.01, out: 0.4 }, // the cheap tier
@@ -94,6 +95,7 @@ const PRICE: Record<string, { in: number; cachedIn: number; out: number }> = {
  *  usage_events rather than a wrong number, which is the failure mode we want. */
 function priceFor(model: string): { in: number; cachedIn: number; out: number } {
   if (PRICE[model]) return PRICE[model]!;
+  if (model.includes("grok-4.3")) return PRICE["x-ai/grok-4.3"]!;
   if (model.includes("grok-4.5")) return PRICE["grok-4.5"]!;
   return { in: 0, cachedIn: 0, out: 0 };
 }
@@ -101,7 +103,7 @@ function priceFor(model: string): { in: number; cachedIn: number; out: number } 
 /**
  * Which model + transport serves this tier.
  *
- * frontier → MODEL_CHAT (Grok 4.5): anything the user reads as Yoinky's voice -
+ * frontier → MODEL_CHAT (Grok 4.3): anything the user reads as Yoinky's voice -
  *   drafts, takes, replies, the chat turn, the diagnosis.
  * cheap / cheap_floor / none → MODEL_CHEAP: mechanical and structural work whose
  *   output is JSON we consume, never prose the user sees.

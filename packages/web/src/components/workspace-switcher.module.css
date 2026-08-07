@@ -1,0 +1,212 @@
+.wrap {
+  position: relative;
+  margin-top: 12px;
+}
+
+.wrapCompact {
+  margin-top: 0;
+}
+
+.trigger {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 52px;
+  padding: 8px;
+  border: 0.5px solid var(--stroke);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--ink-900);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.triggerCompact {
+  width: 44px;
+  min-height: 44px;
+  height: 44px;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 14px;
+  background: transparent;
+}
+
+.triggerCompact:hover {
+  background: rgba(20, 20, 20, 0.05);
+  border-color: transparent;
+}
+
+.triggerCompact .labelWrap,
+.triggerCompact .chevron {
+  display: none;
+}
+
+.triggerCompact .mark {
+  width: 28px;
+  height: 28px;
+  border-radius: 10px;
+}
+
+.menuCompact {
+  top: 0;
+  left: calc(100% + 10px);
+  right: auto;
+  width: 260px;
+}
+
+.trigger:hover {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+.mark,
+.itemMark {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.labelWrap,
+.itemCopy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.name,
+.itemName {
+  overflow: hidden;
+  color: var(--ink-900);
+  font-size: 13.5px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kind,
+.itemMeta {
+  color: var(--ink-500);
+  font-size: 11px;
+  text-transform: capitalize;
+}
+
+.chevron,
+.tick {
+  flex: 0 0 auto;
+  color: var(--ink-500);
+}
+
+.tick {
+  color: var(--accent);
+}
+
+.menu {
+  position: absolute;
+  z-index: 80;
+  top: calc(100% + 7px);
+  left: 0;
+  right: 0;
+  padding: 6px;
+  border: 0.5px solid var(--stroke);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-drawer);
+}
+
+.menuLabel {
+  margin: 6px 8px 5px;
+  color: var(--ink-500);
+  font-size: 11px;
+}
+
+.item,
+.create {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 40px;
+  padding: 6px 7px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink-700);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.item:hover:not(:disabled),
+.create:hover {
+  background: var(--hover);
+  color: var(--ink-900);
+}
+
+.item:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.itemMark {
+  width: 27px;
+  height: 27px;
+  border-radius: 8px;
+}
+
+.loading {
+  color: var(--ink-500);
+}
+
+.divider {
+  height: 0.5px;
+  margin: 5px 4px;
+  background: var(--stroke);
+}
+
+.create {
+  color: var(--ink-900);
+}
+
+@media (max-width: 1000px) {
+  .wrapCompact {
+    margin-top: 8px;
+    width: 100%;
+  }
+
+  .triggerCompact {
+    width: 100%;
+    min-height: 48px;
+    height: auto;
+    justify-content: flex-start;
+    gap: 9px;
+    padding: 8px;
+  }
+
+  .triggerCompact .labelWrap {
+    display: flex;
+  }
+
+  .triggerCompact .chevron {
+    display: block;
+  }
+
+  .menuCompact {
+    top: calc(100% + 7px);
+    left: 0;
+    right: 0;
+    width: auto;
+  }
+}
+

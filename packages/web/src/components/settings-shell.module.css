@@ -1,0 +1,83 @@
+.page {
+  height: 100%;
+  overflow-y: auto;
+  padding: clamp(28px, 4vh, 44px) clamp(24px, 4vw, 48px) 56px;
+  background:
+    radial-gradient(1000px 360px at 0% -10%, rgba(217, 72, 125, 0.05), transparent 50%),
+    var(--chat-bg);
+}
+
+.inner {
+  width: min(820px, 100%);
+  margin-inline: auto;
+}
+
+.header {
+  margin-bottom: 22px;
+}
+
+.lede {
+  max-width: 52ch;
+  color: var(--ink-700);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.section {
+  background: var(--surface);
+  border: 0.5px solid var(--stroke);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: 22px 24px;
+  margin-bottom: 14px;
+}
+
+.sectionLabel {
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-500);
+  font-weight: 500;
+  margin-bottom: 10px;
+}
+
+.sectionBody {
+  color: var(--ink-700);
+  font-size: 14.5px;
+  line-height: 1.55;
+  margin-bottom: 14px;
+}
+
+.sectionBodyStrong {
+  color: var(--ink-900);
+  font-size: 15px;
+  line-height: 1.5;
+  margin-bottom: 14px;
+}
+
+.errorText {
+  color: #a13347;
+  font-size: 13.5px;
+  margin-bottom: 12px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+@media (max-width: 1000px) {
+  .page {
+    padding: 18px 14px calc(28px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .section {
+    padding: 18px 16px;
+  }
+
+  .lede {
+    font-size: 14px;
+  }
+}

@@ -1,0 +1,68 @@
+.page {
+  height: 100%;
+  overflow-y: auto;
+  padding: clamp(28px, 5vh, 54px) clamp(24px, 5vw, 64px);
+}
+
+.inner {
+  width: min(920px, 100%);
+  margin: 0 auto;
+}
+
+.header p {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 550;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.header h1 {
+  margin-top: 8px;
+  color: var(--ink-900);
+  font-size: clamp(28px, 4vw, 40px);
+  font-weight: 480;
+  letter-spacing: -0.025em;
+}
+
+.header > span {
+  display: block;
+  max-width: 680px;
+  margin-top: 10px;
+  color: var(--ink-700);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.stage {
+  margin-top: 28px;
+  padding: clamp(24px, 4vw, 38px);
+  border: 0.5px solid var(--stroke);
+  border-radius: 20px;
+  background: linear-gradient(145deg, var(--surface), color-mix(in srgb, var(--accent-soft) 28%, var(--surface)));
+}
+
+.stage h2 {
+  color: var(--ink-900);
+  font-size: 19px;
+  font-weight: 480;
+}
+
+.stage p {
+  max-width: 620px;
+  margin-top: 8px;
+  color: var(--ink-700);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 18px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 520;
+}
+

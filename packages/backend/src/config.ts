@@ -44,12 +44,12 @@ const schema = z.object({
 
   // OpenRouter - the only LLM route. One model for every request (no tiers, no
   // fallback chain). Set MODEL_CHAT to switch models without a code change.
-  // Grok 4.5 (2026-07-24, was z-ai/glm-5.2): native X/cultural awareness is the
+  // Grok 4.3 (2026-08-06, was deprecated grok-4.1-fast): native X/cultural awareness is the
   // product - drafts, trend takes, and buyer outreach all reason about what's
-  // happening on X. Verified live on OpenRouter ($2/M in, $6/M out, 500k ctx).
+  // happening on X. Verified live on OpenRouter ($1.25/M in, $2.50/M out, 1M ctx).
   OPENROUTER_API_KEY: z.string().optional(),
   OPENROUTER_BASE_URL: z.string().default("https://openrouter.ai/api/v1"),
-  MODEL_CHAT: z.string().default("x-ai/grok-4.5"),
+  MODEL_CHAT: z.string().default("x-ai/grok-4.3"),
   // Comma-separated OpenRouter provider names to exclude when picking a host
   // (spec: US/EU hosts only). Tighten or clear via env without a code change.
   OPENROUTER_PROVIDER_IGNORE: z.string().default("Baidu,Alibaba,StreamLake"),
@@ -73,7 +73,7 @@ const schema = z.object({
   // Grok's $2/$6 for "is this tweet a question?" is pure waste.
   //
   // So `tier` now picks the MODEL as well as the reasoning effort:
-  //   frontier            → MODEL_CHAT   (Grok 4.5 - anything voice-bearing)
+  //   frontier            → MODEL_CHAT   (Grok 4.3 - anything voice-bearing)
   //   cheap/cheap_floor/none → MODEL_CHEAP (mechanical/structural work)
   //
   // GLM 4.7 Flash is the default cheap model on purpose: the GLM family already

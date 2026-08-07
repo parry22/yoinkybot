@@ -1,24 +1,15 @@
 name: Deploy
 
-# Auto-deploy on every push to main (and on manual dispatch). The monorepo ships
-# to two places, so we run both in parallel:
-#   web      → Vercel  (project bundles the compiled backend; root dir = packages/web)
-#   backend  → Railway (Fastify + Telegram bot + pg-boss jobs; migrations run on boot)
-# Cross-cutting changes touch both, so both deploy on every push (reliability over
-# doing clever path-filtering that could skip a needed deploy).
+# Auto-deploy on every push to main is handled NATIVELY by the GitHub
+# integrations (preferred path for 2026-08+):
+#   web      → Vercel project yoinky-web  (root = packages/web) → app.meetyoinky.com
+#   backend  → Railway service backend   (Dockerfile at repo root) → bot.meetyoinky.com
+# This workflow is a manual-dispatch fallback only (avoids double-deploy on push).
+# To re-enable CI-driven deploys, add repo secrets and restore the `push:` trigger:
+#   VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID, RAILWAY_TOKEN
 #
-# REQUIRED repo secrets (Settings → Secrets and variables → Actions). Until they
-# exist each job SKIPS cleanly (no red X):
-#   VERCEL_TOKEN       — Vercel account token (vercel.com/account/tokens)
-#   VERCEL_ORG_ID      — from `.vercel/project.json` after `vercel link`, or the dashboard
-#   VERCEL_PROJECT_ID  — same source; the yoinky-web project id
-#   RAILWAY_TOKEN      — a Railway PROJECT token (scoped to the yoinky project/env)
-
-# NOTE: push-triggered deploys are now handled NATIVELY — Vercel (yoinky-web +
-# landing) and Railway (backend) each auto-deploy `main` via their own GitHub
-# integrations. This workflow no longer fires on push (that would double-deploy
-# the web apps). Kept as a manual-dispatch fallback only; to restore CI-driven
-# deploys, add the repo secrets above and re-add the `push:` trigger.
+# Company Narrative Engine + knowledge-first web shell ships on the same path;
+# migrations 0043–0053 run automatically when the Railway backend boots.
 on:
   workflow_dispatch:
 

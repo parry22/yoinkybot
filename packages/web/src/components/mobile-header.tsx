@@ -3,27 +3,29 @@
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Menu01Icon, Cancel01Icon, TelegramIcon } from "@hugeicons/core-free-icons";
 import { UserButton } from "@clerk/nextjs";
+import { usePathname } from "next/navigation";
 import { useTelegramLink } from "./use-telegram-link";
 import styles from "./mobile-header.module.css";
 
-/**
- * The mobile top bar (hidden entirely on desktop - see the CSS module):
- * logo icon on the left, then a Telegram icon that's ALWAYS visible (opens the
- * bot directly, no need to open the menu first), the Clerk account button, then
- * the hamburger that toggles the sidebar drawer. Everything else that used to
- * crowd the old mobile strip (nav links, the trial "Add card" pill) now lives
- * inside the drawer itself.
- *
- * The account button is here because the only other one is in the desktop top
- * bar, which is `display: none` under 1000px - so on a phone there was no way to
- * manage the account or sign out at all.
- */
+function pageTitle(pathname: string): string {
+  if (pathname === "/app") return "Inbox";
+  if (pathname.startsWith("/app/knowledge")) return "Knowledge";
+  if (pathname.startsWith("/app/studio")) return "Studio";
+  if (pathname.startsWith("/app/assets")) return "Assets";
+  if (pathname.startsWith("/app/integrations")) return "Integrations";
+  if (pathname.startsWith("/app/settings")) return "Settings";
+  if (pathname.startsWith("/app/workspaces")) return "Workspaces";
+  return "Yoinky";
+}
+
 export function MobileHeader({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+  const pathname = usePathname();
   const { open: openTelegram, busy } = useTelegramLink();
 
   return (
     <header className={styles.header}>
-      <img src="/favicon.png" alt="Yoinky" className={styles.logo} />
+      <img src="/favicon.png" alt="" className={styles.logo} />
+      <h1 className={styles.pageTitle}>{pageTitle(pathname)}</h1>
       <div className={styles.spacer} />
       <button
         type="button"

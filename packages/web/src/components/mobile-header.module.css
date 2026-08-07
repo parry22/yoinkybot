@@ -7,12 +7,12 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    height: 52px;
+    height: calc(52px + env(safe-area-inset-top, 0px));
     flex: 0 0 auto;
-    padding: 0 12px;
+    padding: env(safe-area-inset-top, 0px) 12px 0;
     position: sticky;
     top: 0;
-    z-index: 65; /* above the drawer (60) and its backdrop (55), so it stays tappable */
+    z-index: 65;
     background: var(--chat-bg);
     border-bottom: 0.5px solid var(--stroke);
   }
@@ -23,6 +23,14 @@
   height: 26px;
   object-fit: contain;
   flex-shrink: 0;
+}
+
+.pageTitle {
+  color: var(--ink-900);
+  font-size: 16px;
+  font-weight: 520;
+  letter-spacing: -0.02em;
+  text-transform: none;
 }
 
 .spacer {

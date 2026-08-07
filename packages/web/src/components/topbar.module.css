@@ -9,6 +9,24 @@
   background: var(--chat-bg);
 }
 
+.pageTitle {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--ink-900);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1;
+  text-transform: none;
+}
+
+.pageCount {
+  color: var(--ink-500);
+  font-size: 14px;
+  font-weight: 450;
+}
+
 .spacer {
   flex: 1;
 }
@@ -27,7 +45,7 @@
   color: var(--ink-700);
   font: inherit;
   font-size: 13px;
-  font-weight: 450;
+  font-weight: 500;
   text-decoration: none;
   cursor: pointer;
   transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
@@ -44,71 +62,75 @@
   cursor: default;
 }
 
-/* ── trial pill: subtle nav-bar trial clock + card-capture CTA ── */
+/* ── trial pill: quiet clock + text CTA (must not steal the topbar) ── */
 .trialPill {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   height: 30px;
-  padding: 0 6px 0 11px;
-  border: 0.5px solid var(--accent-border);
+  padding: 0 10px 0 10px;
+  border: 0.5px solid var(--stroke);
   border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--ink-700);
+  background: transparent;
+  color: var(--ink-600);
   font-size: 12.5px;
   font-weight: 450;
   text-decoration: none;
   white-space: nowrap;
-  transition: background 120ms ease, border-color 120ms ease;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 
 .trialPill:hover {
-  background: var(--accent-soft);
-  border-color: var(--accent);
+  background: var(--hover);
+  border-color: color-mix(in srgb, var(--ink-500) 35%, var(--stroke));
+  color: var(--ink-900);
 }
 
 .trialDot {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-radius: 999px;
-  background: var(--accent);
+  background: var(--ink-500);
   flex: 0 0 auto;
 }
 
 .trialText {
-  color: var(--ink-700);
+  color: inherit;
 }
 
 .trialCta {
-  display: inline-flex;
-  align-items: center;
-  height: 22px;
-  padding: 0 10px;
-  border-radius: 999px;
-  background: var(--accent);
-  color: #fff;
-  font-size: 12px;
+  color: var(--ink-700);
+  font-size: 12.5px;
   font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--ink-500) 55%, transparent);
+  text-underline-offset: 2px;
 }
 
-/* Expired: firmer, but still a compact nav pill (never a full-width strip). */
+.trialPill:hover .trialCta {
+  color: var(--ink-900);
+  text-decoration-color: var(--ink-700);
+}
+
+/* Expired / payment issues: slightly firmer, still quiet. */
 .trialPillExpired {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: #fff;
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--stroke));
+  background: transparent;
+  color: var(--ink-700);
 }
 
 .trialPillExpired .trialDot {
-  background: #fff;
+  background: var(--accent);
 }
 
 .trialPillExpired .trialText {
-  color: #fff;
+  color: var(--ink-700);
 }
 
 .trialPillExpired .trialCta {
-  background: #fff;
   color: var(--accent);
+  text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: none;
 }
 
 @media (max-width: 620px) {

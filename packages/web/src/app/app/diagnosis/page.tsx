@@ -25,8 +25,8 @@ export default async function DiagnosisPage() {
           <div className={styles.empty}>
             <div className={styles.emptyTitle}>No diagnosis yet.</div>
             <p>
-              Finish setup and connect an account - Yoinky reads your history and reveals the gap between what you
-              say and what you ship. <Link href="/app/onboarding" style={{ color: "var(--accent)" }}>Finish setup →</Link>
+              Connect X or LinkedIn in Settings and Yoinky can read your history to reveal the gap between what you
+              say and what you ship. <Link href="/app/settings" style={{ color: "var(--accent)" }}>Open Settings →</Link>
             </p>
           </div>
         </div>

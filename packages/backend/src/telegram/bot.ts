@@ -52,6 +52,8 @@ import { cancelScheduled } from "../scheduling/service.js";
 import { track } from "../analytics/posthog.js";
 import { maybeSendConnectAuthOffer, handleAuthSkip, nudgeOtherPlatformTyped, offerReconnect } from "./connect-auth.js";
 import { runSerializedTurn } from "./turns.js";
+import { handleCompanyTelegramCallback,handleCompanyTelegramIntent,parseCompanyTelegramIntent } from "./workspaces.js";
+import { resolveDefaultExpert,resolveTelegramCaptureWorkspace } from "../workspaces/service.js";
 
 let bot: Bot | undefined;
 
@@ -325,11 +327,16 @@ export function createBot(): Bot | undefined {
     if (!fileId) return;
     const file = await ctx.api.getFile(fileId);
     const audioUrl = `https://api.telegram.org/file/bot${config.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
+    const workspace=await resolveTelegramCaptureWorkspace(user.id);
+    const expert=workspace?await resolveDefaultExpert(user.id,workspace.id):null;
     await createCapture({
       userId: user.id,
       source: "telegram_voice",
       audioUrl,
-      metadata: { telegram_file_id: fileId, duration: ctx.message?.voice?.duration ?? null },
+      metadata: { telegram_file_id: fileId, duration: ctx.message?.voice?.duration ?? null, workspace_name:workspace?.name??null },
+      workspaceId:workspace?.id??null,
+      speakerExpertId:expert?.id??null,
+      permissionLevel:"internal",
     });
     // The real reply lands after transcription (jobs/transcribe.ts runs the
     // transcript through the conversation brain) - this is just the "I heard you".
@@ -392,6 +399,11 @@ export function createBot(): Bot | undefined {
     const data = ctx.callbackQuery.data;
     const user = await requireUser(ctx);
     if (!user) return void (await ctx.answerCallbackQuery());
+
+    if(data.startsWith("cw:")){
+      try{const reply=await handleCompanyTelegramCallback(user.id,data,ctxChannel(ctx));await ctx.answerCallbackQuery({text:"Done"});if(reply)await ctx.reply(reply);}catch(error){await ctx.answerCallbackQuery({text:"Could not complete that action"});await ctx.reply(error instanceof Error?error.message:"Could not complete that workspace action.");}
+      return;
+    }
 
     if (data.startsWith("cf:")) {
       const id = data.slice(3);
@@ -961,6 +973,8 @@ async function handleTextTurn(user: User, text: string, ctx: Context): Promise<v
     return;
   }
   await withTyping(channel, async () => {
+    const companyIntent=parseCompanyTelegramIntent(text);
+    if(companyIntent){await handleCompanyTelegramIntent(user.id,companyIntent,channel);return;}
     const state = await getState(user.id);
 
     // Automation edit-loop: the user tapped "edit" on an approval card, so this

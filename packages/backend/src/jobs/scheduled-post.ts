@@ -117,12 +117,16 @@ export async function handleScheduledPost(job: ScheduledPostJob): Promise<void> 
     return;
   }
 
-  await query(
+  const published=await queryOne<{workspace_id:string|null;content_asset_id:string|null}>(
     `UPDATE scheduled_posts SET status = 'published', external_id = $2, external_url = $3,
             published_at = now(), error = NULL, updated_at = now()
-     WHERE id = $1`,
+     WHERE id = $1 RETURNING workspace_id,content_asset_id`,
     [job.scheduledPostId, result.externalId ?? null, result.url ?? null],
   );
+  if(published?.workspace_id&&published.content_asset_id){
+    await query(`UPDATE content_assets SET status='published',updated_at=now() WHERE id=$1 AND workspace_id=$2 AND status='scheduled'`,[published.content_asset_id,published.workspace_id]);
+    await query(`INSERT INTO workspace_audit_logs (workspace_id,actor_user_id,action,entity_type,entity_id,metadata) VALUES ($1,$2,'publication.published','publication',$3,jsonb_build_object('asset_id',$4::text,'external_url',$5::text))`,[published.workspace_id,job.userId,job.scheduledPostId,published.content_asset_id,result.url??null]);
+  }
   await channel.say(`✅ posted to ${label}${result.url ? `:\n${result.url}` : "."}`);
 }
 

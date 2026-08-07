@@ -7,6 +7,7 @@ import { useAgentStream } from "./use-agent-stream";
 import { UpgradeCTA } from "./upgrade-cta";
 import { AgentShimmer } from "./agent-shimmer";
 import styles from "./chat.module.css";
+import type { ContentBriefView } from "@yoink/backend/web";
 
 type Draft = { id: string; content: string; platform: string; created_at?: string };
 
@@ -37,7 +38,7 @@ const SUGGESTIONS = [
  * in code (web/stream.ts) - never scraped from model narration, which under
  * enforced structured output frequently isn't emitted at all.
  */
-export function Compose({ initialDrafts }: { initialDrafts: Draft[] }) {
+export function Compose({ initialDrafts,workspaceContext }: { initialDrafts: Draft[];workspaceContext:{id:string;name:string;type:string;expert:string|null;narrativeVersion:number|null;brief:ContentBriefView|null}|null }) {
   const [entries, setEntries] = useState<Entry[]>(() =>
     // Seed with the most recent drafts so the page isn't blank on return, newest
     // last (chat order).
@@ -51,6 +52,7 @@ export function Compose({ initialDrafts }: { initialDrafts: Draft[] }) {
   /** A 402 isn't an error message, it's a wall - it gets the upgrade link, not
    *  a grey line of hint text you can't act on. */
   const [paywalled, setPaywalled] = useState(false);
+  const [briefDrafting,setBriefDrafting]=useState(false);
   const { run, activity, busy } = useAgentStream();
   const scrollRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -60,21 +62,23 @@ export function Compose({ initialDrafts }: { initialDrafts: Draft[] }) {
   // a new session, avoiding cross-device or cross-account transcript leakage.
   useEffect(() => {
     try {
-      const saved = JSON.parse(sessionStorage.getItem(SESSION_KEY) ?? "null") as { entries?: Entry[] } | null;
+      const saved = JSON.parse(sessionStorage.getItem(`${SESSION_KEY}:${workspaceContext?.id??"personal"}`) ?? "null") as { entries?: Entry[] } | null;
       if (saved && Array.isArray(saved.entries) && saved.entries.length) setEntries(saved.entries);
     } catch {
-      sessionStorage.removeItem(SESSION_KEY);
+      sessionStorage.removeItem(`${SESSION_KEY}:${workspaceContext?.id??"personal"}`);
     }
-  }, []);
+  }, [workspaceContext?.id]);
 
   useEffect(() => {
     if (busy) return;
     try {
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify({ entries }));
+      sessionStorage.setItem(`${SESSION_KEY}:${workspaceContext?.id??"personal"}`, JSON.stringify({ entries }));
     } catch {
       // The current chat remains usable when browser storage is unavailable.
     }
-  }, [entries, busy]);
+  }, [entries, busy,workspaceContext?.id]);
+
+  async function draftSelectedBrief(){if(!workspaceContext?.brief||briefDrafting)return;setBriefDrafting(true);setError("");const response=await fetch("/api/briefs",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"draft",briefId:workspaceContext.brief.id})});const data=await response.json().catch(()=>({})) as {asset?:{id:string;content:string;assetType:string};error?:string};if(response.ok&&data.asset)add({kind:"draft",id:data.asset.id,content:data.asset.content,platform:data.asset.assetType});else setError(data.error??"Could not draft from this brief.");setBriefDrafting(false);}
 
   const add = (e: Entry) => setEntries((prev) => [...prev, e]);
   const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -134,6 +138,7 @@ export function Compose({ initialDrafts }: { initialDrafts: Draft[] }) {
     <div className={styles.root}>
       <div className={styles.scroll} ref={scrollRef}>
         <div className={styles.thread}>
+          {workspaceContext&&<div className={styles.workspaceContext}><div><span>{workspaceContext.type==="company"?"Company workspace":"Personal workspace"}</span><strong>{workspaceContext.name}</strong></div><div><span>Voice</span><strong>{workspaceContext.expert??"Not set"}</strong></div><div><span>Narrative</span><strong>{workspaceContext.narrativeVersion?`Version ${workspaceContext.narrativeVersion}`:"Not active"}</strong></div>{workspaceContext.brief&&<div className={styles.selectedBrief}><span>Selected brief · {workspaceContext.brief.channel}</span><strong>{workspaceContext.brief.objective}</strong><small>{workspaceContext.brief.audienceName} · {workspaceContext.brief.sourceCount} traceable sources</small><button type="button" onClick={()=>void draftSelectedBrief()} disabled={briefDrafting||workspaceContext.brief.status!=="ready"}>{workspaceContext.brief.status==="ready"?(briefDrafting?"Drafting…":"Draft with governed context"):`Brief is ${workspaceContext.brief.status}`}</button></div>}</div>}
           {empty ? (
             <>
               <div className={styles.header}>

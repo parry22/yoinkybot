@@ -1,0 +1,120 @@
+.root {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+  vertical-align: middle;
+}
+
+.block {
+  display: flex;
+  width: 100%;
+}
+
+.block .trigger {
+  width: 100%;
+}
+
+.disabled {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.compact .trigger {
+  height: 28px;
+  padding: 0 8px 0 10px;
+  font-size: 12px;
+  gap: 4px;
+  border-radius: 8px;
+  background: transparent;
+  border-color: transparent;
+  color: var(--ink-600);
+}
+
+.compact .trigger:hover {
+  background: var(--hover);
+  color: var(--ink-900);
+}
+
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 40px;
+  padding: 0 12px;
+  border: 0.5px solid var(--stroke);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink-900);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.triggerLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.trigger:hover {
+  background: var(--hover);
+  border-color: color-mix(in srgb, var(--ink-500) 40%, var(--stroke));
+}
+
+.trigger:disabled {
+  cursor: default;
+}
+
+.menu {
+  position: absolute;
+  left: 0;
+  z-index: 40;
+  min-width: max(100%, 180px);
+  max-height: 280px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border: 0.5px solid var(--stroke);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow-drawer);
+}
+
+.menuUp {
+  bottom: calc(100% + 6px);
+}
+
+.menuDown {
+  top: calc(100% + 6px);
+}
+
+.option {
+  display: flex;
+  width: 100%;
+  padding: 9px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-700);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.option:hover {
+  background: var(--hover);
+  color: var(--ink-900);
+}
+
+.optionOn {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
