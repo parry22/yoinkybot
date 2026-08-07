@@ -2,7 +2,6 @@
 
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Menu01Icon, Cancel01Icon, TelegramIcon } from "@hugeicons/core-free-icons";
-import { UserButton } from "@clerk/nextjs";
 import { usePathname } from "next/navigation";
 import { useTelegramLink } from "./use-telegram-link";
 import styles from "./mobile-header.module.css";
@@ -37,9 +36,6 @@ export function MobileHeader({ open, onToggle }: { open: boolean; onToggle: () =
       >
         <HugeiconsIcon icon={TelegramIcon} size={20} strokeWidth={1.8} />
       </button>
-      <span className={styles.user}>
-        <UserButton />
-      </span>
       <button
         type="button"
         className={styles.iconBtn}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import type { ExpertView, WorkspaceAdminView, WorkspaceRole } from "@yoink/backend/web";
 import { MenuSelect } from "./menu-select";
 import styles from "./workspace-settings.module.css";
@@ -345,7 +346,17 @@ export function WorkspaceSettings({ initial }: { initial: WorkspaceAdminView }) 
           <b>{data.sources.length}</b>
         </div>
         {data.sources.length === 0 ? (
-          <p className={styles.empty}>No company sources yet.</p>
+          <div className={styles.emptyBlock}>
+            <p className={styles.empty}>No company sources yet.</p>
+            <div className={styles.emptyActions}>
+              <Link href="/app/knowledge" className="btnGhost">
+                Add in Knowledge
+              </Link>
+              <Link href="/app/integrations" className="btnGhost">
+                From Integrations
+              </Link>
+            </div>
+          </div>
         ) : (
           data.sources.map((source) => (
             <div key={source.id} className={styles.sourceRow}>

@@ -2,7 +2,6 @@
 
 import { HugeiconsIcon } from "@hugeicons/react";
 import { TelegramIcon } from "@hugeicons/core-free-icons";
-import { UserButton } from "@clerk/nextjs";
 import { usePathname } from "next/navigation";
 import type { TrialInfo } from "@yoink/backend/web";
 import { TrialPill } from "./trial-banner";
@@ -53,7 +52,6 @@ export function TopBar({ trial }: { trial: TrialInfo | null }) {
         <HugeiconsIcon icon={TelegramIcon} size={18} strokeWidth={1.8} />
         <span>Capture</span>
       </button>
-      <UserButton />
     </header>
   );
 }

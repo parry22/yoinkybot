@@ -20,6 +20,14 @@
   margin-bottom: 34px;
 }
 
+.heroActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+}
+
 .eyebrow {
   margin-bottom: 10px;
   color: var(--accent);

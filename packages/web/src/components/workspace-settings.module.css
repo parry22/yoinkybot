@@ -279,6 +279,18 @@
   font-size: 13px;
 }
 
+.emptyBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.emptyActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .dataActions {
   display: flex;
   align-items: center;

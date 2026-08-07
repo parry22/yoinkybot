@@ -11,6 +11,10 @@ export function WorkspaceHome({
   workspaceName: string;
   home: WorkspaceHomeView;
 }) {
+  const addingSources =
+    home.nextAction.href.startsWith("/app/knowledge") &&
+    /add source|source material/i.test(`${home.nextAction.label} ${home.nextAction.description}`);
+
   return (
     <div className={styles.page}>
       <div className={styles.inner}>
@@ -20,9 +24,16 @@ export function WorkspaceHome({
             <h1>{home.nextAction.label}</h1>
             <p className={styles.lede}>{home.nextAction.description}</p>
           </div>
-          <Link href={home.nextAction.href} className="btnPrimary">
-            Continue
-          </Link>
+          <div className={styles.heroActions}>
+            <Link href={home.nextAction.href} className="btnPrimary">
+              {addingSources ? "Add in Knowledge" : "Continue"}
+            </Link>
+            {addingSources && (
+              <Link href="/app/integrations" className="btnGhost">
+                From Integrations
+              </Link>
+            )}
+          </div>
         </header>
 
         <div className={styles.contextBar}>
@@ -47,7 +58,10 @@ export function WorkspaceHome({
               <Link href="/app/knowledge">Open</Link>
             </div>
             {home.recentKnowledge.length === 0 ? (
-              <p className={styles.emptySignal}>No knowledge objects yet.</p>
+              <p className={styles.emptySignal}>
+                No knowledge objects yet.{" "}
+                <Link href="/app/integrations">Pull from Integrations</Link> or add a source in Knowledge.
+              </p>
             ) : (
               home.recentKnowledge.map((item) => (
                 <div key={item.id} className={styles.signalRow}>
@@ -65,7 +79,7 @@ export function WorkspaceHome({
           <section className={styles.signalPanel}>
             <div className={styles.signalHead}>
               <h2>Upcoming publications</h2>
-              <Link href="/app/scheduled">Open</Link>
+              <Link href="/app/assets">Open</Link>
             </div>
             {home.upcomingPublications.length === 0 ? (
               <p className={styles.emptySignal}>Nothing scheduled.</p>

@@ -440,6 +440,9 @@
   grid-column: 2;
   grid-row: 1 / span 2;
   align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   height: 28px;
   padding: 0 10px;
   border: none;
@@ -448,6 +451,7 @@
   color: var(--main-bg);
   font: inherit;
   font-size: 11.5px;
+  text-decoration: none;
   cursor: pointer;
 }
 
@@ -455,6 +459,19 @@
   display: grid;
   gap: 10px;
   margin: 10px 0;
+}
+
+.captureHint {
+  margin: 0 0 4px;
+  color: var(--ink-600);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.captureHint a {
+  color: var(--accent);
+  font-weight: 520;
+  text-decoration: none;
 }
 
 .menuLabel {
@@ -557,16 +574,20 @@
   }
 
   .toolbar {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    gap: 8px;
   }
 
+  /* Search left, Add source right — DOM order; do not reorder on mobile. */
   .search {
-    width: 100%;
-    order: 1;
+    flex: 1;
+    min-width: 0;
+    width: auto;
   }
 
   .addBtn {
-    margin-left: auto;
+    flex: none;
+    margin-left: 0;
   }
 
   .panelMobile {

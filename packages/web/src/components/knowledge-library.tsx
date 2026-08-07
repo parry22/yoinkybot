@@ -331,11 +331,18 @@ export function KnowledgeLibrary({
                     </button>
                   </li>
                   <li>
-                    <strong>2. Browse</strong>
+                    <strong>2. Pull from Integrations</strong>
+                    <span>Connect X or LinkedIn and import owned posts</span>
+                    <Link href="/app/integrations" className={styles.stepAction}>
+                      Integrations
+                    </Link>
+                  </li>
+                  <li>
+                    <strong>3. Browse</strong>
                     <span>Search and filter extracted cards</span>
                   </li>
                   <li>
-                    <strong>3. Use in Studio</strong>
+                    <strong>4. Use in Studio</strong>
                     <span>Turn one idea into many formats</span>
                   </li>
                 </ol>
@@ -376,6 +383,10 @@ export function KnowledgeLibrary({
                       <HugeiconsIcon icon={Cancel01Icon} size={15} />
                     </button>
                   </div>
+                  <p className={styles.captureHint}>
+                    Paste notes here, or{" "}
+                    <Link href="/app/integrations">import from Integrations</Link> (X / LinkedIn).
+                  </p>
                   <label htmlFor="kb-title">Title</label>
                   <input
                     id="kb-title"
