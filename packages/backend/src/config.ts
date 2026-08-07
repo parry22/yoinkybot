@@ -331,7 +331,12 @@ const schema = z.object({
 
   // Legacy per-user key storage from the retired hosted BYOK experiment. The
   // Open Source edition uses deployment environment variables instead.
+  // Also the fallback master key for OAuth posting-token encryption when
+  // OAUTH_TOKEN_ENCRYPTION_KEY is unset (see lib/crypto.ts sealForPurpose).
   BYOK_ENCRYPTION_KEY: z.string().optional(),
+  // Optional dedicated AES-256 key for OAuth access/refresh tokens on
+  // connected_accounts. Falls back to BYOK_ENCRYPTION_KEY when unset.
+  OAUTH_TOKEN_ENCRYPTION_KEY: z.string().optional(),
 
   DODO_API_KEY: z.string().optional(),
   DODO_WEBHOOK_SECRET: z.string().optional(),
@@ -392,19 +397,20 @@ export const isDev = config.NODE_ENV !== "production";
  * production. Checked at module load - NOT at server boot - because the Next.js
  * app (packages/web) imports this config directly and never executes
  * `src/index.ts`, so a boot-time-only guard cannot see the surface where most of
- * these actually bite. Vercel would have run the entire web app with the paywall
- * off and nothing would have said a word.
+ * these actually bite.
  *
- * Warn, never throw: a config warning must not be able to take the product down.
+ * Hosted production (SELF_HOSTED=false, NODE_ENV=production) FAILS FAST when
+ * the paywall is off - otherwise every user silently receives Scale. Self-hosted
+ * installs keep PAYWALL_ENABLED=false by design and only warn on other issues.
  */
 function warnOnDangerousConfig(): void {
   if (config.NODE_ENV !== "production") return;
   const warn = (msg: string) => console.warn(`⚠️  config: ${msg}`);
 
   if (!config.SELF_HOSTED && !config.PAYWALL_ENABLED) {
-    warn(
-      "PAYWALL_ENABLED is not true in production - every user currently gets the full paid tier for free. " +
-        'Accepted truthy values: "true", "1", "yes", "on".',
+    throw new Error(
+      'PAYWALL_ENABLED must be true in hosted production (SELF_HOSTED=false). ' +
+        'Accepted truthy values: "true", "1", "yes", "on". Self-hosted installs set SELF_HOSTED=true.',
     );
   }
 

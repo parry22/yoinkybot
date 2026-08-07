@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/session";
+import { requirePaid, upgradeRequiredResponse } from "@/lib/entitlements";
+import { jsonError } from "@/lib/api-error";
 import {
   approveContentAsset,
   approveContentBrief,
@@ -26,6 +28,8 @@ export const maxDuration = 120;
 export async function POST(req: Request) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const entitlements = await requirePaid(user);
+  if (!entitlements) return upgradeRequiredResponse();
   const workspace = await resolveWorkspaceContext(user.id);
   if (!workspace) return NextResponse.json({ error: "No active workspace." }, { status: 400 });
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
@@ -146,14 +150,20 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Unknown action." }, { status: 400 });
     }
   } catch (error) {
-    console.error("brief workflow failed", error);
-    const message = error instanceof Error ? error.message : "Could not complete workflow.";
-    const href =
-      message.includes("narrative") ? "/app/narrative"
-      : message.includes("insight") || message.includes("Knowledge") || message.includes("proof") || message.includes("claim")
-        ? "/app/knowledge"
-        : message.includes("expert") ? "/app/settings"
-        : undefined;
-    return NextResponse.json({ error: message, href }, { status: 400 });
+    if (error instanceof Error) {
+      const message = error.message;
+      const href =
+        message.includes("narrative") ? "/app/narrative"
+        : message.includes("insight") || message.includes("Knowledge") || message.includes("proof") || message.includes("claim")
+          ? "/app/knowledge"
+          : message.includes("expert") ? "/app/settings"
+          : undefined;
+      const response = jsonError(error, "Could not complete workflow.");
+      if (href && response.status === 400) {
+        return NextResponse.json({ error: message, href }, { status: 400 });
+      }
+      return response;
+    }
+    return jsonError(error, "Could not complete workflow.");
   }
 }

@@ -1,5 +1,6 @@
 import type PgBoss from "pg-boss";
 import { queryOne } from "../db/pool.js";
+import { touchWorkerHeartbeat } from "./health.js";
 import {
   QUEUES,
   FAST_POLL_SECONDS,
@@ -75,7 +76,12 @@ function logged<T>(queue: string, fn: (data: T, jobId: string) => Promise<unknow
 // near-chronological (within a 4-job window) instead of strictly chronological.
 const INGEST_CONCURRENCY = 4;
 
+const HEARTBEAT_INTERVAL_MS = 30_000;
+
 export async function registerWorkers(boss: PgBoss): Promise<void> {
+  touchWorkerHeartbeat();
+  setInterval(() => touchWorkerHeartbeat(), HEARTBEAT_INTERVAL_MS).unref();
+
   // Every worker below inherits the 30s default set on the PgBoss constructor
   // (see POLL_SECONDS in boss.ts for why - it is the fix for the Neon compute
   // quota outage). Only the queues a human is actively waiting on override it.

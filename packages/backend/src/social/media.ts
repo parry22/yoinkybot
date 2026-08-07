@@ -4,8 +4,8 @@
  *
  * SHAPE OF THE FLOW. The web route uploads the file to Vercel Blob and inserts a
  * `scheduled_post_media` row holding the URL - no bytes ever land in Postgres.
- * At publish time this module fetches that URL (a plain public GET, so the
- * Railway publisher needs no storage credential) and pushes it to the platform's
+ * At publish time this module fetches that URL (allowlisted Blob / X CDN hosts
+ * only; private Blob needs BLOB_READ_WRITE_TOKEN) and pushes it to the platform's
  * media endpoint, then hands the resulting media ids to the post call.
  *
  * X's rules are the binding constraint and are enforced here rather than trusted
@@ -15,6 +15,7 @@ import { config } from "../config.js";
 import { query, queryOne } from "../db/pool.js";
 import type { ImportedMedia } from "../capture/imports/x.js";
 import type { Platform } from "../lib/types.js";
+import { hasAccessToken } from "./token-crypto.js";
 import type { WriteAuth } from "./publish.js";
 
 export type MediaKind = "image" | "gif" | "video";
@@ -147,6 +148,36 @@ function allowedSourceMediaUrl(raw: string): URL | null {
   }
 }
 
+/** Vercel Blob hosts we may server-side fetch at publish time. */
+function isVercelBlobHost(host: string): boolean {
+  return (
+    host.endsWith(".public.blob.vercel-storage.com") ||
+    host.endsWith(".private.blob.vercel-storage.com") ||
+    host === "blob.vercel-storage.com"
+  );
+}
+
+function isPrivateVercelBlobHost(host: string): boolean {
+  return host.endsWith(".private.blob.vercel-storage.com");
+}
+
+/**
+ * URLs fetchMediaBytes may pull. Scheduled media is either our Blob upload or
+ * an X-sourced import staged via stageRemoteMedia - never an arbitrary HTTPS URL
+ * (SSRF).
+ */
+export function allowedMediaFetchUrl(raw: string): URL | null {
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:") return null;
+    const host = url.hostname.toLowerCase();
+    if (isVercelBlobHost(host)) return url;
+    return allowedSourceMediaUrl(raw);
+  } catch {
+    return null;
+  }
+}
+
 async function remoteSize(url: URL): Promise<{ bytes: number; mime: string | null }> {
   let res = await fetch(url, { method: "HEAD", signal: AbortSignal.timeout(15_000) });
   if (!res.ok || !res.headers.get("content-length")) {
@@ -230,14 +261,26 @@ interface XProcessingInfo {
 }
 
 /**
- * Pull the stored bytes back out of Blob. Public URL → plain GET, no credential.
+ * Pull scheduled-media bytes. Host allowlist only (Vercel Blob + X CDN imports).
+ * Public Blob → plain GET. Private Blob (`*.private.blob.vercel-storage.com`)
+ * needs `BLOB_READ_WRITE_TOKEN` as Bearer (Railway has no Vercel OIDC).
  * Returns an ArrayBuffer rather than a typed-array view: `new Blob([view])` is
  * rejected under the web package's stricter DOM lib (a view may be backed by a
  * SharedArrayBuffer, which is not a BlobPart), and slicing the buffer directly is
  * both simpler and copies once instead of twice.
  */
 async function fetchMediaBytes(url: string): Promise<ArrayBuffer> {
-  const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+  const allowed = allowedMediaFetchUrl(url);
+  if (!allowed) throw new Error("media URL is not an allowed storage host");
+  const headers: Record<string, string> = {};
+  if (isPrivateVercelBlobHost(allowed.hostname)) {
+    const token = process.env.BLOB_READ_WRITE_TOKEN?.trim();
+    if (!token) {
+      throw new Error("private Blob media requires BLOB_READ_WRITE_TOKEN on the publisher");
+    }
+    headers.Authorization = `Bearer ${token}`;
+  }
+  const res = await fetch(allowed, { headers, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
   if (!res.ok) throw new Error(`media fetch failed: ${res.status}`);
   return res.arrayBuffer();
 }
@@ -522,13 +565,18 @@ export function mediaUploadConfigured(platform: Platform): boolean {
  * only then find out. Checked at SCHEDULE time so they're told immediately.
  */
 export async function hasMediaScope(userId: string, platform: Platform): Promise<boolean> {
-  const rows = await query<{ post_scopes: string | null; post_access_token: string | null; post_author_urn: string | null }>(
-    `SELECT post_scopes, post_access_token, post_author_urn FROM connected_accounts
+  const rows = await query<{
+    post_scopes: string | null;
+    post_access_token: string | null;
+    post_access_token_enc: string | null;
+    post_author_urn: string | null;
+  }>(
+    `SELECT post_scopes, post_access_token, post_access_token_enc, post_author_urn FROM connected_accounts
      WHERE user_id = $1 AND platform = $2 LIMIT 1`,
     [userId, platform],
   );
   const row = rows[0];
-  if (!row?.post_access_token) return false;
+  if (!row || !hasAccessToken(row)) return false;
   // LinkedIn's w_member_social grant covers both post creation and member media
   // upload. Unlike X there is no separate media scope to inspect.
   if (platform === "linkedin") return !!row.post_author_urn;

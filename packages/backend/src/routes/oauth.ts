@@ -6,7 +6,9 @@ import { publishConfigured } from "../social/publish.js";
 import { xDeveloperCredentialsForUser } from "../byok/keys.js";
 import { afterOAuthConnected } from "../telegram/connect-auth.js";
 import { readConnectTicket } from "../lib/connect-tickets.js";
+import { createOAuthState, consumeOAuthState } from "../lib/oauth-state.js";
 import type { Platform } from "../lib/types.js";
+import { tokenWriteParams } from "../social/token-crypto.js";
 
 /**
  * The user-context OAuth flow - the ONLY place Yoinky asks the user to
@@ -28,22 +30,10 @@ import type { Platform } from "../lib/types.js";
  * but has not been exercised against the live providers - verify end-to-end
  * once credentials exist before relying on it.
  *
- * PKCE verifier + which-user are held in an in-memory map keyed by the opaque
- * `state`, with a short TTL. This app is single-instance by design (see
- * docs/INTERNAL.md), so the map is sufficient and avoids a table for a
- * 10-minute handshake; if this ever scales horizontally, move it to Postgres.
+ * PKCE verifier + which-user live in Postgres (`oauth_states`, migration 0057)
+ * and are consumed once on callback. Connect tickets are separate and reusable
+ * inside their TTL (lib/connect-tickets.ts).
  */
-
-interface PendingAuth {
-  userId: string;
-  platform: Platform;
-  verifier: string;
-  expiresAt: number;
-  /** Web caller's return URL (only ever set when it matched WEB_APP_URL - see
-   *  `safeReturnTo`). Undefined for the Telegram-only flow, which keeps the
-   *  original static "return to Telegram" page. */
-  returnTo?: string;
-}
 
 /** Only ever honor a `redirect` that's on the web app's own trusted origin -
  *  this is a browser redirect target after OAuth, so an unbounded value here
@@ -66,16 +56,9 @@ export function safeReturnTo(raw: string | undefined): string | undefined {
     return undefined;
   }
 }
-const pending = new Map<string, PendingAuth>();
-const STATE_TTL_MS = 10 * 60 * 1000;
 
 function b64url(buf: Buffer): string {
   return buf.toString("base64url");
-}
-
-function sweepExpired(): void {
-  const now = Date.now();
-  for (const [state, p] of pending) if (p.expiresAt < now) pending.delete(state);
 }
 
 const REDIRECT = (platform: Platform) => `${config.PUBLIC_URL}/oauth/${platform}/callback`;
@@ -87,10 +70,13 @@ const REDIRECT = (platform: Platform) => `${config.PUBLIC_URL}/oauth/${platform}
  */
 export async function buildAuthUrl(userId: string, platform: Platform, returnTo?: string): Promise<string | null> {
   if (!(await publishConfigured(platform, userId))) return null;
-  sweepExpired();
-  const state = b64url(randomBytes(16));
   const verifier = b64url(randomBytes(32));
-  pending.set(state, { userId, platform, verifier, expiresAt: Date.now() + STATE_TTL_MS, returnTo: safeReturnTo(returnTo) });
+  const state = await createOAuthState({
+    userId,
+    platform,
+    verifier,
+    returnTo: safeReturnTo(returnTo) ?? null,
+  });
 
   if (platform === "x") {
     const challenge = b64url(createHash("sha256").update(verifier).digest());
@@ -134,13 +120,22 @@ async function storeToken(
   tok: { accessToken: string; refreshToken?: string; expiresIn?: number; scope?: string; authorUrn?: string },
 ): Promise<void> {
   const expiresAt = tok.expiresIn ? new Date(Date.now() + tok.expiresIn * 1000).toISOString() : null;
+  const tokens = tokenWriteParams(tok.accessToken, tok.refreshToken ?? null);
   await query(
     `INSERT INTO connected_accounts (user_id, platform, handle, status,
-        post_access_token, post_refresh_token, post_token_expires_at, post_scopes, post_author_urn)
-     VALUES ($1,$2,$3,'pending',$4,$5,$6,$7,$8)
+        post_access_token, post_access_token_enc, post_access_token_iv, post_access_token_tag,
+        post_refresh_token, post_refresh_token_enc, post_refresh_token_iv, post_refresh_token_tag,
+        post_token_expires_at, post_scopes, post_author_urn)
+     VALUES ($1,$2,$3,'pending',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
      ON CONFLICT (user_id, platform) DO UPDATE SET
         post_access_token = EXCLUDED.post_access_token,
+        post_access_token_enc = EXCLUDED.post_access_token_enc,
+        post_access_token_iv = EXCLUDED.post_access_token_iv,
+        post_access_token_tag = EXCLUDED.post_access_token_tag,
         post_refresh_token = EXCLUDED.post_refresh_token,
+        post_refresh_token_enc = EXCLUDED.post_refresh_token_enc,
+        post_refresh_token_iv = EXCLUDED.post_refresh_token_iv,
+        post_refresh_token_tag = EXCLUDED.post_refresh_token_tag,
         post_token_expires_at = EXCLUDED.post_token_expires_at,
         post_scopes = EXCLUDED.post_scopes,
         -- Re-consenting IS the fix for a dead credential, so clear the flag the
@@ -148,7 +143,22 @@ async function storeToken(
         -- set would keep telling the user to reconnect an account they just did.
         post_reauth_required_at = NULL,
         post_author_urn = COALESCE(EXCLUDED.post_author_urn, connected_accounts.post_author_urn)`,
-    [userId, platform, "connected-for-posting", tok.accessToken, tok.refreshToken ?? null, expiresAt, tok.scope ?? null, tok.authorUrn ?? null],
+    [
+      userId,
+      platform,
+      "connected-for-posting",
+      tokens.post_access_token,
+      tokens.post_access_token_enc,
+      tokens.post_access_token_iv,
+      tokens.post_access_token_tag,
+      tokens.post_refresh_token,
+      tokens.post_refresh_token_enc,
+      tokens.post_refresh_token_iv,
+      tokens.post_refresh_token_tag,
+      expiresAt,
+      tok.scope ?? null,
+      tok.authorUrn ?? null,
+    ],
   );
 }
 
@@ -216,7 +226,7 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
       if (platform !== "x" && platform !== "linkedin") return reply.code(404).send("unknown platform");
       // Identity comes from a minted ticket, never from the query string - see
       // the ConnectTicket comment above for what `?u=<user id>` allowed.
-      const userId = readConnectTicket(req.query.t, platform);
+      const userId = await readConnectTicket(req.query.t, platform);
       if (!userId) {
         return reply
           .type("text/html")
@@ -237,16 +247,18 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
       if (error) return reply.type("text/html").send(DONE_HTML(`Authorization was cancelled (${error}).`));
       if (!code || !state) return reply.code(400).send("missing code/state");
 
-      const pend = pending.get(state);
-      pending.delete(state);
-      if (!pend || pend.platform !== platform || pend.expiresAt < Date.now()) {
+      const pend = await consumeOAuthState(state, platform);
+      if (!pend) {
+        return reply.type("text/html").send(DONE_HTML("That link expired - start the connect again from the bot."));
+      }
+      if (platform === "x" && !pend.verifier) {
         return reply.type("text/html").send(DONE_HTML("That link expired - start the connect again from the bot."));
       }
 
       let accessToken: string;
       try {
         if (platform === "x") {
-          const tok = await exchangeX(pend.userId, code, pend.verifier);
+          const tok = await exchangeX(pend.userId, code, pend.verifier!);
           await storeToken(pend.userId, "x", tok);
           accessToken = tok.accessToken;
         } else {

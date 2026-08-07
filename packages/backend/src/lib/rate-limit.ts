@@ -15,8 +15,9 @@
  * UPSERT that increments it, so the whole check is one atomic statement - two
  * simultaneous requests can never both read a stale count.
  *
- * Fail-OPEN on a database error. These limits protect the budget, not
+ * Fail-OPEN on a database error by default. These limits protect the budget, not
  * correctness; a transient Neon blip must not take Compose down for everyone.
+ * Callers that prefer fail-closed (conversion webhook) pass `{ failClosed: true }`.
  */
 import { query } from "../db/pool.js";
 
@@ -90,9 +91,27 @@ export const RATE_LIMITS = {
   company_briefs: { limit: 4, windowSec: 600 },
   /** Editorial reviews are durable, fact-backed monthly artifacts. */
   company_editorial: { limit: 3, windowSec: 3600 },
+  /** Discard a staged media attachment (Blob delete + row remove). */
+  media_delete: { limit: 40, windowSec: 300 },
+  /**
+   * Conversion webhook - unauthenticated but token-gated. Bounds token stuffing
+   * and accidental retry storms against a workspace owner's CTA.
+   */
+  conversion_webhook: { limit: 60, windowSec: 60 },
+  /** Distribution plan recommend (asset or campaign) - write-heavy planning. */
+  distribution_recommend: { limit: 12, windowSec: 300 },
 } as const satisfies Record<string, RateLimitRule>;
 
 export type RateLimitBucket = keyof typeof RATE_LIMITS;
+
+export interface ConsumeRateLimitOptions {
+  /**
+   * Default is fail-open (budget protection must not take Compose down).
+   * Conversion webhooks prefer fail-closed so a Neon blip cannot become an
+   * unbounded write path.
+   */
+  failClosed?: boolean;
+}
 
 /**
  * Consume one unit from (user, bucket). Returns ok:false when the window is
@@ -106,6 +125,7 @@ export type RateLimitBucket = keyof typeof RATE_LIMITS;
 export async function consumeRateLimit(
   userId: string,
   bucket: RateLimitBucket,
+  options: ConsumeRateLimitOptions = {},
 ): Promise<RateLimitResult> {
   const rule = RATE_LIMITS[bucket];
   try {
@@ -129,6 +149,10 @@ export async function consumeRateLimit(
     if (count > rule.limit) return { ok: false, remaining: 0, retryAfterSec };
     return { ok: true, remaining: Math.max(0, rule.limit - count), retryAfterSec };
   } catch (err) {
+    if (options.failClosed) {
+      console.error("rate limit check failed (blocking request)", bucket, err);
+      return { ok: false, remaining: 0, retryAfterSec: rule.windowSec };
+    }
     // Fail open - see the header comment.
     console.error("rate limit check failed (allowing request)", bucket, err);
     return { ok: true, remaining: rule.limit, retryAfterSec: 0 };

@@ -1,12 +1,11 @@
+import { query, queryOne } from "../db/pool.js";
+
 /**
  * Read models for the web "Inspiration" page (Trends & Virals tabs) - surfaces
  * what the proactive trend-take and daily viral-case-study jobs already
  * delivered to Telegram, from the `surfacings` ledger. Read-only; delivery
  * itself is unchanged (jobs/trend-match.ts, jobs/viral-benchmark.ts).
  */
-import { query, queryOne } from "../db/pool.js";
-import { seedInspirationForUser } from "../jobs/inspiration-seed.js";
-
 export interface TrendInspiration {
   id: string;
   deliveredAt: string;
@@ -90,7 +89,7 @@ export async function listTrendInspiration(userId: string, limit = 20): Promise<
 export async function refreshInspirationForWeb(
   userId: string,
   minAgeHours = 6,
-): Promise<{ ran: boolean }> {
+): Promise<{ ran: boolean; queued?: boolean }> {
   // Claim the window atomically: the UPDATE only matches when the last attempt is
   // old enough, so two concurrent page loads can't both pass the check and run
   // the paid search twice.
@@ -103,8 +102,13 @@ export async function refreshInspirationForWeb(
     [userId, minAgeHours],
   );
   if (!claimed) return { ran: false };
-  await seedInspirationForUser(userId);
-  return { ran: true };
+
+  // Enqueue the existing pg-boss worker instead of seeding in the web request
+  // (keeps Vercel functions short and shares the diagnosis-path pipeline).
+  const { ensureBoss, QUEUES } = await import("../jobs/boss.js");
+  const boss = await ensureBoss();
+  await boss.send(QUEUES.inspirationSeed, { userId });
+  return { ran: true, queued: true };
 }
 
 interface ViralPayload {

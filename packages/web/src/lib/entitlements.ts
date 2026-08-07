@@ -13,3 +13,16 @@ export async function requirePaid(user: User): Promise<Entitlements | null> {
   if (!allowed) return null;
   return entitlementsFor(user.id);
 }
+
+/** Standard 402 body for paywall denials. */
+export function upgradeRequiredResponse() {
+  return Response.json(
+    { error: "upgrade_required", message: "Upgrade to keep using this feature." },
+    { status: 402 },
+  );
+}
+
+/** Standard 402 body for numeric plan-cap denials. */
+export function capReachedResponse(cap: string, message: string) {
+  return Response.json({ error: "cap_reached", cap, message }, { status: 402 });
+}

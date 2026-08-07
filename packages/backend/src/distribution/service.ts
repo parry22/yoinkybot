@@ -41,7 +41,7 @@ export async function recommendDistributionPlan(userId:string,workspaceId:string
       WHERE ca.id=$1 AND ca.workspace_id=$2`,[assetId,workspaceId]);
   if(!asset)throw new Error("Asset not found.");
   if(!["approved","scheduled","published"].includes(asset.status))throw new Error("Approve the asset before planning distribution.");
-  const connected=asset.linked_user_id ? await query<{platform:string}>(`SELECT platform FROM connected_accounts WHERE user_id=$1 AND post_access_token IS NOT NULL`,[asset.linked_user_id]) : [];
+  const connected=asset.linked_user_id ? await query<{platform:string}>(`SELECT platform FROM connected_accounts WHERE user_id=$1 AND (post_access_token IS NOT NULL OR post_access_token_enc IS NOT NULL)`,[asset.linked_user_id]) : [];
   const platforms=new Set(connected.map(item=>item.platform));
   const prior=await queryOne<{published:string;conversions:string}>(`SELECT count(DISTINCT sp.id) FILTER(WHERE sp.status='published')::text published,count(DISTINCT ce.id)::text conversions FROM content_assets ca LEFT JOIN scheduled_posts sp ON sp.content_asset_id=ca.id LEFT JOIN conversion_events ce ON ce.content_asset_id=ca.id AND ce.workspace_id=ca.workspace_id WHERE ca.workspace_id=$1 AND ca.asset_type=$2`,[workspaceId,asset.asset_type]);
   const evidence=`Audience: ${asset.audience_name}. Source expert: ${asset.expert_name??"Unassigned"}. Campaign: ${asset.campaign_name??"None"}. Prior ${asset.asset_type.replaceAll("_"," ")} evidence: ${prior?.published??0} published and ${prior?.conversions??0} conversions.`;
@@ -95,7 +95,8 @@ export async function buildTrackedCtaUrl(userId:string,workspaceId:string,action
   await requireWorkspaceRole(userId,workspaceId,"contributor");
   const action=await queryOne<{destination:string;tracking_token_encrypted:string|null}>(`SELECT destination,tracking_token_encrypted FROM conversion_actions WHERE id=$1 AND workspace_id=$2 AND status='active'`,[actionId,workspaceId]);if(!action)throw new Error("Active CTA not found.");
   if(context.assetId&&!await queryOne(`SELECT 1 FROM content_assets WHERE id=$1 AND workspace_id=$2`,[context.assetId,workspaceId]))throw new Error("Asset not found in this workspace.");
-  if(context.publicationId&&!await queryOne(`SELECT 1 FROM scheduled_posts WHERE id=$1 AND workspace_id=$2`,[context.publicationId,workspaceId]))throw new Error("Publication not found in this workspace.");
+  // Same ownership path as recordConversionEvent: publication → content_assets.
+  if(context.publicationId&&!await queryOne(`SELECT 1 FROM scheduled_posts sp JOIN content_assets ca ON ca.id=sp.content_asset_id WHERE sp.id=$1 AND ca.workspace_id=$2`,[context.publicationId,workspaceId]))throw new Error("Publication not found in this workspace.");
   if(context.campaignId&&!await queryOne(`SELECT 1 FROM content_campaigns WHERE id=$1 AND workspace_id=$2`,[context.campaignId,workspaceId]))throw new Error("Campaign not found in this workspace.");
   let token:string;if(action.tracking_token_encrypted)token=open(JSON.parse(action.tracking_token_encrypted) as Sealed);else{token=randomBytes(24).toString("base64url");await query(`UPDATE conversion_actions SET tracking_token_hash=$3,tracking_token_encrypted=$4,updated_at=now() WHERE id=$1 AND workspace_id=$2`,[actionId,workspaceId,tokenHash(token),JSON.stringify(seal(token))]);}
   return trackedUrl(action.destination,actionId,token,{workspaceId,...context});
@@ -117,11 +118,30 @@ export async function recordConversionEvent(input:{actionId:string;token:string;
   if(input.publicationId){const publication=await queryOne(`SELECT 1 FROM scheduled_posts sp JOIN content_assets ca ON ca.id=sp.content_asset_id WHERE sp.id=$1 AND ca.workspace_id=$2`,[input.publicationId,action.workspace_id]);if(!publication)throw new Error("Publication does not belong to this workspace.");}
   const existing=await queryOne<{id:string}>(`SELECT id FROM conversion_events WHERE workspace_id=$1 AND deduplication_key=$2`,[action.workspace_id,input.deduplicationKey]);
   if(existing)return {id:existing.id,duplicate:true};
-  const row=await queryOne<{id:string}>(`INSERT INTO conversion_events (workspace_id,conversion_action_id,content_asset_id,publication_id,campaign_id,event_type,value,currency,deduplication_key,metadata,occurred_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11) RETURNING id`,[action.workspace_id,input.actionId,input.assetId??null,input.publicationId??null,input.campaignId??null,input.eventType,input.value??null,input.currency?.toUpperCase().slice(0,3)??null,input.deduplicationKey.slice(0,200),JSON.stringify(input.metadata??{}),occurred.toISOString()]);
-  if(!row)throw new Error("Could not record conversion event.");
+  // Race-safe with UNIQUE (workspace_id, deduplication_key) from 0048 / 0056.
+  const row=await queryOne<{id:string}>(
+    `INSERT INTO conversion_events (workspace_id,conversion_action_id,content_asset_id,publication_id,campaign_id,event_type,value,currency,deduplication_key,metadata,occurred_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11)
+     ON CONFLICT (workspace_id, deduplication_key) DO NOTHING
+     RETURNING id`,
+    [action.workspace_id,input.actionId,input.assetId??null,input.publicationId??null,input.campaignId??null,input.eventType,input.value??null,input.currency?.toUpperCase().slice(0,3)??null,input.deduplicationKey.slice(0,200),JSON.stringify(input.metadata??{}),occurred.toISOString()]);
+  if(!row){
+    const raced=await queryOne<{id:string}>(`SELECT id FROM conversion_events WHERE workspace_id=$1 AND deduplication_key=$2`,[action.workspace_id,input.deduplicationKey]);
+    if(raced)return {id:raced.id,duplicate:true};
+    throw new Error("Could not record conversion event.");
+  }
   if(input.publicationId)await query(`INSERT INTO content_lineage (workspace_id,source_type,source_id,target_type,target_id,relationship_type) VALUES ($1,'publication',$2,'conversion',$3,'produced_event') ON CONFLICT DO NOTHING`,[action.workspace_id,input.publicationId,row.id]);
   else if(input.assetId)await query(`INSERT INTO content_lineage (workspace_id,source_type,source_id,target_type,target_id,relationship_type) VALUES ($1,'asset',$2,'conversion',$3,'produced_event') ON CONFLICT DO NOTHING`,[action.workspace_id,input.assetId,row.id]);
   return {id:row.id,duplicate:false};
+}
+
+/** Workspace owner for conversion webhook rate limiting (rate_limits.user_id is a users FK). */
+export async function conversionWebhookOwnerUserId(actionId:string):Promise<string|null>{
+  const row=await queryOne<{user_id:string}>(
+    `SELECT wm.user_id FROM conversion_actions ca
+       JOIN workspace_members wm ON wm.workspace_id=ca.workspace_id AND wm.role='owner'
+      WHERE ca.id=$1 LIMIT 1`,[actionId]);
+  return row?.user_id??null;
 }
 
 export async function recordManualInfluence(userId:string,workspaceId:string,input:{actionId:string;assetId?:string|null;eventType:"lead"|"opportunity"|"revenue";externalOpportunityId?:string|null;value?:number|null;currency?:string|null;note?:string|null}):Promise<void>{

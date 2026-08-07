@@ -30,6 +30,11 @@ describe("entitlementsForPlan (Growth vs Scale differentiation)", () => {
     expect(e.autoAgent).toBe(false);
     expect(e.maxResurfacePerWeek).toBe(3);
     expect(e.drafting).toBe(true);
+    expect(e.activeWorkspaces).toBe(3);
+    expect(e.membersPerWorkspace).toBe(10);
+    expect(e.expertsPerWorkspace).toBe(8);
+    expect(e.generatedAssetsPerMonth).toBe(120);
+    expect(e.processedSourceMinutesPerMonth).toBe(600);
   });
 
   it("Scale is high-ceiling with auto-agent on", () => {
@@ -45,6 +50,9 @@ describe("entitlementsForPlan (Growth vs Scale differentiation)", () => {
     expect(e.automationPostsPerMonth).toBe(90);
     expect(e.buyerIntentsPerMonth).toBe(300);
     expect(e.maxResurfacePerWeek).toBe(5);
+    expect(e.activeWorkspaces).toBe(15);
+    expect(e.membersPerWorkspace).toBe(50);
+    expect(e.generatedAssetsPerMonth).toBe(1000);
   });
 
   it("founding maps to the full Scale set", () => {

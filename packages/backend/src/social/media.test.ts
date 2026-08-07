@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { kindForMime, maxBytesFor, validateMediaSet, MEDIA_LIMITS } from "./media.js";
+import { kindForMime, maxBytesFor, validateMediaSet, MEDIA_LIMITS, allowedMediaFetchUrl } from "./media.js";
 
 describe("kindForMime", () => {
   it("maps the formats X accepts", () => {
@@ -79,5 +79,36 @@ describe("validateMediaSet (X's one-video-or-four-images rule)", () => {
 
   it("accepts one GIF alone", () => {
     expect(validateMediaSet(items("gif"))).toBeNull();
+  });
+});
+
+describe("allowedMediaFetchUrl (SSRF guard)", () => {
+  it("allows Vercel public and private Blob hosts", () => {
+    expect(
+      allowedMediaFetchUrl("https://abc123.public.blob.vercel-storage.com/media/x.jpg")?.hostname,
+    ).toContain("blob.vercel-storage.com");
+    expect(
+      allowedMediaFetchUrl("https://abc123.private.blob.vercel-storage.com/media/x.jpg")?.hostname,
+    ).toContain("private.blob.vercel-storage.com");
+  });
+
+  it("rejects arbitrary HTTPS hosts", () => {
+    expect(allowedMediaFetchUrl("https://evil.example/steal")).toBeNull();
+    expect(allowedMediaFetchUrl("https://169.254.169.254/latest/meta-data/")).toBeNull();
+  });
+
+  it("rejects non-HTTPS schemes", () => {
+    expect(allowedMediaFetchUrl("http://abc.public.blob.vercel-storage.com/x.jpg")).toBeNull();
+    expect(allowedMediaFetchUrl("file:///etc/passwd")).toBeNull();
+  });
+
+  it("rejects localhost and metadata endpoints", () => {
+    expect(allowedMediaFetchUrl("https://localhost/media/x.jpg")).toBeNull();
+    expect(allowedMediaFetchUrl("https://127.0.0.1/media/x.jpg")).toBeNull();
+    expect(allowedMediaFetchUrl("https://[::1]/media/x.jpg")).toBeNull();
+  });
+
+  it("rejects blob hosts with path traversal tricks", () => {
+    expect(allowedMediaFetchUrl("https://evil.public.blob.vercel-storage.com@169.254.169.254/x.jpg")).toBeNull();
   });
 });

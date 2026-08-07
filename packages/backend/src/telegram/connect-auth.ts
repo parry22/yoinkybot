@@ -50,7 +50,7 @@ async function isConnected(userId: string, platform: Platform): Promise<boolean>
   const row = await queryOne<{ n: string }>(
     `SELECT count(*)::text n FROM connected_accounts
      WHERE user_id = $1 AND platform = $2
-       AND (post_access_token IS NOT NULL OR status IN ('pending','ingesting','ingested'))`,
+       AND (post_access_token IS NOT NULL OR post_access_token_enc IS NOT NULL OR status IN ('pending','ingesting','ingested'))`,
     [userId, platform],
   );
   return Number(row?.n ?? 0) > 0;
@@ -60,7 +60,7 @@ async function anyConnected(userId: string): Promise<boolean> {
   const row = await queryOne<{ n: string }>(
     `SELECT count(*)::text n FROM connected_accounts
      WHERE user_id = $1
-       AND (post_access_token IS NOT NULL OR status IN ('pending','ingesting','ingested'))`,
+       AND (post_access_token IS NOT NULL OR post_access_token_enc IS NOT NULL OR status IN ('pending','ingesting','ingested'))`,
     [userId],
   );
   return Number(row?.n ?? 0) > 0;
@@ -73,11 +73,13 @@ async function anyConnected(userId: string): Promise<boolean> {
  * Minted fresh every time the offer is rendered, so the 15-minute window starts
  * when the user actually sees the button.
  */
-const authUrl = (userId: string, platform: Platform) =>
-  `${config.PUBLIC_URL}/oauth/${platform}/start?t=${mintConnectTicket(userId, platform)}`;
+async function authUrl(userId: string, platform: Platform): Promise<string> {
+  const ticket = await mintConnectTicket(userId, platform);
+  return `${config.PUBLIC_URL}/oauth/${platform}/start?t=${ticket}`;
+}
 
-function offerKeyboard(userId: string, platform: Platform, withSkip: boolean): InlineKeyboard {
-  const kb = new InlineKeyboard().url(`🔗 connect ${label(platform)}`, authUrl(userId, platform));
+async function offerKeyboard(userId: string, platform: Platform, withSkip: boolean): Promise<InlineKeyboard> {
+  const kb = new InlineKeyboard().url(`🔗 connect ${label(platform)}`, await authUrl(userId, platform));
   if (withSkip) kb.row().text("skip for now →", `cauth:skip:${platform}`);
   return kb;
 }
@@ -129,8 +131,8 @@ export async function offerAuthConnect(userId: string, platform: Platform, opts:
   await sendOffer(
     userId,
     offerCopy(platform, opts.first ?? true),
-    offerKeyboard(userId, platform, opts.withSkip ?? true),
-    [`${label(platform)}: ${authUrl(userId, platform)}`],
+    await offerKeyboard(userId, platform, opts.withSkip ?? true),
+    [`${label(platform)}: ${await authUrl(userId, platform)}`],
   );
 }
 
@@ -153,14 +155,19 @@ export async function offerReconnect(userId: string): Promise<boolean> {
   );
   if (platforms.length === 0) return false;
   const kb = new InlineKeyboard();
-  for (const p of platforms) kb.url(`🔗 connect ${label(p)}`, authUrl(userId, p)).row();
+  const plainLinks: string[] = [];
+  for (const p of platforms) {
+    const url = await authUrl(userId, p);
+    kb.url(`🔗 connect ${label(p)}`, url).row();
+    plainLinks.push(`${label(p)}: ${url}`);
+  }
   const connectWord = platforms.map(label).join(" or ");
   await sendOffer(
     userId,
     `connect ${connectWord} - tap below, approve, done. verifies it's you and unlocks me posting for you. ` +
       `already connected? tapping again just refreshes it, no harm.`,
     kb,
-    platforms.map((p) => `${label(p)}: ${authUrl(userId, p)}`),
+    plainLinks,
   );
   return true;
 }
@@ -234,7 +241,12 @@ export async function handleAuthSkip(userId: string, platform: Platform): Promis
     (p): p is Platform => p !== null,
   );
   const kb = new InlineKeyboard();
-  for (const p of platforms) kb.url(`🔗 connect ${label(p)}`, authUrl(userId, p)).row();
+  const plainLinks: string[] = [];
+  for (const p of platforms) {
+    const url = await authUrl(userId, p);
+    kb.url(`🔗 connect ${label(p)}`, url).row();
+    plainLinks.push(`${label(p)}: ${url}`);
+  }
   // Name only the platform(s) that actually have a button - a single-platform
   // instance (e.g. X auth configured, LinkedIn not yet) must not promise a
   // LinkedIn button that isn't there.
@@ -245,7 +257,7 @@ export async function handleAuthSkip(userId: string, platform: Platform): Promis
       "the whole thing runs on the read. you can skip one platform, not both.\n\n" +
       `connect ${connectWord} below, or just drop your @handle / profile url and i'll read it that way.`,
     kb,
-    platforms.map((p) => `${label(p)}: ${authUrl(userId, p)}`),
+    plainLinks,
   );
 }
 

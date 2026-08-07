@@ -16,6 +16,12 @@ function pageTitle(pathname: string): string {
   if (pathname.startsWith("/app/studio")) return "Studio";
   if (pathname.startsWith("/app/assets")) return "Assets";
   if (pathname.startsWith("/app/integrations")) return "Integrations";
+  if (pathname.startsWith("/app/narrative")) return "Narrative";
+  if (pathname.startsWith("/app/briefs")) return "Briefs";
+  if (pathname.startsWith("/app/distribution")) return "Distribution";
+  if (pathname.startsWith("/app/analytics")) return "Analytics";
+  if (pathname.startsWith("/app/compose")) return "Compose";
+  if (pathname.startsWith("/app/scheduled")) return "Scheduled";
   if (pathname.startsWith("/app/settings")) return "Settings";
   if (pathname.startsWith("/app/workspaces")) return "Workspaces";
   return "Yoinky";

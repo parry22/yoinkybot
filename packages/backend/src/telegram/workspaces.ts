@@ -5,6 +5,36 @@ import { approveContentAsset,approveContentBrief,listContentAssets,listContentBr
 import { listWorkspacesForUser,requireWorkspaceRole,setTelegramWorkspaceContext } from "../workspaces/service.js";
 import type { Channel } from "./actions.js";
 
+export type CompanyTelegramCallbackAction = "sw" | "ka" | "kr" | "ba" | "aa" | "ar";
+
+export type ParsedCompanyTelegramCallback =
+  | { action: "sw"; workspaceId: string }
+  | { action: Exclude<CompanyTelegramCallbackAction, "sw">; workspaceId: string; itemId: string };
+
+export function parseCompanyTelegramCallback(data: string): ParsedCompanyTelegramCallback | null {
+  const switchMatch = /^cw:sw:([0-9a-f-]{36})$/.exec(data);
+  if (switchMatch) return { action: "sw", workspaceId: switchMatch[1]! };
+
+  const itemMatch = /^cw:(ka|kr|ba|aa|ar):([0-9a-f-]{36}):([0-9a-f-]{36})$/.exec(data);
+  if (itemMatch) {
+    return {
+      action: itemMatch[1] as Exclude<CompanyTelegramCallbackAction, "sw">,
+      workspaceId: itemMatch[2]!,
+      itemId: itemMatch[3]!,
+    };
+  }
+
+  return null;
+}
+
+export function companyTelegramCallbackData(
+  action: Exclude<CompanyTelegramCallbackAction, "sw">,
+  workspaceId: string,
+  itemId: string,
+): string {
+  return `cw:${action}:${workspaceId}:${itemId}`;
+}
+
 export type CompanyTelegramIntent=
   |{kind:"list_workspaces"}|{kind:"switch_workspace";name:string}|{kind:"capture";workspaceName:string;content:string}
   |{kind:"knowledge_inbox"}|{kind:"brief_inbox"}|{kind:"asset_inbox"}|{kind:"telegram_delivery";enabled:boolean};
@@ -35,17 +65,17 @@ export async function handleCompanyTelegramIntent(userId:string,intent:CompanyTe
   const workspace=await activeWorkspace(userId);if(!workspace){await channel.say("Choose a workspace in the web app first.");return;}
   if(intent.kind==="telegram_delivery"){await requireWorkspaceRole(userId,workspace.id,"admin");await query(`UPDATE workspaces SET settings=jsonb_set(settings,'{telegram_delivery}',$3::jsonb,true),updated_at=now() WHERE id=$1`,[workspace.id,userId,JSON.stringify(intent.enabled)]);await channel.say(`Telegram delivery is ${intent.enabled?"enabled":"disabled"} for ${workspace.name}.`);return;}
   if(!await requireDelivery(userId,workspace.id,channel))return;
-  if(intent.kind==="knowledge_inbox"){const items=(await listKnowledgeObjects(userId,workspace.id)).filter(item=>item.status==="proposed"&&["public","internal"].includes(item.permissionLevel)).slice(0,8);if(!items.length){await channel.say("The accessible knowledge inbox is clear.");return;}await channel.say(`Knowledge inbox for ${workspace.name}:`);for(const item of items){const kb=new InlineKeyboard().text("Approve",`cw:ka:${item.id}`).text("Reject",`cw:kr:${item.id}`);await channel.say(`${item.objectType.replaceAll("_"," ")}: ${item.title}\n${item.body.slice(0,500)}`,kb);}return;}
-  if(intent.kind==="brief_inbox"){const items=(await listContentBriefs(userId,workspace.id)).filter(item=>item.status==="draft").slice(0,8);if(!items.length){await channel.say("No briefs are waiting for approval.");return;}for(const item of items)await channel.say(`${item.channel.toUpperCase()} brief: ${item.objective}\nBelief shift: ${item.desiredBeliefShift}`,new InlineKeyboard().text("Approve brief",`cw:ba:${item.id}`));return;}
-  const assets=(await listContentAssets(userId,workspace.id)).filter(item=>item.status==="needs_review").slice(0,8);if(!assets.length){await channel.say("No drafts are waiting for approval.");return;}for(const item of assets)await channel.say(`${item.assetType.replaceAll("_"," ")}: ${item.title}\n\n${item.content.slice(0,1200)}`,new InlineKeyboard().text("Approve",`cw:aa:${item.id}`).text("Reject",`cw:ar:${item.id}`));
+  if(intent.kind==="knowledge_inbox"){const items=(await listKnowledgeObjects(userId,workspace.id)).filter(item=>item.status==="proposed"&&["public","internal"].includes(item.permissionLevel)).slice(0,8);if(!items.length){await channel.say("The accessible knowledge inbox is clear.");return;}await channel.say(`Knowledge inbox for ${workspace.name}:`);for(const item of items){const kb=new InlineKeyboard().text("Approve",companyTelegramCallbackData("ka",workspace.id,item.id)).text("Reject",companyTelegramCallbackData("kr",workspace.id,item.id));await channel.say(`${item.objectType.replaceAll("_"," ")}: ${item.title}\n${item.body.slice(0,500)}`,kb);}return;}
+  if(intent.kind==="brief_inbox"){const items=(await listContentBriefs(userId,workspace.id)).filter(item=>item.status==="draft").slice(0,8);if(!items.length){await channel.say("No briefs are waiting for approval.");return;}for(const item of items)await channel.say(`${item.channel.toUpperCase()} brief: ${item.objective}\nBelief shift: ${item.desiredBeliefShift}`,new InlineKeyboard().text("Approve brief",companyTelegramCallbackData("ba",workspace.id,item.id)));return;}
+  const assets=(await listContentAssets(userId,workspace.id)).filter(item=>item.status==="needs_review").slice(0,8);if(!assets.length){await channel.say("No drafts are waiting for approval.");return;}for(const item of assets)await channel.say(`${item.assetType.replaceAll("_"," ")}: ${item.title}\n\n${item.content.slice(0,1200)}`,new InlineKeyboard().text("Approve",companyTelegramCallbackData("aa",workspace.id,item.id)).text("Reject",companyTelegramCallbackData("ar",workspace.id,item.id)));
 }
 
 export async function handleCompanyTelegramCallback(userId:string,data:string,channel:Channel):Promise<string|null>{
-  const match=/^cw:(sw|ka|kr|ba|aa|ar):([0-9a-f-]{36})$/.exec(data);if(!match)return null;const [,action,id]=match as unknown as [string,"sw"|"ka"|"kr"|"ba"|"aa"|"ar",string];
-  if(action==="sw"){const workspace=await setTelegramWorkspaceContext(userId,id);return `Current Telegram workspace: ${workspace.name}. Voice notes will be filed there until you switch again.`;}
-  const workspace=await activeWorkspace(userId);if(!workspace)throw new Error("No active workspace.");if(!await deliveryAllowed(userId,workspace.id))throw new Error("Telegram delivery is disabled for this workspace.");
-  if(action==="ka"||action==="kr"){const item=await reviewKnowledgeObject(userId,workspace.id,id,action==="ka"?"approved":"rejected");return `${item.title}: ${item.status}.`;}
-  if(action==="ba"){const brief=await approveContentBrief(userId,workspace.id,id);return `Brief approved: ${brief.objective}`;}
-  if(action==="aa"){const asset=await approveContentAsset(userId,workspace.id,id,"Approved from Telegram");return `Asset approved: ${asset.title}`;}
-  const asset=await rejectContentAsset(userId,workspace.id,id,"Rejected from Telegram");return `Asset rejected: ${asset.title}`;
+  const parsed=parseCompanyTelegramCallback(data);if(!parsed)return null;
+  if(parsed.action==="sw"){const workspace=await setTelegramWorkspaceContext(userId,parsed.workspaceId);return `Current Telegram workspace: ${workspace.name}. Voice notes will be filed there until you switch again.`;}
+  if(!await deliveryAllowed(userId,parsed.workspaceId))throw new Error("Telegram delivery is disabled for this workspace.");
+  if(parsed.action==="ka"||parsed.action==="kr"){const item=await reviewKnowledgeObject(userId,parsed.workspaceId,parsed.itemId,parsed.action==="ka"?"approved":"rejected");return `${item.title}: ${item.status}.`;}
+  if(parsed.action==="ba"){const brief=await approveContentBrief(userId,parsed.workspaceId,parsed.itemId);return `Brief approved: ${brief.objective}`;}
+  if(parsed.action==="aa"){const asset=await approveContentAsset(userId,parsed.workspaceId,parsed.itemId,"Approved from Telegram");return `Asset approved: ${asset.title}`;}
+  const asset=await rejectContentAsset(userId,parsed.workspaceId,parsed.itemId,"Rejected from Telegram");return `Asset rejected: ${asset.title}`;
 }

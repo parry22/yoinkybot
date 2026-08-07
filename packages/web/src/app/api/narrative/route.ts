@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/session";
+import { requirePaid, upgradeRequiredResponse } from "@/lib/entitlements";
+import { jsonError } from "@/lib/api-error";
 import {
   generateNarrativeProposal,
   resolveWorkspaceContext,
@@ -17,6 +19,8 @@ export const dynamic = "force-dynamic";
 export async function POST(req:Request) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const entitlements = await requirePaid(user);
+  if (!entitlements) return upgradeRequiredResponse();
   const workspace = await resolveWorkspaceContext(user.id);
   if (!workspace) return NextResponse.json({ error: "No active workspace." }, { status: 400 });
   try {
@@ -27,15 +31,15 @@ export async function POST(req:Request) {
     const narrative = await generateNarrativeProposal(user.id, workspace.id);
     return NextResponse.json({ narrative }, { status: 201 });
   } catch (error) {
-    console.error("narrative generation failed", error);
-    const message = error instanceof Error ? error.message : "Could not build narrative.";
-    return NextResponse.json({ error: message }, { status: 400 });
+    return jsonError(error, "Could not build narrative.");
   }
 }
 
 export async function PATCH(req: Request) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const entitlements = await requirePaid(user);
+  if (!entitlements) return upgradeRequiredResponse();
   const workspace = await resolveWorkspaceContext(user.id);
   if (!workspace) return NextResponse.json({ error: "No active workspace." }, { status: 400 });
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
@@ -58,7 +62,6 @@ export async function PATCH(req: Request) {
     }, body.activate === true);
     return NextResponse.json({ narrative });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not save narrative.";
-    return NextResponse.json({ error: message }, { status: 400 });
+    return jsonError(error, "Could not save narrative.");
   }
 }

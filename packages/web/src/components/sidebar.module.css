@@ -43,6 +43,15 @@
   overflow: visible;
 }
 
+.navDivider {
+  width: 20px;
+  height: 1px;
+  margin: 4px 0;
+  background: var(--stroke);
+  opacity: 0.8;
+  flex-shrink: 0;
+}
+
 .navItem {
   position: relative;
   display: grid;
@@ -162,6 +171,11 @@
     align-items: stretch;
     gap: 2px;
     margin-top: 14px;
+  }
+
+  .navDivider {
+    width: auto;
+    margin: 10px 12px;
   }
 
   .navItem {

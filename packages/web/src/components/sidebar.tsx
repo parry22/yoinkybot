@@ -10,6 +10,12 @@ import {
   FolderLibraryIcon,
   Plug01Icon,
   Settings05Icon,
+  BookOpen01Icon,
+  NoteIcon,
+  Share08Icon,
+  Analytics01Icon,
+  Edit02Icon,
+  Calendar03Icon,
 } from "@hugeicons/core-free-icons";
 import type { TrialInfo, WorkspaceSummary } from "@yoink/backend/web";
 import { TrialPill } from "./trial-banner";
@@ -25,6 +31,40 @@ const PRIMARY_NAV: NavItem[] = [
   { href: "/app/assets", label: "Assets", icon: FolderLibraryIcon },
   { href: "/app/integrations", label: "Integrations", icon: Plug01Icon },
 ];
+
+const SECONDARY_NAV: NavItem[] = [
+  { href: "/app/narrative", label: "Narrative", icon: BookOpen01Icon },
+  { href: "/app/briefs", label: "Briefs", icon: NoteIcon },
+  { href: "/app/distribution", label: "Distribution", icon: Share08Icon },
+  { href: "/app/analytics", label: "Analytics", icon: Analytics01Icon },
+  { href: "/app/compose", label: "Compose", icon: Edit02Icon },
+  { href: "/app/scheduled", label: "Scheduled", icon: Calendar03Icon },
+];
+
+function NavLink({
+  item,
+  active,
+  onNavigate,
+}: {
+  item: NavItem;
+  active: boolean;
+  onNavigate: () => void;
+}) {
+  return (
+    <Link
+      href={item.href}
+      onClick={onNavigate}
+      className={`${styles.navItem} ${active ? styles.navItemActive : ""}`}
+      aria-label={item.label}
+      aria-current={active ? "page" : undefined}
+    >
+      <HugeiconsIcon icon={item.icon} size={20} strokeWidth={1.7} />
+      <span className={styles.navLabel} role="tooltip">
+        {item.label}
+      </span>
+    </Link>
+  );
+}
 
 export function Sidebar({
   open,
@@ -57,24 +97,13 @@ export function Sidebar({
       )}
 
       <nav className={styles.nav}>
-        {PRIMARY_NAV.map((item) => {
-          const active = isActive(item.href);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={onNavigate}
-              className={`${styles.navItem} ${active ? styles.navItemActive : ""}`}
-              aria-label={item.label}
-              aria-current={active ? "page" : undefined}
-            >
-              <HugeiconsIcon icon={item.icon} size={20} strokeWidth={1.7} />
-              <span className={styles.navLabel} role="tooltip">
-                {item.label}
-              </span>
-            </Link>
-          );
-        })}
+        {PRIMARY_NAV.map((item) => (
+          <NavLink key={item.href} item={item} active={isActive(item.href)} onNavigate={onNavigate} />
+        ))}
+        <div className={styles.navDivider} aria-hidden="true" />
+        {SECONDARY_NAV.map((item) => (
+          <NavLink key={item.href} item={item} active={isActive(item.href)} onNavigate={onNavigate} />
+        ))}
       </nav>
 
       <div className={styles.footer}>

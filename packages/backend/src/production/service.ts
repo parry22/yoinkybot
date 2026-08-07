@@ -9,12 +9,7 @@ import { assetAtomizePrompt } from "../prompts/asset-atomize.v1.js";
 import { schedulePost } from "../scheduling/service.js";
 import { checkConsistency } from "../consistency/check.js";
 import { requireWorkspaceRole, resolveDefaultExpert } from "../workspaces/service.js";
-import {
-  createWorkspaceAudience,
-  generateNarrativeProposal,
-  listNarrativeSystems,
-  updateNarrativeDraft,
-} from "../narrative/service.js";
+import { createWorkspaceAudience } from "../narrative/service.js";
 import { CONTENT_ASSET_TYPES, type AssetCheckResult, type ContentAssetType, type ContentAssetView, type ContentBriefView } from "./types.js";
 
 export type StudioGenerateInput = {
@@ -66,6 +61,7 @@ interface AssetRow {
   id: string; workspace_id: string; brief_id: string; asset_type: ContentAssetType; parent_asset_id: string | null;
   title: string; status: ContentAssetView["status"]; content: string; version: number;
   check_results: AssetCheckResult | Record<string, never>; source_count: string; created_at: string;
+  scheduled_for: string | null;
 }
 
 function mapBrief(row: BriefRow): ContentBriefView {
@@ -83,6 +79,7 @@ function mapAsset(row: AssetRow): ContentAssetView {
     parentAssetId: row.parent_asset_id,
     title: row.title, status: row.status, content: row.content, version: Number(row.version), checks,
     sourceCount: Number(row.source_count),
+    scheduledFor: row.scheduled_for,
     createdAt: row.created_at };
 }
 
@@ -266,7 +263,12 @@ export async function listContentAssets(userId: string, workspaceId: string): Pr
     `SELECT ca.id,ca.workspace_id,ca.brief_id,ca.asset_type,ca.parent_asset_id,ca.title,ca.status,
             cav.content,cav.version,ca.check_results,
             (SELECT count(*)::text FROM content_brief_sources cbs WHERE cbs.content_brief_id=ca.brief_id) AS source_count,
-            ca.created_at::text
+            ca.created_at::text,
+            (SELECT min(sp.scheduled_for)::text
+               FROM scheduled_posts sp
+              WHERE sp.content_asset_id = ca.id
+                AND sp.workspace_id = ca.workspace_id
+                AND sp.status = 'pending') AS scheduled_for
        FROM content_assets ca
        JOIN LATERAL (SELECT content,version FROM content_asset_versions WHERE asset_id=ca.id ORDER BY version DESC LIMIT 1) cav ON true
       WHERE ca.workspace_id=$1 ORDER BY ca.created_at DESC`, [workspaceId]);
@@ -515,7 +517,7 @@ export async function ensureStudioReady(userId: string, workspaceId: string): Pr
   message?: string;
   href?: string;
 }> {
-  await requireWorkspaceRole(userId, workspaceId, "contributor");
+  await requireWorkspaceRole(userId, workspaceId, "editor");
 
   const audiences = await query<{ id: string }>(
     `SELECT id FROM workspace_audiences WHERE workspace_id = $1 LIMIT 1`,
@@ -528,20 +530,6 @@ export async function ensureStudioReady(userId: string, workspaceId: string): Pr
       description: "Default audience for Studio drafts until a richer buyer map is defined.",
     });
   }
-
-  // Auto-approve low-risk pending claims so approved knowledge claims are usable.
-  await query(
-    `UPDATE claim_registry
-        SET approval_status = 'approved',
-            risk_level = 'low',
-            approved_by_user_id = $1,
-            approved_at = now(),
-            updated_at = now()
-      WHERE workspace_id = $2
-        AND approval_status = 'pending'
-        AND risk_level IN ('low', 'medium')`,
-    [userId, workspaceId],
-  );
 
   const knowledgeCounts = await queryOne<{ insights: string; claims: string; proofs: string }>(
     `SELECT
@@ -574,29 +562,11 @@ export async function ensureStudioReady(userId: string, workspaceId: string): Pr
     [workspaceId],
   );
   if (!active) {
-    const draft = await queryOne<{ id: string }>(
-      `SELECT id FROM narrative_systems WHERE workspace_id = $1 AND status = 'draft' ORDER BY version DESC LIMIT 1`,
-      [workspaceId],
-    );
-    const narrative = draft
-      ? (await listNarrativeSystems(userId, workspaceId)).find((item) => item.id === draft.id)
-      : await generateNarrativeProposal(userId, workspaceId);
-    if (!narrative) {
-      return { ready: false, message: "Could not build a narrative yet.", href: "/app/narrative" };
-    }
-    await updateNarrativeDraft(
-      userId,
-      workspaceId,
-      narrative.id,
-      {
-        categoryThesis: narrative.categoryThesis,
-        problemNarrative: narrative.problemNarrative,
-        pointOfView: narrative.pointOfView,
-        uniqueMechanism: narrative.uniqueMechanism,
-        primaryPromise: narrative.primaryPromise,
-      },
-      true,
-    );
+    return {
+      ready: false,
+      message: "Activate a narrative in Narrative before generating in Studio.",
+      href: "/app/narrative",
+    };
   }
 
   const expert = await resolveDefaultExpert(userId, workspaceId);
@@ -616,41 +586,30 @@ export async function studioGenerate(
   workspaceId: string,
   input: StudioGenerateInput,
 ): Promise<{ asset: ContentAssetView; briefId: string }> {
+  await requireWorkspaceRole(userId, workspaceId, "editor");
   const readiness = await ensureStudioReady(userId, workspaceId);
   if (!readiness.ready) {
     throw new Error(readiness.message ?? "Studio is not ready yet.");
   }
 
-  const preferred = [...new Set(input.knowledgeObjectIds ?? [])].slice(0, 8);
-  if (preferred.length) {
-    await query(
-      `UPDATE knowledge_objects
-          SET status = 'approved', updated_at = now()
-        WHERE workspace_id = $1
-          AND id = ANY($2::uuid[])
-          AND status IN ('proposed', 'reviewed')
-          AND permission_level IN ('public', 'internal')`,
-      [workspaceId, preferred],
-    );
-    await query(
-      `INSERT INTO claim_registry (workspace_id, knowledge_object_id, claim_text, approval_status, risk_level, approved_by_user_id, approved_at)
-       SELECT workspace_id, id, body, 'approved', 'low', $1, now()
-         FROM knowledge_objects
-        WHERE workspace_id = $2
-          AND id = ANY($3::uuid[])
-          AND object_type = 'claim'
-          AND status = 'approved'
-       ON CONFLICT (workspace_id, knowledge_object_id) DO UPDATE
-         SET approval_status = 'approved',
-             risk_level = 'low',
-             approved_by_user_id = EXCLUDED.approved_by_user_id,
-             approved_at = now(),
-             updated_at = now()
-         WHERE claim_registry.approval_status = 'pending'`,
-      [userId, workspaceId, preferred],
-    );
-  }
+  // Asset generation cap (atomic count after insert happens in draftFromBrief /
+  // atomize via assertGeneratedAssetCap callers). Pre-check here for fast fail.
+  const { entitlementsFor, assertWithinCap } = await import("../billing/entitlements.js");
+  const entitlements = await entitlementsFor(userId);
+  const used = await queryOne<{ n: string }>(
+    `SELECT count(*)::text AS n FROM content_assets
+      WHERE workspace_id = $1
+        AND created_at >= date_trunc('month', now())`,
+    [workspaceId],
+  );
+  assertWithinCap(
+    Number(used?.n ?? 0),
+    entitlements.generatedAssetsPerMonth,
+    "generatedAssetsPerMonth",
+    "This workspace has reached its monthly generated-asset limit. Upgrade or wait until next month.",
+  );
 
+  const preferred = [...new Set(input.knowledgeObjectIds ?? [])].slice(0, 8);
   const format = input.format && CONTENT_ASSET_TYPES.includes(input.format) ? input.format : "linkedin_post";
   const channel = input.channel ?? (format === "x_post" ? "x" : "linkedin");
   const prompt = [input.userPrompt?.trim(), input.tone ? `Tone: ${input.tone}` : ""].filter(Boolean).join("\n");
@@ -665,22 +624,23 @@ export async function studioGenerate(
   const brief = briefs[0];
   if (!brief) throw new Error("Could not generate a brief.");
 
-  if (brief.status !== "ready") {
-    await approveContentBrief(userId, workspaceId, brief.id);
-  }
-
-  let asset = await draftFromBrief(userId, workspaceId, brief.id);
-
+  // Briefs and assets stay in review until an editor explicitly approves them.
+  // Atomization of non-post formats still requires a prior approved parent asset.
   if (format !== "x_post" && format !== "linkedin_post") {
-    if (asset.status === "needs_review" || asset.status === "draft") {
-      asset = await approveContentAsset(userId, workspaceId, asset.id, "Auto-approved for format atomization in Studio.");
+    if (brief.status !== "ready") {
+      throw new Error("Approve the generated brief before atomizing into this format.");
     }
-    const variants = await atomizeContentAsset(userId, workspaceId, asset.id, [format]);
+    const parent = await draftFromBrief(userId, workspaceId, brief.id);
+    if (parent.status !== "approved" && parent.status !== "scheduled" && parent.status !== "published") {
+      throw new Error("Approve the LinkedIn/X draft first, then atomize into other formats.");
+    }
+    const variants = await atomizeContentAsset(userId, workspaceId, parent.id, [format]);
     const variant = variants[0];
     if (!variant) throw new Error(`Could not create a ${format.replaceAll("_", " ")} draft.`);
     return { asset: variant, briefId: brief.id };
   }
 
+  const asset = await draftFromBrief(userId, workspaceId, brief.id);
   return { asset, briefId: brief.id };
 }
 

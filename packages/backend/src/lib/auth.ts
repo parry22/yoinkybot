@@ -80,8 +80,8 @@ export async function consumeLoginToken(token: string): Promise<User | undefined
 export async function createTelegramLinkToken(userId: string): Promise<string> {
   const token = randomBytes(12).toString("base64url");
   await query(
-    `INSERT INTO telegram_link_tokens (token, user_id, expires_at) VALUES ($1, $2, now() + interval '15 minutes')`,
-    [token, userId],
+    `INSERT INTO telegram_link_tokens (token_hash, user_id, expires_at) VALUES ($1, $2, now() + interval '15 minutes')`,
+    [hashToken(token), userId],
   );
   return token;
 }
@@ -90,9 +90,9 @@ export async function createTelegramLinkToken(userId: string): Promise<string> {
 export async function consumeTelegramLinkToken(token: string, telegramId: number): Promise<User | undefined> {
   const row = await queryOne<{ user_id: string }>(
     `UPDATE telegram_link_tokens SET used_at = now()
-     WHERE token = $1 AND used_at IS NULL AND expires_at > now()
+     WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now()
      RETURNING user_id`,
-    [token],
+    [hashToken(token)],
   );
   if (!row) return undefined;
   // Detach this telegram id from any OTHER account first (a re-link, or a stray

@@ -95,15 +95,19 @@ export async function stageMedia(userId: string, input: StageMediaInput): Promis
 }
 
 /** Drop a staged attachment the user removed before saving the post. */
-export async function discardStagedMedia(userId: string, mediaId: string): Promise<{ ok: boolean }> {
+export async function discardStagedMedia(
+  userId: string,
+  mediaId: string,
+): Promise<{ ok: boolean; url?: string }> {
   // Only ever deletes STAGED rows: once bound to a post, removal is the post's
-  // business (and cascades when the post is deleted).
-  const row = await queryOne<{ id: string }>(
+  // business (and cascades when the post is deleted). RETURNING url so the
+  // caller deletes Blob storage from the owned row - never from a client-supplied URL.
+  const row = await queryOne<{ id: string; url: string }>(
     `DELETE FROM scheduled_post_media
-     WHERE id = $1 AND user_id = $2 AND scheduled_post_id IS NULL RETURNING id`,
+     WHERE id = $1 AND user_id = $2 AND scheduled_post_id IS NULL RETURNING id, url`,
     [mediaId, userId],
   );
-  return { ok: Boolean(row) };
+  return row ? { ok: true, url: row.url } : { ok: false };
 }
 
 export interface BlobCleanupCandidate {

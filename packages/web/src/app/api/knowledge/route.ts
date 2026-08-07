@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/session";
+import { requirePaid, upgradeRequiredResponse } from "@/lib/entitlements";
+import { jsonError } from "@/lib/api-error";
 import {
   extractTranscriptToKnowledge,
   resolveWorkspaceContext,
@@ -16,6 +18,8 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const entitlements = await requirePaid(user);
+  if (!entitlements) return upgradeRequiredResponse();
   const workspace = await resolveWorkspaceContext(user.id);
   if (!workspace) return NextResponse.json({ error: "No active workspace." }, { status: 400 });
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
@@ -30,15 +34,15 @@ export async function POST(req: Request) {
     });
     return NextResponse.json({ objects }, { status: 201 });
   } catch (error) {
-    console.error("knowledge extraction failed", error);
-    const message = error instanceof Error ? error.message : "Could not extract knowledge.";
-    return NextResponse.json({ error: message }, { status: 400 });
+    return jsonError(error, "Could not extract knowledge.");
   }
 }
 
 export async function PATCH(req: Request) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const entitlements = await requirePaid(user);
+  if (!entitlements) return upgradeRequiredResponse();
   const workspace = await resolveWorkspaceContext(user.id);
   if (!workspace) return NextResponse.json({ error: "No active workspace." }, { status: 400 });
   const body = (await req.json().catch(() => ({}))) as { objectId?: unknown; status?: unknown };
@@ -54,7 +58,6 @@ export async function PATCH(req: Request) {
     );
     return NextResponse.json({ object });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not review knowledge.";
-    return NextResponse.json({ error: message }, { status: 400 });
+    return jsonError(error, "Could not review knowledge.");
   }
 }

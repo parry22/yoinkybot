@@ -2,6 +2,13 @@ import { config } from "../config.js";
 import { query, queryOne } from "../db/pool.js";
 import type { Platform } from "../lib/types.js";
 import { isByokUser, xDeveloperCredentialsForUser } from "../byok/keys.js";
+import {
+  clearedTokenParams,
+  decryptToken,
+  hasAccessToken,
+  tokenWriteParams,
+  type TokenRow,
+} from "./token-crypto.js";
 
 /**
  * Publishing - the write half of the social integration. Everything else in
@@ -57,13 +64,18 @@ export async function publishConfigured(platform: Platform, userId?: string): Pr
  * actually call a platform API must use `ensureWriteAuth` instead.
  */
 export async function resolveWriteAuth(userId: string, platform: Platform): Promise<WriteAuth | null> {
-  const row = await queryOne<{ post_access_token: string | null; post_author_urn: string | null }>(
-    `SELECT post_access_token, post_author_urn FROM connected_accounts
+  const row = await queryOne<
+    TokenRow & { post_author_urn: string | null }
+  >(
+    `SELECT post_access_token, post_access_token_enc, post_access_token_iv, post_access_token_tag,
+            post_author_urn FROM connected_accounts
      WHERE user_id = $1 AND platform = $2`,
     [userId, platform],
   );
-  if (!row?.post_access_token) return null;
-  return { accessToken: row.post_access_token, authorUrn: row.post_author_urn };
+  if (!row) return null;
+  const { accessToken } = decryptToken(row);
+  if (!accessToken) return null;
+  return { accessToken, authorUrn: row.post_author_urn };
 }
 
 // ── Token lifecycle ─────────────────────────────────────────────────────────
@@ -97,16 +109,17 @@ export interface WriteAuthState {
 }
 
 export async function writeAuthState(userId: string, platform: Platform): Promise<WriteAuthState> {
-  const row = await queryOne<{ post_access_token: string | null; post_reauth_required_at: string | null }>(
-    `SELECT post_access_token, post_reauth_required_at FROM connected_accounts
+  const row = await queryOne<TokenRow & { post_reauth_required_at: string | null }>(
+    `SELECT post_access_token, post_access_token_enc, post_reauth_required_at FROM connected_accounts
      WHERE user_id = $1 AND platform = $2`,
     [userId, platform],
   );
+  const connected = row ? hasAccessToken(row) : false;
   return {
-    connected: !!row?.post_access_token,
+    connected,
     // A live token supersedes the flag - see markWriteAuthDead for why the two
     // can never both be true for a credential that actually works.
-    needsReauth: !row?.post_access_token && !!row?.post_reauth_required_at,
+    needsReauth: !connected && !!row?.post_reauth_required_at,
   };
 }
 
@@ -121,12 +134,27 @@ export async function writeAuthState(userId: string, platform: Platform): Promis
  * safe to drop (see ensureWriteAuth).
  */
 export async function markWriteAuthDead(userId: string, platform: Platform): Promise<void> {
+  const cleared = clearedTokenParams();
   await query(
     `UPDATE connected_accounts
-        SET post_access_token = NULL, post_refresh_token = NULL,
+        SET post_access_token = $3, post_access_token_enc = $4,
+            post_access_token_iv = $5, post_access_token_tag = $6,
+            post_refresh_token = $7, post_refresh_token_enc = $8,
+            post_refresh_token_iv = $9, post_refresh_token_tag = $10,
             post_token_expires_at = NULL, post_reauth_required_at = now()
       WHERE user_id = $1 AND platform = $2`,
-    [userId, platform],
+    [
+      userId,
+      platform,
+      cleared.post_access_token,
+      cleared.post_access_token_enc,
+      cleared.post_access_token_iv,
+      cleared.post_access_token_tag,
+      cleared.post_refresh_token,
+      cleared.post_refresh_token_enc,
+      cleared.post_refresh_token_iv,
+      cleared.post_refresh_token_tag,
+    ],
   );
 }
 
@@ -204,22 +232,27 @@ async function refreshXToken(userId: string, refreshToken: string): Promise<XRef
  * between "you never connected X" and "your X connection expired".
  */
 export async function ensureWriteAuth(userId: string, platform: Platform): Promise<WriteAuthResolution> {
-  const row = await queryOne<{
-    post_access_token: string | null;
-    post_refresh_token: string | null;
-    post_token_expires_at: string | null;
-    post_author_urn: string | null;
-    post_reauth_required_at: string | null;
-  }>(
-    `SELECT post_access_token, post_refresh_token, post_token_expires_at,
-            post_author_urn, post_reauth_required_at
+  const row = await queryOne<
+    TokenRow & {
+      post_token_expires_at: string | null;
+      post_author_urn: string | null;
+      post_reauth_required_at: string | null;
+    }
+  >(
+    `SELECT post_access_token, post_access_token_enc, post_access_token_iv, post_access_token_tag,
+            post_refresh_token, post_refresh_token_enc, post_refresh_token_iv, post_refresh_token_tag,
+            post_token_expires_at, post_author_urn, post_reauth_required_at
        FROM connected_accounts WHERE user_id = $1 AND platform = $2`,
     [userId, platform],
   );
   const label = platform === "x" ? "X" : "LinkedIn";
+  if (!row) {
+    return { ok: false, reason: "not_connected", detail: `${label} not connected for posting` };
+  }
+  const tokens = decryptToken(row);
 
-  if (!row?.post_access_token) {
-    return row?.post_reauth_required_at
+  if (!tokens.accessToken) {
+    return row.post_reauth_required_at
       ? { ok: false, reason: "needs_reauth", detail: `${label} connection expired - reconnect ${label} to publish` }
       : { ok: false, reason: "not_connected", detail: `${label} not connected for posting` };
   }
@@ -234,9 +267,9 @@ export async function ensureWriteAuth(userId: string, platform: Platform): Promi
   // and let a 401 be the source of truth. Better a wasted call than refusing to
   // post with a token that may well be fine.
   const expiring = Number.isFinite(expiresAt) && expiresAt - Date.now() <= TOKEN_REFRESH_SKEW_MS;
-  if (!expiring) return { ok: true, auth: { accessToken: row.post_access_token, authorUrn: row.post_author_urn } };
+  if (!expiring) return { ok: true, auth: { accessToken: tokens.accessToken, authorUrn: row.post_author_urn } };
 
-  if (platform !== "x" || !row.post_refresh_token) {
+  if (platform !== "x" || !tokens.refreshToken) {
     // LinkedIn has no refresh grant for standard apps; an X token minted before
     // `offline.access` was requested has no refresh token to spend either.
     await markWriteAuthDead(userId, platform);
@@ -247,7 +280,7 @@ export async function ensureWriteAuth(userId: string, platform: Platform): Promi
     };
   }
 
-  const refreshed = await refreshXToken(userId, row.post_refresh_token);
+  const refreshed = await refreshXToken(userId, tokens.refreshToken);
   if (!refreshed.ok) {
     if (!refreshed.permanent) {
       return { ok: false, reason: "refresh_failed", detail: `couldn't renew the ${label} token: ${refreshed.detail}` };
@@ -260,21 +293,35 @@ export async function ensureWriteAuth(userId: string, platform: Platform): Promi
     };
   }
 
+  const written = tokenWriteParams(
+    refreshed.accessToken,
+    refreshed.refreshToken ?? tokens.refreshToken,
+  );
   await query(
     `UPDATE connected_accounts
         SET post_access_token = $3,
-            -- X rotates the refresh token on use; COALESCE keeps the old one only
-            -- for the (undocumented but possible) response that omits a new one.
-            post_refresh_token = COALESCE($4, post_refresh_token),
-            post_token_expires_at = $5,
-            post_scopes = COALESCE($6, post_scopes),
+            post_access_token_enc = $4,
+            post_access_token_iv = $5,
+            post_access_token_tag = $6,
+            post_refresh_token = $7,
+            post_refresh_token_enc = $8,
+            post_refresh_token_iv = $9,
+            post_refresh_token_tag = $10,
+            post_token_expires_at = $11,
+            post_scopes = COALESCE($12, post_scopes),
             post_reauth_required_at = NULL
       WHERE user_id = $1 AND platform = $2`,
     [
       userId,
       platform,
-      refreshed.accessToken,
-      refreshed.refreshToken,
+      written.post_access_token,
+      written.post_access_token_enc,
+      written.post_access_token_iv,
+      written.post_access_token_tag,
+      written.post_refresh_token,
+      written.post_refresh_token_enc,
+      written.post_refresh_token_iv,
+      written.post_refresh_token_tag,
       refreshed.expiresIn ? new Date(Date.now() + refreshed.expiresIn * 1000).toISOString() : null,
       refreshed.scope,
     ],

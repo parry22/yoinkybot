@@ -14,10 +14,14 @@ export const maxDuration = 300;
  * Upload one attachment for a scheduled post.
  *
  * The bytes go to Vercel Blob from HERE, not from the browser and not from the
- * Railway backend: this route is the only place holding BLOB_READ_WRITE_TOKEN. The
- * stored URL is public (unguessable pathname suffix), which is what lets the
- * publisher on Railway fetch it later with a plain GET and no storage credential -
- * see backend social/media.ts.
+ * Railway backend: this route is the only place holding BLOB_READ_WRITE_TOKEN.
+ *
+ * Access: prefer `private` (@vercel/blob >= 2.3). Private stores yield
+ * `*.private.blob.vercel-storage.com` URLs that require auth to read - the
+ * Railway publisher must set BLOB_READ_WRITE_TOKEN and social/media.ts sends it
+ * as Bearer. Public stores reject `access: "private"`; we fall back to `public`
+ * so existing public-store deployments keep working (unguessable pathname, plain
+ * GET at publish). Override with BLOB_ACCESS=public|private to skip the probe.
  *
  * The upload is STAGED, not attached: the post row doesn't exist yet (the user is
  * still typing), so the media row carries a NULL scheduled_post_id until
@@ -27,6 +31,22 @@ export const maxDuration = 300;
  * to be rejected here even though X itself would take a larger video.
  */
 const MAX_REQUEST_BYTES = 100 * 1024 * 1024;
+
+type BlobAccess = "public" | "private";
+
+function preferredBlobAccess(): BlobAccess | "auto" {
+  const raw = process.env.BLOB_ACCESS?.trim().toLowerCase();
+  if (raw === "public" || raw === "private") return raw;
+  return "auto";
+}
+
+async function putScheduledBlob(pathname: string, file: File, access: BlobAccess) {
+  return put(pathname, file, {
+    access,
+    addRandomSuffix: true,
+    contentType: file.type,
+  });
+}
 
 export async function POST(req: Request) {
   const user = await getSessionUser();
@@ -65,15 +85,24 @@ export async function POST(req: Request) {
   }
 
   // Namespaced by user so one person's uploads are never in another's prefix.
-  // addRandomSuffix keeps the public URL unguessable and stops same-name collisions.
+  // addRandomSuffix keeps the URL unguessable and stops same-name collisions.
   const safeName = file.name.replace(/[^\w.-]+/g, "_").slice(-80) || "upload";
+  const pathname = `scheduled/${user.id}/${safeName}`;
   let blob: Awaited<ReturnType<typeof put>>;
   try {
-    blob = await put(`scheduled/${user.id}/${safeName}`, file, {
-      access: "public",
-      addRandomSuffix: true,
-      contentType: file.type,
-    });
+    const preference = preferredBlobAccess();
+    if (preference === "auto") {
+      try {
+        blob = await putScheduledBlob(pathname, file, "private");
+      } catch (privateErr) {
+        // Public Blob stores reject access:"private". Fall back so deploys that
+        // have not migrated to a private store still accept uploads.
+        console.warn("private blob upload failed; falling back to public", privateErr);
+        blob = await putScheduledBlob(pathname, file, "public");
+      }
+    } else {
+      blob = await putScheduledBlob(pathname, file, preference);
+    }
   } catch (err) {
     console.error("blob upload failed", err);
     return NextResponse.json({ error: "couldn't store that file - try again" }, { status: 502 });
@@ -99,13 +128,16 @@ export async function POST(req: Request) {
 export async function DELETE(req: Request) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const limited = await rateLimited(user.id, "media_delete");
+  if (limited) return limited;
 
-  const body = (await req.json().catch(() => ({}))) as { id?: unknown; url?: unknown };
+  const body = (await req.json().catch(() => ({}))) as { id?: unknown };
   const id = typeof body.id === "string" ? body.id : "";
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
   const res = await discardStagedMedia(user.id, id);
-  // Best-effort storage cleanup; the row is the source of truth either way.
-  if (res.ok && typeof body.url === "string" && body.url) await del(body.url).catch(() => {});
-  return NextResponse.json(res, { status: res.ok ? 200 : 404 });
+  // Best-effort storage cleanup from the owned DB row URL only - never trust a
+  // client-supplied url (that would let callers delete arbitrary blobs).
+  if (res.ok && res.url) await del(res.url).catch(() => {});
+  return NextResponse.json({ ok: res.ok }, { status: res.ok ? 200 : 404 });
 }

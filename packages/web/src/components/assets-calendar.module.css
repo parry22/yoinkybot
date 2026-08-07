@@ -95,13 +95,24 @@
 }
 
 .channelSoon {
-  opacity: 0.55;
+  opacity: 0.42;
+  pointer-events: none;
+  cursor: default;
 }
 
 .channelSoon em {
   font-style: normal;
   font-size: 10px;
   color: var(--ink-500);
+}
+
+.channelNote {
+  font-size: 11px;
+  color: var(--ink-500);
+  align-self: center;
+  padding: 0 4px;
+  white-space: nowrap;
+  opacity: 0.75;
 }
 
 .distLink {

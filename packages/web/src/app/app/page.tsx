@@ -1,13 +1,20 @@
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/session";
-import { listKnowledgeObjects, resolveWorkspaceContext, roleAtLeast, setIntendedPlan } from "@yoink/backend/web";
+import {
+  getWorkspaceHome,
+  listKnowledgeObjects,
+  resolveWorkspaceContext,
+  roleAtLeast,
+  setIntendedPlan,
+} from "@yoink/backend/web";
 import { Inbox } from "@/components/inbox";
+import { WorkspaceHome } from "@/components/workspace-home";
 
 export const dynamic = "force-dynamic";
 
 const one = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
 
-export default async function InboxPage({
+export default async function HomePage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -20,8 +27,13 @@ export default async function InboxPage({
 
   const workspace = await resolveWorkspaceContext(user.id);
   if (!workspace) redirect("/app/workspaces/new");
-  const objects = await listKnowledgeObjects(user.id, workspace.id).catch(() => []);
 
+  if (workspace.workspaceType === "company") {
+    const home = await getWorkspaceHome(user.id, workspace.id);
+    return <WorkspaceHome workspaceName={workspace.name} home={home} />;
+  }
+
+  const objects = await listKnowledgeObjects(user.id, workspace.id).catch(() => []);
   return (
     <Inbox
       workspaceName={workspace.name}

@@ -1,13 +1,10 @@
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { finalizeLinkedInConnect } from "@yoink/backend/web";
+import { consumeOAuthState, finalizeLinkedInConnect } from "@yoink/backend/web";
 import { getSessionUser } from "@/lib/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
-
-const COOKIE = "linkedin_oauth";
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -15,9 +12,9 @@ export async function GET(req: Request) {
   const user = await getSessionUser();
   if (!user) return NextResponse.redirect(new URL("/sign-in", origin));
   const code = url.searchParams.get("code");
-  const state = url.searchParams.get("state");
-  const savedState = (await cookies()).get(COOKIE)?.value;
-  if (!code || !state || !savedState || state !== savedState) {
+  const state = url.searchParams.get("state") ?? undefined;
+  const pend = await consumeOAuthState(state, "web_linkedin");
+  if (!code || !pend || pend.userId !== user.id) {
     return NextResponse.redirect(new URL("/app/integrations?connect_error=retry", origin));
   }
   const clientId = process.env.LINKEDIN_CLIENT_ID;
@@ -50,9 +47,7 @@ export async function GET(req: Request) {
       authorUrn: `urn:li:person:${me.sub}`,
       displayName: me.name,
     });
-    const response = NextResponse.redirect(new URL("/app/integrations?connected=linkedin", origin));
-    response.cookies.set(COOKIE, "", { path: "/", maxAge: 0 });
-    return response;
+    return NextResponse.redirect(new URL("/app/integrations?connected=linkedin", origin));
   } catch (err) {
     console.error("linkedin oauth callback failed", err);
     return NextResponse.redirect(new URL("/app/integrations?connect_error=retry", origin));

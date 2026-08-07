@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/session";
+import { requirePaid, upgradeRequiredResponse } from "@/lib/entitlements";
+import { jsonError } from "@/lib/api-error";
 import {
   createCompanyWorkspace,
   ensurePersonalWorkspace,
@@ -20,6 +22,8 @@ export async function GET() {
 export async function POST(req: Request) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const entitlements = await requirePaid(user);
+  if (!entitlements) return upgradeRequiredResponse();
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   try {
     const workspace = await createCompanyWorkspace(user.id, {
@@ -31,14 +35,15 @@ export async function POST(req: Request) {
     });
     return NextResponse.json({ workspace }, { status: 201 });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not create workspace.";
-    return NextResponse.json({ error: message }, { status: 400 });
+    return jsonError(error, "Could not create workspace.");
   }
 }
 
 export async function PATCH(req: Request) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const entitlements = await requirePaid(user);
+  if (!entitlements) return upgradeRequiredResponse();
   const body = (await req.json().catch(() => ({}))) as { workspaceId?: unknown };
   if (typeof body.workspaceId !== "string") {
     return NextResponse.json({ error: "Workspace is required." }, { status: 400 });
@@ -46,8 +51,7 @@ export async function PATCH(req: Request) {
   try {
     const workspace = await setActiveWorkspace(user.id, body.workspaceId);
     return NextResponse.json({ workspace });
-  } catch {
-    return NextResponse.json({ error: "You do not have access to this workspace." }, { status: 403 });
+  } catch (error) {
+    return jsonError(error, "Could not switch workspace.");
   }
 }
-

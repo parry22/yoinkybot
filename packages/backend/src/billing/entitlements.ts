@@ -53,6 +53,22 @@ export function remainingFor(used: number, cap: number | null): number | null {
   return cap === null ? null : Math.max(0, cap - used);
 }
 
+/** Stable error for plan-cap denials. Web routes map this to HTTP 402. */
+export class CapReachedError extends Error {
+  readonly code = "cap_reached" as const;
+  constructor(
+    readonly cap: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "CapReachedError";
+  }
+}
+
+export function assertWithinCap(used: number, cap: number | null, capName: string, message: string): void {
+  if (!withinCap(used, cap)) throw new CapReachedError(capName, message);
+}
+
 const FREE: Entitlements = {
   plan: "free",
   scheduledPostsPerMonth: 0,
@@ -84,13 +100,14 @@ const GROWTH: Omit<Entitlements, "plan"> = {
   // platform each month
   // that still come to you first.
   automationPostsPerMonth: 30,
-  activeWorkspaces: null,
-  membersPerWorkspace: null,
-  expertsPerWorkspace: null,
-  sourceIntegrationsPerWorkspace: null,
-  processedSourceMinutesPerMonth: null,
-  generatedAssetsPerMonth: null,
-  analyticsRetentionDays: null,
+  // Growth company-workspace product caps (enforced in workspaces/production).
+  activeWorkspaces: 3,
+  membersPerWorkspace: 10,
+  expertsPerWorkspace: 8,
+  sourceIntegrationsPerWorkspace: 10,
+  processedSourceMinutesPerMonth: 600,
+  generatedAssetsPerMonth: 120,
+  analyticsRetentionDays: 90,
   maxResurfacePerWeek: 3,
   autoAgent: false,
   consistencyChecks: true,
@@ -114,13 +131,13 @@ const SCALE: Omit<Entitlements, "plan"> = {
   // 90/month per platform ≈ 3 a day: a real hands-off cadence, but still a
   // hard ceiling so a runaway automation can't post unbounded.
   automationPostsPerMonth: 90,
-  activeWorkspaces: null,
-  membersPerWorkspace: null,
-  expertsPerWorkspace: null,
-  sourceIntegrationsPerWorkspace: null,
-  processedSourceMinutesPerMonth: null,
-  generatedAssetsPerMonth: null,
-  analyticsRetentionDays: null,
+  activeWorkspaces: 15,
+  membersPerWorkspace: 50,
+  expertsPerWorkspace: 40,
+  sourceIntegrationsPerWorkspace: 50,
+  processedSourceMinutesPerMonth: 5000,
+  generatedAssetsPerMonth: 1000,
+  analyticsRetentionDays: 365,
   maxResurfacePerWeek: 5,
   autoAgent: true,
   consistencyChecks: true,

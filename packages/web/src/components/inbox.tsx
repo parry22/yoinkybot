@@ -75,6 +75,13 @@ const DEMO_ITEMS: DemoItem[] = [
   },
 ];
 
+/** Demos only when the real queue is empty, and never in production unless explicitly enabled. */
+function demosAllowed(): boolean {
+  if (process.env.NEXT_PUBLIC_SHOW_DEMOS === "true") return true;
+  if (process.env.NEXT_PUBLIC_SHOW_DEMOS === "false") return false;
+  return process.env.NODE_ENV !== "production";
+}
+
 function preview(text: string, max = 120) {
   const clean = text.replace(/\s+/g, " ").trim();
   return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
@@ -132,20 +139,27 @@ export function Inbox({
   canReview: boolean;
 }) {
   const [items, setItems] = useState(initialItems);
-  const [demo, setDemo] = useState(DEMO_ITEMS);
+  const initialQueue = initialItems.filter((item) => item.status === "proposed" || item.status === "reviewed");
+  const [demo, setDemo] = useState(() => (demosAllowed() && initialQueue.length === 0 ? DEMO_ITEMS : []));
   const [busyId, setBusyId] = useState<string | null>(null);
   const [filter, setFilter] = useState<ClassFilter>("all");
-  const [activeId, setActiveId] = useState<string | null>(DEMO_ITEMS[0]?.id ?? null);
+  const [activeId, setActiveId] = useState<string | null>(() => {
+    if (demosAllowed() && initialQueue.length === 0) return DEMO_ITEMS[0]?.id ?? null;
+    return initialQueue[0]?.id ?? null;
+  });
 
   const queue = useMemo(
     () => items.filter((item) => item.status === "proposed" || item.status === "reviewed"),
     [items],
   );
 
+  // Never count demos as real inbox volume; only show them when the queue is empty.
+  const activeDemos = demosAllowed() && queue.length === 0 ? demo : [];
+
   const counts = useMemo(() => {
     const map: Record<ClassFilter, number> = {
-      all: queue.length + demo.length,
-      suggestions: demo.length,
+      all: queue.length + activeDemos.length,
+      suggestions: activeDemos.length,
       insight: queue.filter((item) => item.objectType === "insight").length,
       story: queue.filter((item) => item.objectType === "story").length,
       objection: queue.filter((item) => item.objectType === "objection").length,
@@ -154,12 +168,12 @@ export function Inbox({
       other: queue.filter((item) => isOtherType(item.objectType)).length,
     };
     return map;
-  }, [queue, demo]);
+  }, [queue, activeDemos]);
 
   const visibleDemo = useMemo(() => {
-    if (filter === "all" || filter === "suggestions") return demo;
+    if (filter === "all" || filter === "suggestions") return activeDemos;
     return [];
-  }, [demo, filter]);
+  }, [activeDemos, filter]);
 
   const visibleQueue = useMemo(() => {
     if (filter === "suggestions") return [];
@@ -168,9 +182,10 @@ export function Inbox({
     return queue.filter((item) => item.objectType === filter);
   }, [queue, filter]);
 
-  const total = queue.length + demo.length;
+  const total = queue.length;
   usePageCount(total);
-  const activeDemo = visibleDemo.find((item) => item.id === activeId) ?? demo.find((item) => item.id === activeId) ?? null;
+  const activeDemo =
+    visibleDemo.find((item) => item.id === activeId) ?? activeDemos.find((item) => item.id === activeId) ?? null;
   const activeReal = visibleQueue.find((item) => item.id === activeId) ?? queue.find((item) => item.id === activeId) ?? null;
 
   async function act(objectId: string, status: "approved" | "rejected" | "reviewed") {
@@ -290,7 +305,11 @@ export function Inbox({
               </button>
             ))}
             {visibleDemo.length === 0 && visibleQueue.length === 0 && (
-              <p className={styles.emptyList}>Nothing in this class yet.</p>
+              <p className={styles.emptyList}>
+                {queue.length === 0
+                  ? "Inbox is clear. New captures and suggestions will land here."
+                  : "Nothing in this class yet."}
+              </p>
             )}
           </div>
         </aside>
@@ -363,7 +382,11 @@ export function Inbox({
             </>
           ) : (
             <div className={styles.emptyDetail}>
-              <p>Select an item from {workspaceName}&apos;s inbox.</p>
+              <p>
+                {queue.length === 0
+                  ? `${workspaceName}'s inbox is empty. Capture something to start triage.`
+                  : `Select an item from ${workspaceName}'s inbox.`}
+              </p>
             </div>
           )}
         </section>

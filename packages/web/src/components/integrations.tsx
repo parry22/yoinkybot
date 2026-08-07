@@ -38,7 +38,7 @@ type IntegrationCard = {
 function StatusPill({ status }: { status: IntegrationCard["status"] }) {
   if (status === "connected") return <span className={`${styles.pill} ${styles.pillOn}`}>Connected</span>;
   if (status === "available") return <span className={styles.pill}>Available</span>;
-  return <span className={`${styles.pill} ${styles.pillSoon}`}>Soon</span>;
+  return <span className={`${styles.pill} ${styles.pillSoon}`}>Not live yet</span>;
 }
 
 function Card({ item }: { item: IntegrationCard }) {
@@ -216,6 +216,11 @@ export function Integrations({
     },
   ];
 
+  const publishLive = publish.filter((item) => item.status !== "soon");
+  const publishSoon = publish.filter((item) => item.status === "soon");
+  const sourcesLive = sources.filter((item) => item.status !== "soon");
+  const sourcesSoon = sources.filter((item) => item.status === "soon");
+
   return (
     <div className={styles.page}>
       <div className={styles.inner}>
@@ -233,21 +238,43 @@ export function Integrations({
             <h2>Publish</h2>
           </div>
           <div className={styles.grid}>
-            {publish.map((item) => (
+            {publishLive.map((item) => (
               <Card key={item.id} item={item} />
             ))}
           </div>
+          {publishSoon.length > 0 && (
+            <div className={styles.soonBlock}>
+              <p className={styles.soonLabel}>Coming later — not live</p>
+              <div className={`${styles.grid} ${styles.gridSoon}`}>
+                {publishSoon.map((item) => (
+                  <Card key={item.id} item={item} />
+                ))}
+              </div>
+            </div>
+          )}
         </section>
 
         <section className={styles.section}>
           <div className={styles.sectionHead}>
             <h2>Knowledge sources</h2>
           </div>
-          <div className={styles.grid}>
-            {sources.map((item) => (
-              <Card key={item.id} item={item} />
-            ))}
-          </div>
+          {sourcesLive.length > 0 && (
+            <div className={styles.grid}>
+              {sourcesLive.map((item) => (
+                <Card key={item.id} item={item} />
+              ))}
+            </div>
+          )}
+          {sourcesSoon.length > 0 && (
+            <div className={styles.soonBlock}>
+              <p className={styles.soonLabel}>Coming later — not live</p>
+              <div className={`${styles.grid} ${styles.gridSoon}`}>
+                {sourcesSoon.map((item) => (
+                  <Card key={item.id} item={item} />
+                ))}
+              </div>
+            </div>
+          )}
         </section>
 
         <p className={styles.footnote}>

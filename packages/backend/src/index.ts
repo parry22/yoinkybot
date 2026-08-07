@@ -1,7 +1,7 @@
 import Fastify from "fastify";
 import { config, isDev } from "./config.js";
 import { migrate } from "./db/migrate.js";
-import { startBoss } from "./jobs/boss.js";
+import { startBoss, stopBoss } from "./jobs/boss.js";
 import { registerWorkers } from "./jobs/workers.js";
 import { createBot } from "./telegram/bot.js";
 import { webhookRoutes } from "./routes/webhooks.js";
@@ -80,6 +80,9 @@ async function migrateWithBackoff(): Promise<void> {
 async function main(): Promise<void> {
   await migrateWithBackoff();
 
+  const { markWorkersBooted } = await import("./jobs/health.js");
+  markWorkersBooted();
+
   const boss = await startBoss();
   await registerWorkers(boss);
 
@@ -95,27 +98,63 @@ async function main(): Promise<void> {
   // Telegram-native: the only HTTP surface is health + webhooks.
   const app = Fastify({ logger: { level: isDev ? "info" : "warn" } });
 
-  // `llm` reports whether the single LLM route is configured (key presence only,
-  // never the key) - so "the bot replies but sounds like a broken robot" is
-  // diagnosable with one curl instead of a log dive. Every conversational turn
-  // needs OPENROUTER_API_KEY; without it the bot can only serve fallback lines.
-  // `trends` does the same for the macro-moment pipeline (env drift on a deploy
-  // once silently killed it): provider key presence, the buzz-gate key, and the
-  // age of the last successful fetch.
-  app.get("/health", async () => {
-    const lastTrend = await import("./db/pool.js")
-      .then(({ queryOne }) => queryOne<{ last: string | null }>(`SELECT max(fetched_at)::text AS last FROM trends`))
-      .catch(() => null);
-    return {
-      ok: true,
-      llm: config.LLM_TRANSPORT === "xai" ? Boolean(config.XAI_API_KEY) : Boolean(config.OPENROUTER_API_KEY),
+  // `llm` reports whether the selected LLM transport is configured (key presence
+  // only, never the key) - so "the bot replies but sounds like a broken robot" is
+  // diagnosable with one curl instead of a log dive. `trends` does the same for
+  // the macro-moment pipeline (env drift on a deploy once silently killed it):
+  // provider key presence, the buzz-gate key, and the age of the last successful
+  // fetch. DB ping failure returns HTTP 503 so orchestrators stop routing traffic.
+  const llmConfigured =
+    config.LLM_TRANSPORT === "xai" ? Boolean(config.XAI_API_KEY) : Boolean(config.OPENROUTER_API_KEY);
+  app.get("/health", async (_req, reply) => {
+    const { queryOne } = await import("./db/pool.js");
+    const {
+      evaluateWorkerHealth,
+      fetchQueueDepth,
+      getWorkerHeartbeatAt,
+      getWorkerHeartbeatMs,
+    } = await import("./jobs/health.js");
+    let dbOk = false;
+    try {
+      dbOk = Boolean(await queryOne(`SELECT 1`));
+    } catch {
+      dbOk = false;
+    }
+    const lastTrend = dbOk
+      ? await queryOne<{ last: string | null }>(`SELECT max(fetched_at)::text AS last FROM trends`).catch(
+          () => null,
+        )
+      : null;
+    const depth = dbOk ? await fetchQueueDepth() : null;
+    const heartbeatAt = getWorkerHeartbeatAt();
+    const workerEval = dbOk
+      ? evaluateWorkerHealth({ depth, heartbeatAt: getWorkerHeartbeatMs() })
+      : { ok: false as const };
+    const body = {
+      ok: dbOk && workerEval.ok,
+      llm: llmConfigured,
       analytics: analyticsEnabled(),
       trends: {
         provider: Boolean(config.APIFY_TOKEN || config.BRAVE_API_KEY || config.TAVILY_API_KEY),
         buzz_gate: Boolean(config.TWITTERAPI_IO_KEY),
         last_fetch: lastTrend?.last ?? null,
       },
+      workers: {
+        ok: workerEval.ok,
+        depth: depth ?? { created: 0, retry: 0, active: 0, oldestAgeSec: null },
+        oldestAgeSec: depth?.oldestAgeSec ?? null,
+        heartbeatAt,
+      },
     };
+    if (!dbOk || !workerEval.ok) {
+      if (dbOk && !workerEval.ok) {
+        void import("./lib/alerts.js").then(({ alertAdmin }) =>
+          alertAdmin("queue:stale", `Queue/worker health check failed: ${workerEval.reason ?? "unknown"}`),
+        );
+      }
+      return reply.code(503).send(body);
+    }
+    return body;
   });
   // Telegram-only, no web dashboard - anyone landing on the bare domain in a
   // browser should bounce straight to the actual bot, not see a raw 404.
@@ -159,27 +198,32 @@ async function main(): Promise<void> {
     // The bot without an LLM key is a zombie: it delivers, but every turn falls
     // back to canned lines (exactly the "asks the same question forever" bug).
     // Scream at boot AND page the admin so this can never be a silent state.
-    if (!config.OPENROUTER_API_KEY) {
+    // Check the key for whichever transport is selected (OpenRouter vs xAI).
+    if (!llmConfigured) {
+      const keyName = config.LLM_TRANSPORT === "xai" ? "XAI_API_KEY" : "OPENROUTER_API_KEY";
       console.error(
-        "OPENROUTER_API_KEY is NOT set - every conversational turn will fail into fallback lines. " +
+        `${keyName} is NOT set (LLM_TRANSPORT=${config.LLM_TRANSPORT}) - every conversational turn will fail into fallback lines. ` +
           "Set it in the service env and redeploy. /health reports llm:false until then.",
       );
       void import("./lib/alerts.js").then(({ alertAdmin }) =>
         alertAdmin(
           "llm:unconfigured",
-          "OPENROUTER_API_KEY is not set on this deploy - the bot is running but can only send canned fallback lines. Set it in the service env and redeploy.",
+          `${keyName} is not set on this deploy (LLM_TRANSPORT=${config.LLM_TRANSPORT}) - the bot is running but can only send canned fallback lines. Set it in the service env and redeploy.`,
         ),
       );
     }
   }
 }
 
-// The platform sends SIGTERM before a redeploy. Flush any buffered
-// analytics events so the ones captured in the last few seconds aren't lost;
-// then exit and let the platform restart us.
+// The platform sends SIGTERM before a redeploy. Stop pg-boss so in-flight jobs
+// finish cleanly, flush buffered analytics, then exit for the restart.
 for (const sig of ["SIGTERM", "SIGINT"] as const) {
   process.once(sig, () => {
-    void shutdownAnalytics().finally(() => process.exit(0));
+    void stopBoss()
+      .catch((err) => console.error("stopBoss failed", err))
+      .finally(() => {
+        void shutdownAnalytics().finally(() => process.exit(0));
+      });
   });
 }
 

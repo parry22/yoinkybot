@@ -90,6 +90,13 @@ const DEMO_FLOATS = [
   },
 ];
 
+/** Decorative floats only outside production, unless NEXT_PUBLIC_SHOW_DEMOS=true. */
+function showDemoFloats(): boolean {
+  if (process.env.NEXT_PUBLIC_SHOW_DEMOS === "true") return true;
+  if (process.env.NEXT_PUBLIC_SHOW_DEMOS === "false") return false;
+  return process.env.NODE_ENV !== "production";
+}
+
 const formatDate = (value: string) =>
   new Intl.DateTimeFormat("en-GB", {
     day: "2-digit",
@@ -249,13 +256,14 @@ export function KnowledgeLibrary({
             <span>Company knowledge brain</span>
           </div>
         </div>
-        {DEMO_FLOATS.map((card) => (
-          <article key={card.title} className={`${styles.floatCard} ${card.className}`}>
-            <em>{card.type}</em>
-            <strong>{card.title}</strong>
-            <span>{card.body}</span>
-          </article>
-        ))}
+        {showDemoFloats() &&
+          DEMO_FLOATS.map((card) => (
+            <article key={card.title} className={`${styles.floatCard} ${card.className}`}>
+              <em>{card.type}</em>
+              <strong>{card.title}</strong>
+              <span>{card.body}</span>
+            </article>
+          ))}
       </section>
 
       <aside className={styles.library}>

@@ -56,5 +56,6 @@ export interface ContentAssetView {
   version: number;
   checks: AssetCheckResult | null;
   sourceCount: number;
+  scheduledFor: string | null;
   createdAt: string;
 }

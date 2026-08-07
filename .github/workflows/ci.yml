@@ -1,0 +1,132 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: typecheck · lint · test · build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.0.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm -r typecheck
+
+      - name: Lint (web)
+        run: pnpm --filter @yoink/web lint
+
+      - name: Unit tests
+        run: pnpm -r test
+        env:
+          # Crypto helpers refuse to seal without a key; tests set their own, but
+          # keep a deterministic fallback for any module that imports config early.
+          BYOK_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+
+      - name: Dependency audit (prod, high+)
+        continue-on-error: true
+        run: |
+          pnpm audit --prod --audit-level=high 2>&1 | tee audit-summary.txt || true
+
+      - name: Upload audit summary
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: pnpm-audit-summary
+          path: audit-summary.txt
+          if-no-files-found: ignore
+
+      - name: Build backend + web
+        run: pnpm -r build
+        env:
+          # Next/Clerk read these at build time; stubs are enough for compile.
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_ci_stub
+          CLERK_SECRET_KEY: sk_test_ci_stub
+          NEXT_PUBLIC_CLERK_SIGN_IN_URL: /sign-in
+          NEXT_PUBLIC_CLERK_SIGN_UP_URL: /sign-up
+          DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/yoink
+          SELF_HOSTED: "true"
+          PAYWALL_ENABLED: "false"
+          BYOK_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+          NODE_ENV: production
+
+  # Optional DB integration. Skipped unless DATABASE_URL is set as a repo secret.
+  # Local equivalent (preferred for pgvector + migrations):
+  #   export POSTGRES_PASSWORD=change-me && docker compose up -d db
+  #   export DATABASE_URL=postgres://yoink:change-me@localhost:5432/yoink
+  #   export RUN_DB_INTEGRATION=1
+  #   pnpm db:migrate && pnpm --filter @yoink/backend test
+  # A postgres+pgvector GitHub service container is not wired here — extension
+  # + migration bootstrap is brittle in Actions; use a staging DATABASE_URL secret
+  # or run locally as above.
+  db-integration:
+    name: DB integration (optional)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Require DATABASE_URL secret
+        id: gate
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "DATABASE_URL secret not set — skipping DB integration."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.gate.outputs.skip != 'true'
+        uses: actions/checkout@v4
+
+      - if: steps.gate.outputs.skip != 'true'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.0.0
+
+      - if: steps.gate.outputs.skip != 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - if: steps.gate.outputs.skip != 'true'
+        name: Install
+        run: pnpm install --frozen-lockfile
+
+      - if: steps.gate.outputs.skip != 'true'
+        name: Apply migrations
+        run: pnpm db:migrate
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - if: steps.gate.outputs.skip != 'true'
+        name: Integration tests
+        run: pnpm --filter @yoink/backend test
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          RUN_DB_INTEGRATION: "1"
+          BYOK_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+          SELF_HOSTED: "true"
+          PAYWALL_ENABLED: "false"

@@ -29,6 +29,7 @@ export {
   isPaidOrExempt,
   withinCap,
   remainingFor,
+  CapReachedError,
   type TrialInfo,
   type BillingOverview,
   type Entitlements,
@@ -236,6 +237,8 @@ export {
   deleteCompanyWorkspace,
 } from "./workspaces/service.js";
 export { roleAtLeast, WorkspaceAccessError } from "./workspaces/permissions.js";
+export { createOAuthState, consumeOAuthState } from "./lib/oauth-state.js";
+export type { OAuthStatePlatform, OAuthStateRecord } from "./lib/oauth-state.js";
 export type {
   WorkspaceRole,
   WorkspaceType,
@@ -310,6 +313,7 @@ export {
   buildTrackedCtaUrl,
   listConversionActions,
   recordConversionEvent,
+  conversionWebhookOwnerUserId,
   recordManualInfluence,
   listConversionEvents,
 } from "./distribution/service.js";

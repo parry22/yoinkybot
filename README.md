@@ -181,10 +181,13 @@ You can use other providers. The important constraints are:
 - keep the backend running continuously so scheduled jobs and Telegram delivery are reliable
 - expose the backend and web app through HTTPS
 - use a PostgreSQL database with the `vector` extension
-- set `SELF_HOSTED=true` and `PAYWALL_ENABLED=false`
+- set `SELF_HOSTED=true` and `PAYWALL_ENABLED=false` (hosted production fails fast if the paywall is off while `SELF_HOSTED=false`)
+- set `OAUTH_TOKEN_ENCRYPTION_KEY` or `BYOK_ENCRYPTION_KEY` before storing OAuth posting tokens
+- set `CRON_SECRET` (timing-safe) and `BLOB_READ_WRITE_TOKEN` when using Vercel cron / private Blob
 - keep all API keys in secret environment variables
 - configure backups before storing real user data
 - run only one backend replica with the current in-process scheduler design
+- deploy backend before web when a release includes SQL migrations; Postgres RLS is deferred
 
 See [DEPLOY.md](DEPLOY.md) for the production checklist and provider-specific examples.
 
@@ -197,21 +200,27 @@ Billing code exists only for the managed service. A self-hosted installation doe
 ```bash
 pnpm dev:all      # web and backend
 pnpm typecheck    # all packages
+pnpm --filter @yoink/web lint   # ESLint CLI (Next 16; not `next lint`)
 pnpm test         # backend test suite
-pnpm verify       # typecheck and tests
-pnpm build        # production builds
+pnpm verify       # typecheck + web lint + tests
+pnpm build        # production builds (backend copies SQL migrations into dist)
 pnpm db:migrate   # apply pending database migrations
 ```
+
+CI (`.github/workflows/ci.yml`) runs the same gate on push/PR to `main`. It does not deploy. Optional DB integration needs a `DATABASE_URL` secret, or run locally with `RUN_DB_INTEGRATION=1`.
 
 ## Security
 
 - Provider secrets belong in environment variables only.
-- User tokens and stored credentials are encrypted or kept server-side.
+- Hosted production fails fast if `PAYWALL_ENABLED` is off while `SELF_HOSTED=false`.
+- OAuth posting tokens are sealed with `OAUTH_TOKEN_ENCRYPTION_KEY` (or `BYOK_ENCRYPTION_KEY`).
+- Vercel cron uses `CRON_SECRET` with a timing-safe Bearer compare; private Blob needs `BLOB_READ_WRITE_TOKEN`.
+- Deploy backend before web when a release includes SQL migrations. Postgres RLS is deferred — tenant isolation is app authorization plus same-workspace constraints.
 - Publishing uses official OAuth flows and fails closed when permission is missing.
 - Review your provider costs and rate limits before enabling unattended automation.
 - Rotate any credential that was ever pasted into an issue, chat, commit, or log.
 
-For a vulnerability, do not open a public issue. Use GitHub's private vulnerability reporting for this repository.
+For a vulnerability, do not open a public issue. Use GitHub's private vulnerability reporting for this repository. See [SECURITY.md](SECURITY.md).
 
 ## Contributing
 

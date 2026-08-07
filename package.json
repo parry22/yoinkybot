@@ -10,7 +10,7 @@
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
-    "verify": "pnpm -r typecheck && pnpm -r test",
+    "verify": "pnpm -r typecheck && pnpm --filter @yoink/web lint && pnpm -r test",
     "db:migrate": "pnpm --filter @yoink/backend db:migrate"
   },
   "packageManager": "pnpm@10.0.0",

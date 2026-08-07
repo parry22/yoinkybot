@@ -839,8 +839,9 @@ platform API docs).
 - **Write-scope OAuth (`routes/oauth.ts`) is credential-gated and NOT yet
   live-tested.** `/oauth/:platform/start` (PKCE for X) → provider consent →
   `/oauth/:platform/callback` exchanges the code and stores the token. PKCE
-  verifier + which-user live in an in-memory map keyed by `state` (fine on this
-  single-instance deploy; move to Postgres if it ever scales out). `X_CLIENT_ID/
+  verifier + which-user live in Postgres `oauth_states` (migration `0057`) and
+  are single-consume on callback. Connect tickets are in `oauth_connect_tickets`
+  (reusable inside TTL). `X_CLIENT_ID/
   SECRET` (paid X tier for `tweet.write`) and `LINKEDIN_CLIENT_ID/SECRET`
   (approved `w_member_social` app) are required; without them the routes 503 and
   `/connectposting` tells the user posting isn't set up.
@@ -1939,9 +1940,9 @@ leaked victim id and the attacker grafts their account onto the victim's).
 Identity has left the URL. The bot — which has an authenticated Telegram
 context — mints an opaque 32-byte **connect ticket**, platform-bound, 15-minute
 TTL, reusable inside its window (backing out of X's consent screen must not
-dead-end). Held in memory next to the PKCE map, for the same single-instance
-reason; a restart yields an honest "start the connect again" page rather than a
-wrong-account bind. `lib/connect-tickets.test.ts` covers it.
+dead-end). Stored in Postgres `oauth_connect_tickets` (migration `0057`); OAuth
+PKCE/CSRF state is separate and single-consume via `oauth_states`.
+`lib/connect-tickets.test.ts` and `lib/oauth-state.test.ts` cover both.
 
 **Burst rate limiting (`lib/rate-limit.ts`, `web/src/lib/rate-limit.ts`,
 migration `0036`).** The only backstops on paid work were the monthly entitlement
@@ -2877,15 +2878,32 @@ Phase E keeps execution bounded. `distribution_steps` are deterministic tasks an
 recommendations; only the existing official X and LinkedIn scheduling path publishes.
 Conversion actions issue a random opaque token whose SHA-256 digest is stored. The
 public event endpoint verifies that token, the 24-hour timestamp window, the event
-vocabulary, entity ownership and a workspace-scoped deduplication key. Manual leads,
-opportunities and revenue use `influence_kind='influenced'`; the UI never calls them
-attributed.
+vocabulary, entity ownership and a workspace-scoped deduplication key
+(`UNIQUE (workspace_id, deduplication_key)` from `0048`, re-asserted in `0056`;
+inserts use `ON CONFLICT … DO NOTHING`). Browser sites can drop
+`packages/web/public/conversion-tracker.js` (serves as `/conversion-tracker.js`)
+which POSTs to `/api/conversions/webhook` with `data-action-id` / `data-token`.
+Manual leads, opportunities and revenue use `influence_kind='influenced'`; the UI
+never calls them attributed.
 
 Phase F computes facts in SQL before the model sees them. Knowledge activation,
 territory use, source utilisation, production cycle times and commercial influence
 retain joins back to their underlying objects. The model may summarise those facts in
 an `editorial_review`, but each review stores its facts snapshot and prior reviews are
 never overwritten.
+
+Migration `0056_workspace_boundary_hardening` narrows
+`link_company_publication_performance` so personal captures cannot create company
+`publication_performance_snapshots` (capture workspace must match a company
+publication workspace). **Postgres RLS remains deferred** — tenant isolation stays
+in `requireWorkspaceRole` plus same-workspace FKs / triggers. Hosted production
+fails fast when `PAYWALL_ENABLED` is off (`config.ts` `warnOnDangerousConfig`).
+OAuth tokens seal with `OAUTH_TOKEN_ENCRYPTION_KEY` / `BYOK_ENCRYPTION_KEY`.
+Migration `0057_oauth_states` persists single-consume OAuth handshake state and
+durable connect tickets. Vercel cron uses timing-safe `CRON_SECRET`; private Blob needs
+`BLOB_READ_WRITE_TOKEN`. Release gate: `.github/workflows/ci.yml` (typecheck, lint,
+tests, build — does not deploy). Deploy backend before web when SQL migrations ship.
+See `docs/RELEASE-HARDENING.md` for the live checklist.
 
 ---
 

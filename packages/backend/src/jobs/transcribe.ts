@@ -9,6 +9,10 @@ import { runAsUser } from "../byok/context.js";
 import { isByokUser } from "../byok/keys.js";
 import { extractTranscriptToKnowledge } from "../knowledge/service.js";
 
+/** States from which a capture may (re)enter transcription. */
+export const TRANSCRIBE_CLAIMABLE = ["pending", "received", "failed"] as const;
+export type TranscribeClaimableStatus = (typeof TRANSCRIBE_CLAIMABLE)[number];
+
 /**
  * Voice captures store a Telegram file URL in audio_url. This job downloads the
  * audio, transcribes it, writes the transcript into the immutable capture's
@@ -18,13 +22,30 @@ import { extractTranscriptToKnowledge } from "../knowledge/service.js";
  * transcript runs through the same chat brain as typed text and the reply is
  * DM'd back. Before this, a voice note was a dead end - "Got it, filing" -
  * so a question asked out loud was silently swallowed instead of answered.
+ *
+ * Retries are idempotent: only pending/received/failed rows claim into
+ * `transcribing`. If the capture is already extracting/processed (or mid-
+ * transcribe from another worker), the job returns without re-work.
  */
 export async function handleTranscribe(job: TranscribeJob): Promise<void> {
-  const capture = await queryOne<{ id: string; audio_url: string | null; source: string;workspace_id:string|null;speaker_expert_id:string|null;permission_level:"public"|"internal"|"restricted"|"confidential"|"never_use_for_generation";metadata:Record<string,unknown> }>(
-    `UPDATE captures SET status = 'transcribing' WHERE id = $1 RETURNING id, audio_url, source,workspace_id,speaker_expert_id,permission_level,metadata`,
-    [job.captureId],
+  const capture = await queryOne<{
+    id: string;
+    audio_url: string | null;
+    source: string;
+    workspace_id: string | null;
+    speaker_expert_id: string | null;
+    permission_level: "public" | "internal" | "restricted" | "confidential" | "never_use_for_generation";
+    metadata: Record<string, unknown>;
+  }>(
+    `UPDATE captures SET status = 'transcribing'
+      WHERE id = $1 AND status = ANY($2::text[])
+      RETURNING id, audio_url, source, workspace_id, speaker_expert_id, permission_level, metadata`,
+    [job.captureId, TRANSCRIBE_CLAIMABLE],
   );
-  if (!capture?.audio_url) return;
+  // Already past the claimable start states (transcribing/extracting/gating/
+  // processed) or missing — do not re-download, re-transcribe, or re-extract.
+  if (!capture) return;
+  if (!capture.audio_url) return;
 
   let text: string;
   try {
@@ -54,10 +75,29 @@ export async function handleTranscribe(job: TranscribeJob): Promise<void> {
        WHERE id = $1`,
       [capture.id, text, out.provider],
     );
-    const company=capture.workspace_id?await queryOne<{workspace_type:string;name:string}>(`SELECT workspace_type,name FROM workspaces WHERE id=$1`,[capture.workspace_id]):null;
-    if(capture.workspace_id&&company?.workspace_type==="company"){
-      await extractTranscriptToKnowledge(job.userId,capture.workspace_id,{existingCaptureId:capture.id,title:typeof capture.metadata.title==="string"?capture.metadata.title:`Voice note, ${new Date().toISOString().slice(0,10)}`,transcript:text,sourceType:"voice_note",speakerExpertId:capture.speaker_expert_id,permissionLevel:capture.permission_level});
-    }else{
+    const company = capture.workspace_id
+      ? await queryOne<{ workspace_type: string; name: string }>(
+          `SELECT workspace_type, name FROM workspaces WHERE id = $1`,
+          [capture.workspace_id],
+        )
+      : null;
+    if (capture.workspace_id) {
+      await extractTranscriptToKnowledge(job.userId, capture.workspace_id, {
+        existingCaptureId: capture.id,
+        title:
+          typeof capture.metadata.title === "string"
+            ? capture.metadata.title
+            : `Voice note, ${new Date().toISOString().slice(0, 10)}`,
+        transcript: text,
+        sourceType: "voice_note",
+        speakerExpertId: capture.speaker_expert_id,
+        permissionLevel: capture.permission_level,
+      });
+      // Personal workspaces keep the legacy memory extract path until parity is proven.
+      if (company?.workspace_type !== "company") {
+        await getBoss().send(QUEUES.extract, { captureId: capture.id, userId: job.userId });
+      }
+    } else {
       await getBoss().send(QUEUES.extract, { captureId: capture.id, userId: job.userId });
     }
   } catch (err) {

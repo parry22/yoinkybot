@@ -38,11 +38,12 @@ pnpm db:migrate
 
 ## 2. Configure the backend
 
-Deploy the repository root with `Dockerfile`, or run:
+Deploy the repository root with `Dockerfile` (multi-stage: compiles TypeScript and runs `node dist/index.js`, with `/health` HEALTHCHECK). Or build and run locally:
 
 ```bash
 pnpm install --frozen-lockfile
-pnpm --filter @yoink/backend exec tsx src/index.ts
+pnpm --filter @yoink/backend build
+pnpm --filter @yoink/backend start
 ```
 
 Start from `.env.example`. The minimum useful production configuration is:
@@ -60,6 +61,9 @@ PAYWALL_ENABLED=false
 LLM_TRANSPORT=openrouter
 OPENROUTER_API_KEY=...
 MODEL_CHAT=x-ai/grok-4.5
+
+# Required once you store OAuth posting tokens:
+# BYOK_ENCRYPTION_KEY=...   # or OAUTH_TOKEN_ENCRYPTION_KEY=...
 ```
 
 Add `APIFY_TOKEN` for X and LinkedIn research, OAuth app credentials for publishing, and Telegram variables if you want the bot. The complete provider list is in [README.md](README.md) and `.env.example`.
@@ -111,11 +115,19 @@ Provider approval, scopes, and API pricing are controlled by X and LinkedIn. Che
 
 ## 5. Verify the deployment
 
-Before deploying:
+Before deploying, run the release gate locally (same checks as `.github/workflows/ci.yml`):
 
 ```bash
-pnpm verify
+pnpm verify   # typecheck + web lint + unit tests
 pnpm build
+```
+
+CI on `main` (push/PR) runs frozen-lockfile install, typecheck, lint, unit tests, and a stub-env build. Optional DB integration runs only when the `DATABASE_URL` repo secret is set; otherwise run locally:
+
+```bash
+export DATABASE_URL=postgres://yoink:change-me@localhost:5432/yoink
+export RUN_DB_INTEGRATION=1
+pnpm db:migrate && pnpm --filter @yoink/backend test
 ```
 
 After deploying:
@@ -140,8 +152,8 @@ Test these flows with a non-admin account:
 - Back up PostgreSQL with `pg_dump` or your provider's point-in-time recovery.
 - Keep database backups outside the application host.
 - Run `pnpm verify` and `pnpm build` before upgrading.
-- Deploy the backend first when a release contains a database migration, then deploy the web app.
-- Never edit an already-applied migration. Add a new forward migration.
+- **Migration order: backend first.** Deploy the backend (which applies pending SQL on boot) before the web app whenever a release contains a new migration (`0043`–`0056` and forward). Never edit an already-applied migration — add a new forward file.
+- Postgres **RLS is deferred**; tenant isolation is application authorization (`requireWorkspaceRole`) plus same-workspace foreign keys / CHECK hardening (see `0047`, `0051`, `0056`). Do not assume database RLS.
 - Never commit `.env` files, database dumps, OAuth tokens, or API keys.
 
 The included `.github/workflows/backup.yml` can create nightly encrypted-platform artifacts when `DATABASE_BACKUP_URL` is configured as a GitHub Actions secret.
@@ -150,12 +162,23 @@ The included `.github/workflows/backup.yml` can create nightly encrypted-platfor
 
 The managed Yoinky service uses the same codebase with `SELF_HOSTED=false`, `PAYWALL_ENABLED=true`, and DodoPayments product IDs for Growth and Scale. Open Source installations should leave all Dodo variables empty.
 
+**Hosted production fail-fast:** when `SELF_HOSTED=false` and `NODE_ENV=production`, the process refuses to boot if `PAYWALL_ENABLED` is off (otherwise every user silently receives Scale). Self-hosted installs keep `SELF_HOSTED=true` and `PAYWALL_ENABLED=false`.
+
+Required hosted secrets beyond `.env.example` core:
+
+| Variable | Purpose |
+| --- | --- |
+| `OAUTH_TOKEN_ENCRYPTION_KEY` or `BYOK_ENCRYPTION_KEY` | AES-256-GCM for OAuth posting tokens at rest |
+| `CRON_SECRET` | Timing-safe Bearer check for Vercel cron (`/api/internal/media-cleanup`) |
+| `BLOB_READ_WRITE_TOKEN` | Private Vercel Blob (web upload + Railway media fetch) |
+
 ## Hosted deploy topology (production)
 
 | Surface | Host | URL | Trigger |
 | --- | --- | --- | --- |
 | Web (`packages/web`) | Vercel project `yoinky-web` | https://app.meetyoinky.com | Push to `main` (GitHub ↔ Vercel) |
 | Backend (repo root `Dockerfile`) | Railway service `backend` | https://bot.meetyoinky.com | Push to `main` (GitHub ↔ Railway) |
+| CI gate | `.github/workflows/ci.yml` | — | Push/PR to `main` (does **not** deploy) |
 | Manual fallback | `.github/workflows/deploy.yml` | — | `workflow_dispatch` only (needs `VERCEL_*` / `RAILWAY_TOKEN` secrets) |
 
-Deploy backend first when the release includes a new SQL migration (`0043`–`0053` and forward); the backend applies pending migrations on boot. Then confirm the web deployment.
+Deploy backend first when the release includes a new SQL migration (`0043`–`0056` and forward); the backend applies pending migrations on boot. Then confirm the web deployment. CI verifies code quality only — it does not deploy.

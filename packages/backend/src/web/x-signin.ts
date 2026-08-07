@@ -11,6 +11,7 @@ import { config } from "../config.js";
 import { ensureBoss } from "../jobs/boss.js";
 import { startConnect } from "../strategist/connect.js";
 import { scraperKeysForUser } from "../byok/keys.js";
+import { tokenWriteParams } from "../social/token-crypto.js";
 
 export interface XConnectStatus {
   /**
@@ -39,17 +40,40 @@ export async function finalizeXConnect(
   x: { handle: string; accessToken: string; refreshToken?: string; expiresIn?: number; scope?: string },
 ): Promise<void> {
   const expiresAt = x.expiresIn ? new Date(Date.now() + x.expiresIn * 1000).toISOString() : null;
+  const tokens = tokenWriteParams(x.accessToken, x.refreshToken ?? null);
   await query(
     `INSERT INTO connected_accounts (user_id, platform, handle, status,
-        post_access_token, post_refresh_token, post_token_expires_at, post_scopes)
-     VALUES ($1,'x',$2,'pending',$3,$4,$5,$6)
+        post_access_token, post_access_token_enc, post_access_token_iv, post_access_token_tag,
+        post_refresh_token, post_refresh_token_enc, post_refresh_token_iv, post_refresh_token_tag,
+        post_token_expires_at, post_scopes)
+     VALUES ($1,'x',$2,'pending',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
      ON CONFLICT (user_id, platform) DO UPDATE SET
         handle = EXCLUDED.handle,
         post_access_token = EXCLUDED.post_access_token,
+        post_access_token_enc = EXCLUDED.post_access_token_enc,
+        post_access_token_iv = EXCLUDED.post_access_token_iv,
+        post_access_token_tag = EXCLUDED.post_access_token_tag,
         post_refresh_token = EXCLUDED.post_refresh_token,
+        post_refresh_token_enc = EXCLUDED.post_refresh_token_enc,
+        post_refresh_token_iv = EXCLUDED.post_refresh_token_iv,
+        post_refresh_token_tag = EXCLUDED.post_refresh_token_tag,
         post_token_expires_at = EXCLUDED.post_token_expires_at,
-        post_scopes = EXCLUDED.post_scopes`,
-    [userId, x.handle, x.accessToken, x.refreshToken ?? null, expiresAt, x.scope ?? null],
+        post_scopes = EXCLUDED.post_scopes,
+        post_reauth_required_at = NULL`,
+    [
+      userId,
+      x.handle,
+      tokens.post_access_token,
+      tokens.post_access_token_enc,
+      tokens.post_access_token_iv,
+      tokens.post_access_token_tag,
+      tokens.post_refresh_token,
+      tokens.post_refresh_token_enc,
+      tokens.post_refresh_token_iv,
+      tokens.post_refresh_token_tag,
+      expiresAt,
+      x.scope ?? null,
+    ],
   );
   // The read (ingest + diagnosis) is processed by the backend worker; the web
   // only enqueues it. startConnect keeps the stored token (its upsert only
@@ -68,17 +92,41 @@ export async function finalizeLinkedInConnect(
   linkedIn: { accessToken: string; authorUrn: string; expiresIn?: number; displayName?: string },
 ): Promise<void> {
   const expiresAt = linkedIn.expiresIn ? new Date(Date.now() + linkedIn.expiresIn * 1000).toISOString() : null;
+  const tokens = tokenWriteParams(linkedIn.accessToken, null);
   await query(
     `INSERT INTO connected_accounts
-       (user_id, platform, handle, status, post_access_token, post_token_expires_at, post_scopes, post_author_urn)
-     VALUES ($1,'linkedin',$2,'posting_connected',$3,$4,'w_member_social openid profile',$5)
+       (user_id, platform, handle, status,
+        post_access_token, post_access_token_enc, post_access_token_iv, post_access_token_tag,
+        post_refresh_token, post_refresh_token_enc, post_refresh_token_iv, post_refresh_token_tag,
+        post_token_expires_at, post_scopes, post_author_urn)
+     VALUES ($1,'linkedin',$2,'posting_connected',$3,$4,$5,$6,$7,$8,$9,$10,$11,'w_member_social openid profile',$12)
      ON CONFLICT (user_id, platform) DO UPDATE SET
        post_access_token = EXCLUDED.post_access_token,
+       post_access_token_enc = EXCLUDED.post_access_token_enc,
+       post_access_token_iv = EXCLUDED.post_access_token_iv,
+       post_access_token_tag = EXCLUDED.post_access_token_tag,
+       post_refresh_token = EXCLUDED.post_refresh_token,
+       post_refresh_token_enc = EXCLUDED.post_refresh_token_enc,
+       post_refresh_token_iv = EXCLUDED.post_refresh_token_iv,
+       post_refresh_token_tag = EXCLUDED.post_refresh_token_tag,
        post_token_expires_at = EXCLUDED.post_token_expires_at,
        post_scopes = EXCLUDED.post_scopes,
        post_author_urn = EXCLUDED.post_author_urn,
        post_reauth_required_at = NULL`,
-    [userId, linkedIn.displayName?.trim() || "connected-for-posting", linkedIn.accessToken, expiresAt, linkedIn.authorUrn],
+    [
+      userId,
+      linkedIn.displayName?.trim() || "connected-for-posting",
+      tokens.post_access_token,
+      tokens.post_access_token_enc,
+      tokens.post_access_token_iv,
+      tokens.post_access_token_tag,
+      tokens.post_refresh_token,
+      tokens.post_refresh_token_enc,
+      tokens.post_refresh_token_iv,
+      tokens.post_refresh_token_tag,
+      expiresAt,
+      linkedIn.authorUrn,
+    ],
   );
 }
 

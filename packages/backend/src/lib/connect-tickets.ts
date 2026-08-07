@@ -22,34 +22,30 @@
  * taps the link, backs out of X's consent screen, and taps the same message
  * again is doing something completely normal and must not be dead-ended.
  *
- * In memory, like the PKCE state map next to it, for the reason documented in
- * docs/INTERNAL.md: this backend is single-instance. A restart drops in-flight
- * tickets, and the user gets an honest "start the connect again" page instead of
- * a bind to the wrong account. If this ever scales horizontally, move both to
- * Postgres together.
+ * Stored in Postgres (migration 0057) so a Railway restart doesn't strand
+ * in-flight connect links. OAuth PKCE/CSRF state is separate and single-consume
+ * (see lib/oauth-state.ts).
  */
 import { randomBytes } from "node:crypto";
+import { query, queryOne } from "../db/pool.js";
 import type { Platform } from "./types.js";
 
-interface ConnectTicket {
-  userId: string;
-  platform: Platform;
-  expiresAt: number;
-}
-
-const tickets = new Map<string, ConnectTicket>();
 const TICKET_TTL_MS = 15 * 60 * 1000;
 
-function sweep(): void {
-  const now = Date.now();
-  for (const [key, t] of tickets) if (t.expiresAt < now) tickets.delete(key);
+async function sweep(): Promise<void> {
+  await query(`DELETE FROM oauth_connect_tickets WHERE expires_at < now()`).catch(() => {});
 }
 
 /** Mint a ticket for an already-identified user. Callers must be authenticated. */
-export function mintConnectTicket(userId: string, platform: Platform): string {
-  sweep();
+export async function mintConnectTicket(userId: string, platform: Platform): Promise<string> {
+  await sweep();
   const ticket = randomBytes(32).toString("base64url");
-  tickets.set(ticket, { userId, platform, expiresAt: Date.now() + TICKET_TTL_MS });
+  const expiresAt = new Date(Date.now() + TICKET_TTL_MS).toISOString();
+  await query(
+    `INSERT INTO oauth_connect_tickets (ticket, user_id, platform, expires_at)
+     VALUES ($1, $2, $3, $4)`,
+    [ticket, userId, platform, expiresAt],
+  );
   return ticket;
 }
 
@@ -58,14 +54,15 @@ export function mintConnectTicket(userId: string, platform: Platform): string {
  * for the other platform (so one leg's ticket can't be replayed against the
  * other).
  */
-export function readConnectTicket(ticket: string | undefined, platform: Platform): string | null {
+export async function readConnectTicket(
+  ticket: string | undefined,
+  platform: Platform,
+): Promise<string | null> {
   if (!ticket) return null;
-  const found = tickets.get(ticket);
-  if (!found) return null;
-  if (found.expiresAt < Date.now()) {
-    tickets.delete(ticket);
-    return null;
-  }
-  if (found.platform !== platform) return null;
-  return found.userId;
+  const row = await queryOne<{ user_id: string }>(
+    `SELECT user_id FROM oauth_connect_tickets
+      WHERE ticket = $1 AND platform = $2 AND expires_at >= now()`,
+    [ticket, platform],
+  );
+  return row?.user_id ?? null;
 }

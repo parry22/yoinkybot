@@ -146,6 +146,27 @@
 
 .pillSoon {
   color: var(--ink-500);
+  opacity: 0.85;
+}
+
+.soonBlock {
+  margin-top: 18px;
+}
+
+.soonLabel {
+  margin: 0 0 10px;
+  color: var(--ink-500);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.gridSoon {
+  opacity: 0.72;
+}
+
+.gridSoon .card {
+  background: color-mix(in srgb, var(--surface) 88%, var(--hover));
 }
 
 .connectBtn {
