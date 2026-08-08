@@ -97,7 +97,20 @@
 .emptyList {
   padding: 18px 12px;
   color: var(--ink-500);
-  font-size: 13px;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.emptyList p {
+  margin: 0;
+  max-width: 36ch;
+}
+
+.emptyActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
 }
 
 .row {
