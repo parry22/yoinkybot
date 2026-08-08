@@ -208,11 +208,23 @@ export function Inbox({
               </button>
             ))}
             {visibleQueue.length === 0 && (
-              <p className={styles.emptyList}>
-                {queue.length === 0
-                  ? "Nothing waiting yet. New ideas and captures will show up here."
-                  : "Nothing in this filter yet."}
-              </p>
+              <div className={styles.emptyList}>
+                {queue.length === 0 ? (
+                  <>
+                    <p>Nothing waiting yet. New ideas and captures will show up here.</p>
+                    <div className={styles.emptyActions}>
+                      <Link href="/app/knowledge" className={styles.quietAction}>
+                        Add in Knowledge
+                      </Link>
+                      <Link href="/app/integrations" className={styles.quietAction}>
+                        From Integrations
+                      </Link>
+                    </div>
+                  </>
+                ) : (
+                  <p>Nothing in this filter yet.</p>
+                )}
+              </div>
             )}
           </div>
         </aside>

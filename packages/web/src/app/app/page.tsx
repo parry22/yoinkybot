@@ -1,14 +1,12 @@
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/session";
 import {
-  getWorkspaceHome,
   listKnowledgeObjects,
   resolveWorkspaceContext,
   roleAtLeast,
   setIntendedPlan,
 } from "@yoink/backend/web";
 import { Inbox } from "@/components/inbox";
-import { WorkspaceHome } from "@/components/workspace-home";
 
 export const dynamic = "force-dynamic";
 
@@ -27,11 +25,6 @@ export default async function HomePage({
 
   const workspace = await resolveWorkspaceContext(user.id);
   if (!workspace) redirect("/app/workspaces/new");
-
-  if (workspace.workspaceType === "company") {
-    const home = await getWorkspaceHome(user.id, workspace.id);
-    return <WorkspaceHome workspaceName={workspace.name} home={home} />;
-  }
 
   const objects = await listKnowledgeObjects(user.id, workspace.id).catch(() => []);
   return (
