@@ -286,9 +286,10 @@
   font-size: 12px;
 }
 
-/* The one place colour is information rather than decoration. */
+/* Soft status hint — readable, not alarming. */
 .hintError {
-  color: #d3455b;
+  color: var(--ink-500);
+  font-size: 12px;
 }
 
 /* Solid ink, like the platform's other primary action — but no hue. */

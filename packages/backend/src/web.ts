@@ -298,7 +298,7 @@ export {
   ensureStudioReady,
   studioGenerate,
 } from "./production/service.js";
-export { CONTENT_ASSET_TYPES } from "./production/types.js";
+export { CONTENT_ASSET_TYPES, ATOMIZE_TARGET_FORMATS } from "./production/types.js";
 export type { ContentBriefView, ContentAssetView, ContentAssetType, AssetCheckResult, AssetStatus } from "./production/types.js";
 export type { StudioGenerateInput } from "./production/service.js";
 

@@ -90,6 +90,7 @@ RUN_DB_INTEGRATION=1 pnpm --filter @yoink/backend test
 4. Watch queue via health/logs after inspiration refresh (job should enqueue, not block request)
 5. Pre-launch DB integration: `RUN_DB_INTEGRATION=1 pnpm --filter @yoink/backend test` against staging Postgres
 6. Docker build smoke: `docker build -t yoink-backend .` then run with env + health check
+7. **Remind:** set `SEMRUSH_API_KEY` when enabling blog SEO/GEO research (see `docs/skills/README.md`)
 
 ## Explicitly deferred follow-ups
 - Full Postgres RLS rewrite

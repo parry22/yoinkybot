@@ -21,6 +21,7 @@ import type {
   WorkspaceSourceView,
   EditorialTerritoryView,
 } from "@yoink/backend/web";
+import { useFlashMessage } from "../lib/use-flash-message";
 import { buildBrainNodes } from "./knowledge-brain-scene";
 import { MenuSelect } from "./menu-select";
 import styles from "./knowledge-shelf.module.css";
@@ -132,8 +133,8 @@ export function KnowledgeLibrary({
   const [selectedId, setSelectedId] = useState<string | null>(focusId);
   const [busy, setBusy] = useState(false);
   const [reviewing, setReviewing] = useState<string | null>(null);
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
+  const { message: error, flash: setError, clear: clearError } = useFlashMessage(4000);
+  const { message: notice, flash: setNotice, clear: clearNotice } = useFlashMessage(3500);
   const [transcript, setTranscript] = useState("");
   const [fileName, setFileName] = useState("");
   const [showCapture, setShowCapture] = useState(false);
@@ -181,8 +182,8 @@ export function KnowledgeLibrary({
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
-    setError("");
-    setNotice("");
+    clearError();
+    clearNotice();
     const response = await fetch("/api/knowledge", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -199,7 +200,7 @@ export function KnowledgeLibrary({
       objects?: KnowledgeObjectView[];
     };
     if (!response.ok) {
-      setError(data.error ?? "Could not extract knowledge.");
+      setError(data.error ?? "Couldn't pull ideas from that source. Try again in a moment.");
       setBusy(false);
       return;
     }
@@ -208,7 +209,9 @@ export function KnowledgeLibrary({
       setSelectedId(data.objects[0]?.id ?? null);
     }
     setNotice(
-      (data.objects?.length ?? 0) > 0 ? `${data.objects!.length} items extracted.` : "Source stored.",
+      (data.objects?.length ?? 0) > 0
+        ? `Added ${data.objects!.length} item${data.objects!.length === 1 ? "" : "s"} to Knowledge.`
+        : "Source saved.",
     );
     setShowCapture(false);
     setTranscript("");
@@ -233,7 +236,7 @@ export function KnowledgeLibrary({
         current.map((object) => (object.id === objectId ? data.object! : object)),
       );
     } else {
-      setError(data.error ?? "Could not save review.");
+      setError(data.error ?? "Couldn't save that review. Try again in a moment.");
     }
     setReviewing(null);
   }
@@ -315,8 +318,16 @@ export function KnowledgeLibrary({
             })}
           </div>
 
-          {error && <div className={`${styles.banner} ${styles.bannerError}`}>{error}</div>}
-          {notice && <div className={`${styles.banner} ${styles.bannerOk}`}>{notice}</div>}
+          {error && (
+            <div className={`${styles.banner} ${styles.bannerError}`} role="status">
+              {error}
+            </div>
+          )}
+          {notice && (
+            <div className={`${styles.banner} ${styles.bannerOk}`} role="status">
+              {notice}
+            </div>
+          )}
 
           <div className={styles.list}>
             {objects.length === 0 && !showCapture ? (

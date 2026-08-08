@@ -230,19 +230,94 @@ genuine close is allowed when it fits: a real open question the writer actually 
 a light invitation to weigh in. Never engagement-bait - no "tag someone who", no poll for a poll's
 sake, no question the writer already knows the answer to.`;
 
-/** Extra rules only for LinkedIn member posts. Generic platform advice remains
- * subordinate to the user's own measured history and voice profile. */
-export const LINKEDIN_WRITING_RULES = `LINKEDIN GHOSTWRITER BRIEF
+/** Shared grounding rules for Studio brief drafts and atomized derivatives. */
+export const SOURCE_GROUNDED_RULES = `SOURCE GROUNDING (non-negotiable)
+- Treat company knowledge objects, approved claims/proof, past X/LinkedIn posts, and connected
+  integrations in context (Slack, Granola, etc. when present) as the only factual base.
+- Never invent customers, metrics, quotes, employers, credentials, or personal stories.
+- Sound like the named expert/company, not AI. No em dashes. No "In today's…", "Let's dive in",
+  or symmetrical "It's not X. It's Y." crutches.
+- If evidence is thin, say so in the note field rather than filling gaps with generic material.`;
+
+/** Extra rules only for LinkedIn member posts. Incorporates Lara Acosta method essentials
+ * (SMPV, SLAY, line-by-line hooks). Generic platform advice remains subordinate to the user's
+ * own measured history and voice profile. */
+export const LINKEDIN_WRITING_RULES = `LINKEDIN GHOSTWRITER BRIEF (Lara method essentials)
+
+POSITIONING (SMPV — use when available in narrative/voice context)
+- Skill → Market → Problem → Value must be legible in the post. One of three content pillars.
+- Topic consistency: teach craft, founder stories, or opinion reframes — not random topic-hopping.
+
+STRUCTURE
+- Default teach posts: SLAY — Story (3–5 lines, concrete tension) → Lesson (one sentence) →
+  Actionable (3–5 numbered steps) → You (one direct question answerable in one sentence).
+- Counter-intuitive reframe and specificity-stack teach posts are fine when the brief calls for them.
+- Target ~150–250 words. Arrive fast; end on a line that summarises the whole post.
+
+LINE-BY-LINE HOOKS
+- Every line must earn the next. One idea per line; blank line between paragraphs when it fits
+  this person's voice (do not force one-sentence-per-line cadence they do not use).
+- First two lines must survive truncation (~140–210 chars before "…see more").
+- No scaffolding lines ("So here's the thing", "Let me explain", "Long story short").
+- Broad → narrow arc: relatable opener, specific story, niche lesson.
+
+CRAFT
 - Lead with professional relevance and a concrete lesson, observation, or firsthand experience.
-- Prefer proprietary detail already present in the source: what they saw, tried, measured, changed,
-  or learned. Never invent credentials, client results, numbers, employers, or personal stories.
-- Make the post skimmable with natural short paragraphs, but do not manufacture the one-sentence-per-
-  line "LinkedIn influencer" cadence when it is not in this person's voice.
-- Remove X-only mechanics: no thread numbering, quote-tweet framing, @handle shorthand, or references
-  to "this tweet". Rebuild the thought as a native standalone LinkedIn post.
+- Prefer proprietary detail already in the source: what they saw, tried, measured, changed, or learned.
+- Specificity is credibility: real numbers, names, timeframes only when present in sources.
+- No links in the post body; links belong in the first comment if needed.
+- Strip AI tells: em-dash-heavy prose, "In today's fast-paced", tricolon lists, fake vulnerability.
+- Remove X-only mechanics: no thread numbering, quote-tweet framing, @handle shorthand, or
+  references to "this tweet". Rebuild as a native standalone LinkedIn post.
 - A real question that invites professional discussion is fine. Engagement bait, tag-bait, reciprocal
   engagement, automated comments/likes, and fake controversy are not.
-- Use native images or video when they materially prove or clarify the point. Never claim the media
-  contains something you have not seen.
-- Stay inside LinkedIn's Professional Community Policies. Authoring and publishing through the official
-  API is allowed product behavior; bot-like engagement and impersonation are not.`;
+- 0–3 hashtags max, or none. Never use em dashes.
+- Use native images or video when they materially prove or clarify the point. Never claim media
+  you have not seen.
+- Stay inside LinkedIn's Professional Community Policies.`;
+
+/** Newsletter section / issue fragment rules (Substack-style). */
+export const NEWSLETTER_WRITING_RULES = `NEWSLETTER WRITING BRIEF
+- Promise-first: the subject line energy lives in the opening — what the reader gets, not what you did.
+- Structure: hook → turn → body → turn-out → close. One idea per section; no throat-clearing.
+- First-person judgment and earned opinion. Specific scenes, numbers, and names only from sources.
+- Write for a smart subscriber who already cares about the lane — respect what they know.
+- Sections should feel extractable (a reader could quote one paragraph) without listicle padding.
+- No em dashes. No "In today's…", "Let's dive in", or symmetrical contrast crutches.
+- CTA should match the section's job: reply, forward, or continue reading — not engagement bait.`;
+
+/** Blog outline / GEO-first longform rules. */
+export const BLOG_WRITING_RULES = `BLOG OUTLINE BRIEF (SEO + GEO)
+- Answer-first: lead with the direct answer to the search intent, then support it.
+- Question-form H2s that match how buyers actually search. One clear idea per section.
+- Extractable chunks: each section should stand alone for AI citation and skimming.
+- Stats and citations only from supplied sources — never invent benchmarks or customer outcomes.
+- SEO without stuffing: primary keyword in title and early body; natural synonyms; no keyword lists.
+- Include a suggested meta description and 3–5 internal-link anchor ideas grounded in the narrative.
+- No em dashes. No throat-clearing openers or generic "ultimate guide" filler without substance.`;
+
+/** Pick Studio/brief writing rules for a content asset format (and optional channel fallback). */
+export function studioWritingRules(
+  format: string,
+  channel?: "x" | "linkedin",
+): string {
+  const blocks = [SOURCE_GROUNDED_RULES];
+  switch (format) {
+    case "x_post":
+      blocks.push(REACH_PRINCIPLES);
+      break;
+    case "linkedin_post":
+      blocks.push(LINKEDIN_WRITING_RULES);
+      break;
+    case "newsletter_section":
+      blocks.push(NEWSLETTER_WRITING_RULES);
+      break;
+    case "blog_outline":
+      blocks.push(BLOG_WRITING_RULES);
+      break;
+    default:
+      if (channel === "linkedin") blocks.push(LINKEDIN_WRITING_RULES);
+      else if (channel === "x") blocks.push(REACH_PRINCIPLES);
+  }
+  return blocks.join("\n\n");
+}

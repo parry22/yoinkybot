@@ -6,11 +6,12 @@ import { contentBriefPrompt } from "../prompts/content-brief.v1.js";
 import { briefDraftPrompt } from "../prompts/brief-draft.v1.js";
 import { narrativeCheckPrompt } from "../prompts/narrative-check.v1.js";
 import { assetAtomizePrompt } from "../prompts/asset-atomize.v1.js";
+import { enforceStyle, studioWritingRules } from "../prompts/style.js";
 import { schedulePost } from "../scheduling/service.js";
 import { checkConsistency } from "../consistency/check.js";
 import { requireWorkspaceRole, resolveDefaultExpert } from "../workspaces/service.js";
 import { createWorkspaceAudience } from "../narrative/service.js";
-import { CONTENT_ASSET_TYPES, type AssetCheckResult, type ContentAssetType, type ContentAssetView, type ContentBriefView } from "./types.js";
+import { ATOMIZE_TARGET_FORMATS, CONTENT_ASSET_TYPES, type AssetCheckResult, type AtomizeTargetFormat, type ContentAssetType, type ContentAssetView, type ContentBriefView } from "./types.js";
 
 export type StudioGenerateInput = {
   channel?: "x" | "linkedin";
@@ -44,7 +45,7 @@ const checkSchema = z.object({
 });
 const atomizedSchema = z.object({
   assets: z.array(z.object({
-    asset_type: z.enum(CONTENT_ASSET_TYPES),
+    asset_type: z.enum(ATOMIZE_TARGET_FORMATS),
     title: z.string().max(180).catch(""),
     content: z.string().min(20).max(30_000),
   })).min(1).max(8),
@@ -294,6 +295,7 @@ export async function draftFromBrief(userId: string, workspaceId: string, briefI
     `SELECT traits FROM voice_profiles WHERE user_id=$1 ORDER BY version DESC LIMIT 1`, [expert.linkedUserId]) : null;
   const voice=expertVoice??personalVoice;
   const performance=await query<{summary:string}>(`SELECT concat(ca.asset_type,': ',count(*) FILTER(WHERE sp.status='published'),' published') summary FROM content_assets ca LEFT JOIN scheduled_posts sp ON sp.content_asset_id=ca.id WHERE ca.workspace_id=$1 GROUP BY ca.asset_type`,[workspaceId]);
+  const assetType: ContentAssetType = brief.channel === "linkedin" ? "linkedin_post" : "x_post";
   const response = await llmCall({
     userId,eventType:"brief_draft",tier:briefDraftPrompt.tier,system:briefDraftPrompt.system,
     user:briefDraftPrompt.render({ workspace:workspace.name,
@@ -304,6 +306,7 @@ export async function draftFromBrief(userId: string, workspaceId: string, briefI
       approvedClaims:sources.filter(source=>source.object_type==="claim").map(source=>source.body),
       proof:sources.filter(source=>source.object_type==="proof").map(source=>source.body),
       channelRules:brief.channel==="linkedin"?"Professional utility, credible whitespace, no engagement bait and at most three hashtags.":"Concise, sharp and native to X.",
+      writingRules:studioWritingRules(assetType, brief.channel),
       performanceEvidence:performance.map(item=>item.summary),
       marketContext:sources.filter(source=>source.object_type==="market_signal").map(source=>source.body),
       objective:brief.objective,beliefShift:brief.desired_belief_shift,channel:brief.channel,format:brief.format,
@@ -311,12 +314,12 @@ export async function draftFromBrief(userId: string, workspaceId: string, briefI
     }),json:true,maxTokens:2200,
   });
   const generated = assetSchema.parse(response.parsed);
-  const content = generated.content.replace(/—/g, ",");
+  const content = enforceStyle(generated.content);
   const assetId = await withTransaction(async (client) => {
     const row = await client.query<{id:string}>(
       `INSERT INTO content_assets (workspace_id,brief_id,expert_id,asset_type,title,status,created_by)
        VALUES ($1,$2,$3,$4,$5,'needs_review','model') RETURNING id`,
-      [workspaceId,briefId,expert.id,brief.channel === "linkedin" ? "linkedin_post" : "x_post",generated.title.trim() || brief.objective.slice(0, 180)]);
+      [workspaceId,briefId,expert.id,assetType,generated.title.trim() || brief.objective.slice(0, 180)]);
     const id = row.rows[0]?.id;
     if (!id) throw new Error("Could not save content asset.");
     await client.query(`INSERT INTO content_asset_versions (asset_id,version,content,created_by_model,change_summary) VALUES ($1,1,$2,$3,'Initial brief-driven draft')`, [id,content,"grok-4.3"]);
@@ -335,7 +338,8 @@ export async function atomizeContentAsset(
   targetFormats: ContentAssetType[],
 ): Promise<ContentAssetView[]> {
   const workspace = await requireWorkspaceRole(userId, workspaceId, "contributor");
-  const requested = [...new Set(targetFormats)].filter((format): format is ContentAssetType => CONTENT_ASSET_TYPES.includes(format));
+  const requested = [...new Set(targetFormats)].filter((format): format is AtomizeTargetFormat =>
+    (ATOMIZE_TARGET_FORMATS as readonly string[]).includes(format));
   if (requested.length === 0 || requested.length > 6) throw new Error("Choose between one and six supported target formats.");
   const source = await queryOne<{ brief_id:string; content:string; title:string; status:string }>(
     `SELECT ca.brief_id,ca.title,ca.status,cav.content
@@ -374,7 +378,7 @@ export async function atomizeContentAsset(
         [workspaceId,source.brief_id,target,item.title.trim()||`${source.title} derivative`,assetId]);
       const id=row.rows[0]?.id; if(!id)throw new Error("Could not save derivative.");
       await client.query(`INSERT INTO content_asset_versions (asset_id,version,content,created_by_model,change_summary) VALUES ($1,1,$2,$3,$4)`,
-        [id,item.content.replace(/—/g,","),"grok-4.3",`Channel-native derivative of ${assetId}`]);
+        [id,enforceStyle(item.content),"grok-4.3",`Channel-native derivative of ${assetId}`]);
       await client.query(`INSERT INTO content_lineage (workspace_id,source_type,source_id,target_type,target_id,relationship_type) VALUES ($1,'brief',$2,'asset',$3,'produced') ON CONFLICT DO NOTHING`,[workspaceId,source.brief_id,id]);
       await client.query(`INSERT INTO content_lineage (workspace_id,source_type,source_id,target_type,target_id,relationship_type) VALUES ($1,'asset',$2,'asset',$3,'atomized_into') ON CONFLICT DO NOTHING`,[workspaceId,assetId,id]);
       ids.push(id);

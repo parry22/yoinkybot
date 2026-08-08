@@ -543,8 +543,9 @@
 }
 
 .bannerError {
-  background: rgba(211, 69, 91, 0.1);
-  color: #a13347;
+  background: color-mix(in srgb, var(--ink-500) 7%, var(--surface));
+  color: var(--ink-600);
+  border: 0.5px solid color-mix(in srgb, var(--ink-500) 14%, transparent);
 }
 
 .bannerOk {

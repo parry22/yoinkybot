@@ -10,23 +10,22 @@ import {
   Tick02Icon,
 } from "@hugeicons/core-free-icons";
 import type { ContentAssetView, KnowledgeObjectView } from "@yoink/backend/web";
+import { useFlashMessage } from "../lib/use-flash-message";
 import { MenuSelect } from "./menu-select";
 import chat from "./chat.module.css";
 import styles from "./studio.module.css";
 
 const FORMATS = [
-  { id: "x_post", label: "Tweet / X" },
-  { id: "linkedin_post", label: "LinkedIn" },
-  { id: "newsletter_section", label: "Newsletter" },
-  { id: "blog_outline", label: "Blog" },
-  { id: "carousel_outline", label: "Carousel" },
-  { id: "youtube_video_script", label: "YouTube video script" },
-  { id: "short_video_script", label: "Shortform video script" },
-  { id: "reddit_post", label: "Reddit" },
-  { id: "email", label: "Email" },
-  { id: "slides_outline", label: "Slides" },
-  { id: "landing_page_section", label: "Landing page sections" },
+  { id: "x_post", label: "Tweet / X", comingSoon: false },
+  { id: "linkedin_post", label: "LinkedIn", comingSoon: false },
+  { id: "newsletter_section", label: "Newsletter", comingSoon: false },
+  { id: "blog_outline", label: "Blog", comingSoon: false },
+  { id: "short_video_script", label: "Shortform Videos", comingSoon: true },
+  { id: "reddit_post", label: "Reddit", comingSoon: true },
+  { id: "carousel_outline", label: "Carousels", comingSoon: true },
 ] as const;
+
+const LIVE_FORMATS = FORMATS.filter((item) => !item.comingSoon);
 
 const TONES = [
   { id: "founder", label: "Founder Voice" },
@@ -35,6 +34,8 @@ const TONES = [
   { id: "sharp", label: "Sharp & Direct" },
   { id: "warm", label: "Warm & Human" },
 ] as const;
+
+type LiveFormatId = (typeof LIVE_FORMATS)[number]["id"];
 
 type Message = {
   id: string;
@@ -47,6 +48,20 @@ type Message = {
 function preview(text: string, max = 90) {
   const clean = text.replace(/\s+/g, " ").trim();
   return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
+}
+
+function friendlyStudioError(raw: string | undefined, fallback: string) {
+  const text = (raw ?? "").trim();
+  if (!text) return fallback;
+  if (/prompt|knowledge|pick/i.test(text)) return "Add a note or choose something from Knowledge to get started.";
+  if (/variant|approve|pending/i.test(text)) return "Finish one draft first, then we can make versions for other channels.";
+  if (/generate|draft/i.test(text)) return "That draft didn't come through. Try again in a moment.";
+  if (/network|fetch|failed/i.test(text)) return "Something went wrong on our side. Try again in a moment.";
+  // Soften leftover jargon without inventing a new message when the API is already clear.
+  return text
+    .replace(/\basset\b/gi, "draft")
+    .replace(/\batomize\b/gi, "create versions")
+    .replace(/\bprereq(uisite)?s?\b/gi, "setup step");
 }
 
 export function Studio({
@@ -62,6 +77,7 @@ export function Studio({
   const seedId = searchParams.get("knowledge");
   const scrollRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const { message: error, flash: setError, clear: clearError } = useFlashMessage(4000);
 
   const cards = useMemo(
     () => knowledge.filter((item) => ["approved", "reviewed", "proposed"].includes(item.status)),
@@ -69,11 +85,10 @@ export function Studio({
   );
 
   const [selected, setSelected] = useState<string[]>(seedId ? [seedId] : []);
-  const [format, setFormat] = useState<(typeof FORMATS)[number]["id"]>("linkedin_post");
+  const [format, setFormat] = useState<LiveFormatId>("linkedin_post");
   const [tone, setTone] = useState<(typeof TONES)[number]["id"]>("founder");
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
   const [prereqHref, setPrereqHref] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [lastAssetId, setLastAssetId] = useState<string | null>(null);
@@ -107,7 +122,7 @@ export function Studio({
     const prompt = (promptRaw ?? input).trim();
     if (busy) return;
     if (!prompt && selected.length === 0) {
-      setError("Add a prompt or pick knowledge first.");
+      setError("Add a note or choose something from Knowledge to get started.");
       return;
     }
 
@@ -119,11 +134,11 @@ export function Studio({
         id: crypto.randomUUID(),
         role: "user",
         content: prompt || `Generate a ${formatLabel} draft`,
-        meta: `${formatLabel} · ${toneLabel}${selectedCards.length ? ` · ${selectedCards.length} knowledge` : ""}`,
+        meta: `${formatLabel} · ${toneLabel}${selectedCards.length ? ` · ${selectedCards.length} from Knowledge` : ""}`,
       },
     ]);
     setInput("");
-    setError("");
+    clearError();
     setBusy(true);
 
     const response = await fetch("/api/briefs", {
@@ -145,7 +160,7 @@ export function Studio({
     };
 
     if (!response.ok || !data.asset) {
-      setError(data.error ?? "Could not generate a draft.");
+      setError(friendlyStudioError(data.error, "That draft didn't come through. Try again in a moment."));
       if (data.href) setPrereqHref(data.href);
       setBusy(false);
       return;
@@ -170,18 +185,17 @@ export function Studio({
 
   async function createVariants() {
     if (!lastAssetId) {
-      setError("Generate a draft first, then create variants.");
+      setError("Make one draft first, then we can spin versions for other channels.");
       return;
     }
     setBusy(true);
-    setError("");
+    clearError();
 
     const approveRes = await fetch("/api/briefs", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ action: "approve_asset", assetId: lastAssetId }),
     });
-    // If approval fails because it's already approved, continue; otherwise surface.
     if (!approveRes.ok) {
       const approveData = (await approveRes.json().catch(() => ({}))) as { error?: string };
       const message = approveData.error ?? "";
@@ -190,7 +204,7 @@ export function Studio({
       }
     }
 
-    const targets = FORMATS.map((item) => item.id).filter((id) => id !== format).slice(0, 3);
+    const targets = LIVE_FORMATS.map((item) => item.id).filter((id) => id !== format).slice(0, 3);
     const response = await fetch("/api/briefs", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -198,7 +212,12 @@ export function Studio({
     });
     const data = (await response.json().catch(() => ({}))) as { assets?: ContentAssetView[]; error?: string };
     if (!response.ok) {
-      setError(data.error ?? "Could not create variants. Approve the draft first if checks are still pending.");
+      setError(
+        friendlyStudioError(
+          data.error,
+          "Couldn't create those versions just yet. Try again after the draft is ready.",
+        ),
+      );
       setBusy(false);
       return;
     }
@@ -209,7 +228,7 @@ export function Studio({
           id: crypto.randomUUID(),
           role: "assistant",
           content: asset.content,
-          meta: `${FORMATS.find((item) => item.id === asset.assetType)?.label ?? asset.assetType} variant`,
+          meta: `${FORMATS.find((item) => item.id === asset.assetType)?.label ?? asset.assetType} version`,
           assetId: asset.id,
         },
       ]);
@@ -246,15 +265,15 @@ export function Studio({
               <div className={chat.header}>
                 <div className={chat.greeting}>What should we make?</div>
                 <div className={chat.sub}>
-                  Pick knowledge below, choose format in the composer, then describe the draft.
+                  Choose something from Knowledge, pick a format, then tell us what you want.
                 </div>
               </div>
               <div className={chat.empty}>
                 {[
-                  { title: "LinkedIn from a customer story", sub: "Narrative proof, short and useful." },
+                  { title: "LinkedIn from a customer story", sub: "Real proof, short and useful." },
                   { title: "Tweet / X thread from an objection", sub: "Turn pushback into a sharp take." },
                   { title: "Newsletter from a framework", sub: "One idea, clear sections." },
-                  { title: "Carousel from a claim + proof", sub: "Outline slides with source trail." },
+                  { title: "Blog from a claim + proof", sub: "Outline grounded in what you already know." },
                 ].map((item) => (
                   <button
                     key={item.title}
@@ -283,13 +302,13 @@ export function Studio({
               ),
             )
           )}
-          {busy && <div className={chat.msg}>Generating…</div>}
+          {busy && <div className={chat.msg}>Writing…</div>}
         </div>
       </div>
 
       <form className={chat.composerWrap} onSubmit={onSubmit}>
         {!canGenerate && (
-          <p className={styles.readOnlyNote}>Editor access is required to generate drafts in Studio.</p>
+          <p className={styles.readOnlyNote}>You need edit access to create drafts here.</p>
         )}
         {cards.length > 0 && (
           <div className={styles.knowledgeRow}>
@@ -318,7 +337,7 @@ export function Studio({
             value={input}
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="Ask for a draft…"
+            placeholder="What should this draft say?"
             rows={1}
             disabled={!canGenerate}
           />
@@ -328,8 +347,13 @@ export function Studio({
                 compact
                 ariaLabel="Format"
                 value={format}
-                options={FORMATS.map((item) => ({ value: item.id, label: item.label }))}
-                onChange={(value) => setFormat(value as (typeof FORMATS)[number]["id"])}
+                options={FORMATS.map((item) => ({
+                  value: item.id,
+                  label: item.label,
+                  disabled: item.comingSoon,
+                  badge: item.comingSoon ? "Coming soon" : undefined,
+                }))}
+                onChange={(value) => setFormat(value as LiveFormatId)}
                 disabled={!canGenerate}
               />
               <MenuSelect
@@ -341,13 +365,13 @@ export function Studio({
                 disabled={!canGenerate}
               />
               {error && (
-                <span className={chat.hintError}>
+                <span className={chat.hintError} role="status">
                   {error}
                   {prereqHref && (
                     <>
                       {" "}
                       <a href={prereqHref} className={styles.prereqLink}>
-                        Fix this
+                        Open setup
                       </a>
                     </>
                   )}
@@ -358,7 +382,7 @@ export function Studio({
               <button type="button" className={styles.iconBtn} onClick={() => void copyLast()} disabled={messages.length === 0} title="Copy last draft">
                 <HugeiconsIcon icon={copied ? Tick02Icon : Copy01Icon} size={15} />
               </button>
-              <button type="button" className={styles.iconBtn} onClick={() => void createVariants()} disabled={busy || !canGenerate} title="Create variants">
+              <button type="button" className={styles.iconBtn} onClick={() => void createVariants()} disabled={busy || !canGenerate} title="Create versions">
                 <HugeiconsIcon icon={Layers01Icon} size={15} />
               </button>
               <button

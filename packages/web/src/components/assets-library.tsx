@@ -10,6 +10,7 @@ import {
   Tick02Icon,
 } from "@hugeicons/core-free-icons";
 import type { ContentAssetView } from "@yoink/backend/web";
+import { useFlashMessage } from "../lib/use-flash-message";
 import { BeehiivLogo, LinkedInLogo, SubstackLogo, XLogo } from "./integration-logos";
 import styles from "./assets-calendar.module.css";
 
@@ -76,8 +77,8 @@ export function AssetsLibrary({
   const [draftsOpen, setDraftsOpen] = useState(false);
   const [channels, setChannels] = useState<LiveChannelId[]>(["x", "linkedin"]);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [notice, setNotice] = useState("");
-  const [error, setError] = useState("");
+  const { message: notice, flash: setNotice, clear: clearNotice } = useFlashMessage(3500);
+  const { message: error, flash: setError, clear: clearError } = useFlashMessage(4000);
   const [scheduledLocal, setScheduledLocal] = useState<Record<string, string>>(() => {
     const initial: Record<string, string> = {};
     for (const asset of initialAssets) {
@@ -145,12 +146,12 @@ export function AssetsLibrary({
 
   async function publish(asset: ContentAssetView) {
     if (liveChannels.length === 0) {
-      setError("Pick X and/or LinkedIn to publish.");
+      setError("Choose X and/or LinkedIn first.");
       return;
     }
     setBusyId(asset.id);
-    setError("");
-    setNotice("");
+    clearError();
+    clearNotice();
 
     const scheduledFor = new Date(selectedDay);
     scheduledFor.setHours(10, 0, 0, 0);
@@ -164,7 +165,7 @@ export function AssetsLibrary({
       });
       if (!approveRes.ok) {
         const data = (await approveRes.json().catch(() => ({}))) as { error?: string };
-        setError(data.error ?? "Could not approve this asset for publishing.");
+        setError(data.error ?? "Couldn't get this draft ready to publish. Try again in a moment.");
         setBusyId(null);
         return;
       }
@@ -189,7 +190,7 @@ export function AssetsLibrary({
     };
 
     if (!response.ok) {
-      setError(data.error ?? "Could not schedule this asset.");
+      setError(data.error ?? "Couldn't schedule that. Try again in a moment.");
       setBusyId(null);
       return;
     }
@@ -266,8 +267,16 @@ export function AssetsLibrary({
         </button>
       </div>
 
-      {error && <div className={`${styles.banner} ${styles.bannerError}`}>{error}</div>}
-      {notice && <div className={`${styles.banner} ${styles.bannerOk}`}>{notice}</div>}
+      {error && (
+        <div className={`${styles.banner} ${styles.bannerError}`} role="status">
+          {error}
+        </div>
+      )}
+      {notice && (
+        <div className={`${styles.banner} ${styles.bannerOk}`} role="status">
+          {notice}
+        </div>
+      )}
 
       <div className={styles.body}>
         <div className={styles.weekdays}>

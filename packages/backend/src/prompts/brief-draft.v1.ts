@@ -9,6 +9,7 @@ export interface BriefDraftVars {
   approvedClaims: string[];
   proof: string[];
   channelRules: string;
+  writingRules: string;
   performanceEvidence: string[];
   marketContext: string[];
   objective: string;
@@ -31,11 +32,11 @@ Rules:
 - Write in the named expert's voice. Do not blend multiple experts.
 - Keep the active narrative as strategic direction, not copy to repeat verbatim.
 - Make the opening specific and useful. Avoid generic scene-setting.
-- For LinkedIn: use clean whitespace, natural professional language, no fake vulnerability, no engagement bait, no more than 3 hashtags and no em dashes.
-- For X: be concise, sharp and native to the platform.
 - If evidence is qualified, preserve the qualification.
-- The CTA must feel proportionate to the post.`,
+- The CTA must feel proportionate to the post.
+- Follow the PLATFORM WRITING RULES block in the user message exactly.`,
   render: (vars) => [
+    `PLATFORM WRITING RULES\n${vars.writingRules}\n`,
     `Workspace: ${vars.workspace}`,
     `Active narrative: ${vars.narrative}`,
     `Expert: ${vars.expert}`,

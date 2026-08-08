@@ -8,12 +8,12 @@
 
 .bannerError {
   margin: 10px 12px 0;
-  padding: 10px 12px;
-  border: 0.5px solid rgba(180, 60, 90, 0.35);
+  padding: 8px 12px;
+  border: 0.5px solid color-mix(in srgb, var(--ink-500) 18%, transparent);
   border-radius: 10px;
-  background: rgba(180, 60, 90, 0.08);
-  color: #b43c5a;
-  font-size: 13px;
+  background: color-mix(in srgb, var(--ink-500) 6%, var(--surface));
+  color: var(--ink-600);
+  font-size: 12.5px;
 }
 
 .shell {

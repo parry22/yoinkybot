@@ -38,6 +38,15 @@ export const CONTENT_ASSET_TYPES = [
 ] as const;
 export type ContentAssetType = (typeof CONTENT_ASSET_TYPES)[number];
 
+/** Formats Studio atomize may target (live formats only). */
+export const ATOMIZE_TARGET_FORMATS = [
+  "x_post",
+  "linkedin_post",
+  "newsletter_section",
+  "blog_outline",
+] as const satisfies readonly ContentAssetType[];
+export type AtomizeTargetFormat = (typeof ATOMIZE_TARGET_FORMATS)[number];
+
 export interface AssetCheckResult {
   status: "clear" | "position_conflict" | "narrative_drift" | "unsupported_claim" | "prohibited_claim" | "confidential_source" | "intentional_evolution";
   issues: string[];

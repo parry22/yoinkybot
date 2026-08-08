@@ -5,7 +5,12 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
 import styles from "./menu-select.module.css";
 
-export type MenuOption = { value: string; label: string };
+export type MenuOption = {
+  value: string;
+  label: string;
+  disabled?: boolean;
+  badge?: string;
+};
 
 export function MenuSelect({
   value,
@@ -31,7 +36,7 @@ export function MenuSelect({
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const listId = useId();
-  const selected = options.find((option) => option.value === value) ?? options[0];
+  const selected = options.find((option) => option.value === value) ?? options.find((option) => !option.disabled) ?? options[0];
 
   useEffect(() => {
     if (!open) return;
@@ -86,16 +91,19 @@ export function MenuSelect({
           role="listbox"
         >
           {options.map((option) => (
-            <li key={option.value} role="option" aria-selected={option.value === value}>
+            <li key={option.value} role="option" aria-selected={option.value === value} aria-disabled={option.disabled}>
               <button
                 type="button"
-                className={`${styles.option} ${option.value === value ? styles.optionOn : ""}`}
+                className={`${styles.option} ${option.value === value ? styles.optionOn : ""} ${option.disabled ? styles.optionDisabled : ""}`}
+                disabled={option.disabled}
                 onClick={() => {
+                  if (option.disabled) return;
                   onChange(option.value);
                   setOpen(false);
                 }}
               >
-                {option.label}
+                <span className={styles.optionLabel}>{option.label}</span>
+                {option.badge ? <span className={styles.optionBadge}>{option.badge}</span> : null}
               </button>
             </li>
           ))}
