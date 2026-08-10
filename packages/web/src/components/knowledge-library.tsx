@@ -367,6 +367,7 @@ export function KnowledgeLibrary({
   return (
     <div className={styles.page}>
       <section className={styles.stage} aria-hidden="true">
+        <div className={styles.faceAura} />
         <div className={styles.headFigure}>
           <Image
             src="/knowledge/human-head-seamless.png"
@@ -375,13 +376,6 @@ export function KnowledgeLibrary({
             priority
             sizes="(max-width: 1000px) 0px, 58vw"
           />
-        </div>
-        <div className={styles.brand}>
-          <img src="/favicon.png" alt="" className={styles.brandMark} />
-          <div className={styles.brandCopy}>
-            <strong>Yoinky</strong>
-            <span>Company knowledge brain</span>
-          </div>
         </div>
         {orbitCards.map((card, index) => (
           <div key={`${card.title}-${index}`} className={`${styles.orbitPath} ${styles[`orbit${index + 1}`]}`}>

@@ -16,7 +16,7 @@
 
 .headFigure {
   position: absolute;
-  inset: 7% 11% 0;
+  inset: 8% 5% 1%;
   z-index: 1;
   pointer-events: none;
   mask-image: radial-gradient(ellipse 74% 73% at center, #000 55%, transparent 91%);
@@ -27,49 +27,37 @@
   object-fit: contain;
 }
 
-.brand {
+.faceAura {
   position: absolute;
-  left: 22px;
-  top: 20px;
-  z-index: 3;
-  display: flex;
-  align-items: center;
-  gap: 10px;
+  z-index: 0;
+  left: 50%;
+  top: 50%;
+  width: min(42vw, 480px);
+  aspect-ratio: 1;
+  border-radius: 50%;
   pointer-events: none;
+  background: radial-gradient(circle, rgba(242, 194, 215, 0.12) 0%, rgba(225, 206, 246, 0.1) 34%, transparent 70%);
+  transform: translate(-50%, -50%) scale(0.94);
+  animation: auraBreathe 9s ease-in-out infinite;
 }
 
-.brandMark {
-  width: 28px;
-  height: 28px;
-  object-fit: contain;
-  filter: drop-shadow(0 5px 12px rgba(54, 112, 177, 0.2));
-}
-
-.brandCopy strong {
-  display: block;
-  color: var(--ink-900);
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: -0.03em;
-}
-
-.brandCopy span {
-  display: block;
-  margin-top: 2px;
-  color: var(--ink-600);
-  font-size: 12px;
+.faceAura::after {
+  position: absolute;
+  inset: 9%;
+  border: 1px solid rgba(204, 174, 222, 0.2);
+  border-radius: inherit;
+  content: "";
+  animation: auraRing 12s ease-in-out infinite;
 }
 
 .orbitPath {
   position: absolute;
-  z-index: 2;
   left: 50%;
-  top: 51%;
+  top: var(--orbit-y);
   width: 0;
   height: 0;
-  transform: rotate(var(--orbit-angle));
-  transform-origin: center;
-  animation: orbitTurn var(--orbit-duration) linear infinite;
+  z-index: 2;
+  animation: orbitLayer var(--orbit-duration) linear infinite;
   animation-delay: var(--orbit-delay);
 }
 
@@ -84,8 +72,10 @@
   backdrop-filter: blur(10px);
   color: var(--ink-900);
   pointer-events: none;
-  transform: translate(-50%, -50%) translateX(var(--orbit-distance));
-  animation: keepCardUpright var(--orbit-duration) linear infinite;
+  transform: translate(-50%, -50%);
+  transform-origin: center;
+  will-change: transform, opacity, filter;
+  animation: orbitAcrossFace var(--orbit-duration) linear infinite;
   animation-delay: var(--orbit-delay);
 }
 
@@ -117,31 +107,31 @@
 }
 
 .orbit1 {
-  --orbit-angle: -36deg;
-  --orbit-distance: min(31vw, 292px);
-  --orbit-duration: 34s;
+  --orbit-y: 34%;
+  --orbit-radius: min(25vw, 250px);
+  --orbit-duration: 36s;
   --orbit-delay: 0s;
 }
 
 .orbit2 {
-  --orbit-angle: 54deg;
-  --orbit-distance: min(34vw, 324px);
-  --orbit-duration: 34s;
-  --orbit-delay: -8.5s;
+  --orbit-y: 45%;
+  --orbit-radius: min(29vw, 286px);
+  --orbit-duration: 36s;
+  --orbit-delay: -9s;
 }
 
 .orbit3 {
-  --orbit-angle: 144deg;
-  --orbit-distance: min(31vw, 292px);
-  --orbit-duration: 34s;
-  --orbit-delay: -17s;
+  --orbit-y: 57%;
+  --orbit-radius: min(27vw, 266px);
+  --orbit-duration: 36s;
+  --orbit-delay: -18s;
 }
 
 .orbit4 {
-  --orbit-angle: 234deg;
-  --orbit-distance: min(34vw, 324px);
-  --orbit-duration: 34s;
-  --orbit-delay: -25.5s;
+  --orbit-y: 68%;
+  --orbit-radius: min(30vw, 292px);
+  --orbit-duration: 36s;
+  --orbit-delay: -27s;
 }
 
 .conversationPicker {
@@ -199,14 +189,45 @@
   line-height: 1.35;
 }
 
-@keyframes orbitTurn {
-  from { transform: rotate(var(--orbit-angle)); }
-  to { transform: rotate(calc(var(--orbit-angle) + 1turn)); }
+@keyframes auraBreathe {
+  0%, 100% { opacity: 0.56; transform: translate(-50%, -50%) scale(0.94); }
+  50% { opacity: 0.9; transform: translate(-50%, -50%) scale(1.04); }
 }
 
-@keyframes keepCardUpright {
-  from { transform: translate(-50%, -50%) translateX(var(--orbit-distance)) rotate(0deg); }
-  to { transform: translate(-50%, -50%) translateX(var(--orbit-distance)) rotate(-1turn); }
+@keyframes auraRing {
+  0%, 100% { opacity: 0.35; transform: scale(0.92); }
+  50% { opacity: 0.85; transform: scale(1.08); }
+}
+
+/* A horizontal depth orbit: front of the face -> side -> behind -> side -> front.
+   The card never rotates, so its copy stays readable throughout the motion. */
+@keyframes orbitAcrossFace {
+  0%, 100% {
+    opacity: 1;
+    filter: blur(0);
+    transform: translate(-50%, -50%) translateY(10px) scale(1);
+  }
+  25% {
+    opacity: 0.86;
+    filter: blur(0);
+    transform: translate(-50%, -50%) translateX(var(--orbit-radius)) translateY(1px) scale(0.84);
+  }
+  50% {
+    opacity: 0.34;
+    filter: blur(0.5px);
+    transform: translate(-50%, -50%) translateY(-11px) scale(0.58);
+  }
+  75% {
+    opacity: 0.86;
+    filter: blur(0);
+    transform: translate(-50%, -50%) translateX(calc(var(--orbit-radius) * -1)) translateY(1px) scale(0.84);
+  }
+}
+
+@keyframes orbitLayer {
+  0%, 15%, 85%, 100% { z-index: 3; }
+  24%, 76% { z-index: 2; }
+  42%, 58% { z-index: 0; }
 }
 
 .library {
@@ -703,7 +724,9 @@
 
 @media (prefers-reduced-motion: reduce) {
   .orbitPath,
-  .orbitCard {
+  .orbitCard,
+  .faceAura,
+  .faceAura::after {
     animation: none;
   }
 }

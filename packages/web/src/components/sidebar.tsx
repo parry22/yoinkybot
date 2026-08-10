@@ -19,8 +19,8 @@ import styles from "./sidebar.module.css";
 type NavItem = { href: string; label: string; icon: typeof InboxIcon };
 
 const PRIMARY_NAV: NavItem[] = [
-  { href: "/app", label: "Inbox", icon: InboxIcon },
   { href: "/app/knowledge", label: "Knowledge", icon: Knowledge01Icon },
+  { href: "/app/inbox", label: "Inbox", icon: InboxIcon },
   { href: "/app/studio", label: "Studio", icon: QuillWrite02Icon },
   { href: "/app/assets", label: "Assets", icon: FolderLibraryIcon },
   { href: "/app/integrations", label: "Integrations", icon: Plug01Icon },

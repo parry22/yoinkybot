@@ -10,7 +10,8 @@ import { usePageMeta } from "./page-meta";
 import styles from "./topbar.module.css";
 
 function pageTitle(pathname: string): string {
-  if (pathname === "/app") return "Inbox";
+  if (pathname === "/app") return "Knowledge";
+  if (pathname.startsWith("/app/inbox")) return "Inbox";
   if (pathname.startsWith("/app/knowledge")) return "Knowledge";
   if (pathname.startsWith("/app/studio")) return "Studio";
   if (pathname.startsWith("/app/assets")) return "Assets";
@@ -25,7 +26,7 @@ export function TopBar({ trial }: { trial: TrialInfo | null }) {
   const { open: openTelegram, busy } = useTelegramLink();
   const meta = usePageMeta();
   const title = pageTitle(pathname);
-  const showCount = pathname === "/app" && meta?.count != null;
+  const showCount = pathname.startsWith("/app/inbox") && meta?.count != null;
 
   return (
     <header className={styles.topbar}>
