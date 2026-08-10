@@ -1,9 +1,10 @@
 "use client";
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
-import dynamic from "next/dynamic";
+import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { strFromU8, unzipSync } from "fflate";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Add01Icon,
@@ -22,14 +23,8 @@ import type {
   EditorialTerritoryView,
 } from "@yoink/backend/web";
 import { useFlashMessage } from "../lib/use-flash-message";
-import { buildBrainNodes } from "./knowledge-brain-scene";
 import { MenuSelect } from "./menu-select";
 import styles from "./knowledge-shelf.module.css";
-
-const KnowledgeBrainCanvas = dynamic(
-  () => import("./knowledge-brain-scene").then((m) => m.KnowledgeBrainCanvas),
-  { ssr: false, loading: () => null },
-);
 
 const TYPE_LABEL: Record<KnowledgeObjectView["objectType"], string> = {
   insight: "Insight",
@@ -145,6 +140,31 @@ function conversationsFromExport(value: unknown): ImportedConversation[] {
   });
 }
 
+async function conversationsFromFile(file: File): Promise<ImportedConversation[]> {
+  const filename = file.name.toLowerCase();
+  let exportValue: unknown;
+
+  if (filename.endsWith(".zip")) {
+    const entries = unzipSync(new Uint8Array(await file.arrayBuffer()));
+    const conversationFile = Object.keys(entries).find((name) => /(^|\/)conversations(?:[-_].*)?\.json$/i.test(name))
+      ?? Object.keys(entries).find((name) => name.toLowerCase().endsWith(".json"));
+    if (!conversationFile) {
+      throw new Error("No conversation JSON file was found in that ZIP export.");
+    }
+    exportValue = JSON.parse(strFromU8(entries[conversationFile]!));
+  } else if (filename.endsWith(".json")) {
+    exportValue = JSON.parse(await file.text());
+  } else {
+    throw new Error("Choose the downloaded ZIP export or its conversation JSON file.");
+  }
+
+  const conversations = conversationsFromExport(exportValue);
+  if (conversations.length === 0) {
+    throw new Error("No readable conversations were found in that export.");
+  }
+  return conversations;
+}
+
 function importedTranscript(items: ImportedConversation[], selected: number[]): string {
   return selected
     .map((index) => items[index])
@@ -231,7 +251,6 @@ export function KnowledgeLibrary({
     });
   }, [objects, query, typeFilter]);
 
-  const nodes = useMemo(() => buildBrainNodes(objects, true), [objects]);
   const orbitCards = useMemo(() => {
     if (objects.length === 0) return EMPTY_ORBIT_CARDS;
     return objects.slice(0, 4).map((object) => ({
@@ -247,11 +266,9 @@ export function KnowledgeLibrary({
     const file = event.target.files?.[0];
     if (!file) return;
     setFileName(file.name);
-    const text = await file.text();
-    if (importKind && file.name.toLowerCase().endsWith(".json")) {
+    if (importKind) {
       try {
-        const conversations = conversationsFromExport(JSON.parse(text));
-        if (conversations.length === 0) throw new Error("No readable conversations were found in that export.");
+        const conversations = await conversationsFromFile(file);
         const selected = [0];
         setImportedConversations(conversations);
         setSelectedConversations(selected);
@@ -259,9 +276,11 @@ export function KnowledgeLibrary({
         setCaptureTitle(`${importKind === "chatgpt" ? "ChatGPT" : "Claude"}: ${conversations[0]!.title}`);
         return;
       } catch (error) {
-        setError(error instanceof Error ? error.message : "That export could not be read. Try a JSON conversation export or paste a chat instead.");
+        setError(error instanceof Error ? error.message : "That export could not be read. Try the downloaded ZIP or paste a chat instead.");
       }
+      return;
     }
+    const text = await file.text();
     setImportedConversations([]);
     setSelectedConversations([]);
     setTranscript(text);
@@ -348,8 +367,14 @@ export function KnowledgeLibrary({
   return (
     <div className={styles.page}>
       <section className={styles.stage} aria-hidden="true">
-        <div className={styles.stageCanvas}>
-          <KnowledgeBrainCanvas nodes={nodes} />
+        <div className={styles.headFigure}>
+          <Image
+            src="/knowledge/human-head-seamless.png"
+            alt=""
+            fill
+            priority
+            sizes="(max-width: 1000px) 0px, 58vw"
+          />
         </div>
         <div className={styles.brand}>
           <img src="/favicon.png" alt="" className={styles.brandMark} />
@@ -359,12 +384,14 @@ export function KnowledgeLibrary({
           </div>
         </div>
         {orbitCards.map((card, index) => (
-            <article key={`${card.title}-${index}`} className={`${styles.orbitCard} ${styles[`orbit${index + 1}`]}`}>
+          <div key={`${card.title}-${index}`} className={`${styles.orbitPath} ${styles[`orbit${index + 1}`]}`}>
+            <article className={styles.orbitCard}>
               <em>{card.type}</em>
               <strong>{card.title}</strong>
               <span>{card.body}</span>
             </article>
-          ))}
+          </div>
+        ))}
       </section>
 
       <aside className={styles.library}>
@@ -494,7 +521,7 @@ export function KnowledgeLibrary({
                   </div>
                   <p className={styles.captureHint}>
                     {importKind
-                      ? `Export your data, extract the downloaded ZIP, then choose its conversation JSON. Select only the ${importKind === "chatgpt" ? "ChatGPT" : "Claude"} chats you want to use, or paste one below. Your account is never connected or read directly.`
+                      ? `Choose the downloaded ZIP or its conversation JSON. Select only the ${importKind === "chatgpt" ? "ChatGPT" : "Claude"} chats you want to use, or paste one below. Your account is never connected or read directly.`
                       : <>Paste notes here, or <Link href="/app/integrations">import from Integrations</Link> (social accounts or chat exports).</>}
                   </p>
                   <label htmlFor="kb-title">Title</label>
@@ -578,7 +605,7 @@ export function KnowledgeLibrary({
                       {fileName || (importKind ? "Choose export" : "Upload .txt")}
                       <input
                         type="file"
-                        accept={importKind ? ".json,.txt,.md,application/json,text/plain,text/markdown" : ".txt,.md,text/plain,text/markdown"}
+                        accept={importKind ? ".zip,.json,application/zip,application/x-zip-compressed,application/json" : ".txt,.md,text/plain,text/markdown"}
                         onChange={(event) => void readFile(event)}
                       />
                     </label>

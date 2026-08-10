@@ -22,6 +22,76 @@
   margin-bottom: 36px;
 }
 
+.importPanel {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 28px;
+  padding: 18px;
+  border: 0.5px solid var(--stroke);
+  border-radius: 16px;
+  background: var(--surface);
+}
+
+.importPanel h2 {
+  margin: 0 0 5px;
+  color: var(--ink-900);
+  font-size: 15px;
+  font-weight: 560;
+}
+
+.importPanel p {
+  max-width: 74ch;
+  margin: 0;
+  color: var(--ink-600);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.importPanel label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--ink-700);
+  font-size: 12px;
+  font-weight: 520;
+}
+
+.importActions {
+  display: flex;
+  gap: 8px;
+}
+
+.importActions input {
+  min-width: 0;
+  flex: 1;
+  height: 34px;
+  padding: 0 10px;
+  border: 0.5px solid var(--stroke);
+  border-radius: 9px;
+  background: var(--chat-bg);
+  color: var(--ink-900);
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.importLinks {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 10px;
+}
+
+.importLinks a,
+.importLinks button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-600);
+  font: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .sectionHead {
   margin-bottom: 14px;
 }
@@ -243,5 +313,10 @@
 
   .page {
     padding: 14px 12px calc(24px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .importActions {
+    align-items: stretch;
+    flex-direction: column;
   }
 }

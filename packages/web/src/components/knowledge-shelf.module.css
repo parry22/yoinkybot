@@ -11,15 +11,20 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  background:
-    radial-gradient(circle at 50% 46%, rgba(172, 209, 248, 0.3), transparent 25%),
-    radial-gradient(circle at 18% 12%, rgba(221, 208, 251, 0.38), transparent 26%),
-    #f7f8fc;
+  background: var(--chat-bg);
 }
 
-.stageCanvas {
+.headFigure {
   position: absolute;
-  inset: 0;
+  inset: 7% 11% 0;
+  z-index: 1;
+  pointer-events: none;
+  mask-image: radial-gradient(ellipse 74% 73% at center, #000 55%, transparent 91%);
+  -webkit-mask-image: radial-gradient(ellipse 74% 73% at center, #000 55%, transparent 91%);
+}
+
+.headFigure img {
+  object-fit: contain;
 }
 
 .brand {
@@ -55,10 +60,22 @@
   font-size: 12px;
 }
 
-.orbitCard {
+.orbitPath {
   position: absolute;
   z-index: 2;
-  width: min(200px, 34%);
+  left: 50%;
+  top: 51%;
+  width: 0;
+  height: 0;
+  transform: rotate(var(--orbit-angle));
+  transform-origin: center;
+  animation: orbitTurn var(--orbit-duration) linear infinite;
+  animation-delay: var(--orbit-delay);
+}
+
+.orbitCard {
+  position: absolute;
+  width: clamp(164px, 17vw, 200px);
   padding: 10px 12px;
   border: 1px solid rgba(95, 137, 187, 0.2);
   border-radius: 14px;
@@ -67,7 +84,9 @@
   backdrop-filter: blur(10px);
   color: var(--ink-900);
   pointer-events: none;
-  animation: floatY 7s ease-in-out infinite;
+  transform: translate(-50%, -50%) translateX(var(--orbit-distance));
+  animation: keepCardUpright var(--orbit-duration) linear infinite;
+  animation-delay: var(--orbit-delay);
 }
 
 .orbitCard em {
@@ -98,27 +117,31 @@
 }
 
 .orbit1 {
-  left: 6%;
-  top: 22%;
-  animation-delay: 0s;
+  --orbit-angle: -36deg;
+  --orbit-distance: min(31vw, 292px);
+  --orbit-duration: 34s;
+  --orbit-delay: 0s;
 }
 
 .orbit2 {
-  right: 7%;
-  top: 18%;
-  animation-delay: -1.6s;
+  --orbit-angle: 54deg;
+  --orbit-distance: min(34vw, 324px);
+  --orbit-duration: 34s;
+  --orbit-delay: -8.5s;
 }
 
 .orbit3 {
-  left: 8%;
-  bottom: 18%;
-  animation-delay: -3.2s;
+  --orbit-angle: 144deg;
+  --orbit-distance: min(31vw, 292px);
+  --orbit-duration: 34s;
+  --orbit-delay: -17s;
 }
 
 .orbit4 {
-  right: 8%;
-  bottom: 22%;
-  animation-delay: -4.8s;
+  --orbit-angle: 234deg;
+  --orbit-distance: min(34vw, 324px);
+  --orbit-duration: 34s;
+  --orbit-delay: -25.5s;
 }
 
 .conversationPicker {
@@ -176,14 +199,14 @@
   line-height: 1.35;
 }
 
-@keyframes floatY {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-8px);
-  }
+@keyframes orbitTurn {
+  from { transform: rotate(var(--orbit-angle)); }
+  to { transform: rotate(calc(var(--orbit-angle) + 1turn)); }
+}
+
+@keyframes keepCardUpright {
+  from { transform: translate(-50%, -50%) translateX(var(--orbit-distance)) rotate(0deg); }
+  to { transform: translate(-50%, -50%) translateX(var(--orbit-distance)) rotate(-1turn); }
 }
 
 .library {
@@ -675,5 +698,12 @@
     font: inherit;
     font-size: 12px;
     cursor: pointer;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orbitPath,
+  .orbitCard {
+    animation: none;
   }
 }

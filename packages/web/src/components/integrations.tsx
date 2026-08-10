@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ComponentType } from "react";
+import { useEffect, useMemo, useState, type ComponentType, type FormEvent } from "react";
 import { useSearchParams } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Link01Icon, Tick02Icon } from "@hugeicons/core-free-icons";
@@ -95,14 +95,44 @@ export function Integrations({
 }) {
   const params = useSearchParams();
   const [banner, setBanner] = useState("");
+  const [bannerIsError, setBannerIsError] = useState(false);
+  const [showLinkedInImport, setShowLinkedInImport] = useState(() => params.get("linkedin") === "import");
+  const [linkedInProfileUrl, setLinkedInProfileUrl] = useState("");
+  const [importingLinkedIn, setImportingLinkedIn] = useState(false);
+  const connectError = params.get("connect_error");
+  const connected = params.get("connected");
   const notice = useMemo(
-    () => oauthMessage(params.get("connect_error"), params.get("connected")),
-    [params],
+    () => oauthMessage(connectError, connected),
+    [connectError, connected],
   );
 
   useEffect(() => {
     setBanner(notice);
-  }, [notice]);
+    setBannerIsError(Boolean(connectError));
+  }, [notice, connectError]);
+
+  async function importLinkedInProfile(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setImportingLinkedIn(true);
+    setBanner("");
+    setBannerIsError(false);
+    const response = await fetch("/api/connect/linkedin", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ profileUrl: linkedInProfileUrl }),
+    });
+    const data = (await response.json().catch(() => ({}))) as { error?: string };
+    setImportingLinkedIn(false);
+    if (!response.ok) {
+      setBannerIsError(true);
+      setBanner(data.error ?? "LinkedIn posts could not be queued for import.");
+      return;
+    }
+    setShowLinkedInImport(false);
+    setLinkedInProfileUrl("");
+    setBannerIsError(false);
+    setBanner("LinkedIn posts are being imported into your knowledge library.");
+  }
 
   const publish: IntegrationCard[] = [
     {
@@ -117,11 +147,12 @@ export function Integrations({
     {
       id: "linkedin",
       name: "LinkedIn",
-      description: "Publish and schedule professional posts from Studio and Assets.",
+      description: "Connect publishing, or import historic profile posts as knowledge.",
       status: linkedIn ? "connected" : "available",
       Logo: LinkedInLogo,
-      href: "/api/auth/linkedin/start",
+      href: "/app/integrations?linkedin=import",
       handle: linkedIn?.handle ?? null,
+      actionLabel: linkedIn ? "Import profile data" : "Connect & import",
     },
     {
       id: "beehiiv",
@@ -246,12 +277,42 @@ export function Integrations({
     <div className={styles.page}>
       <div className={styles.inner}>
         {banner && (
-          <div className={`${styles.banner} ${params.get("connect_error") ? styles.bannerError : styles.bannerOk}`}>
+          <div className={`${styles.banner} ${bannerIsError ? styles.bannerError : styles.bannerOk}`}>
             {banner}
             <button type="button" className={styles.bannerClose} onClick={() => setBanner("")} aria-label="Dismiss">
               ×
             </button>
           </div>
+        )}
+
+        {showLinkedInImport && (
+          <section className={styles.importPanel} aria-labelledby="linkedin-import-title">
+            <div>
+              <h2 id="linkedin-import-title">Import LinkedIn profile posts</h2>
+              <p>Paste your public LinkedIn profile URL. Yoinky will queue your existing posts as source-backed knowledge. Connect publishing separately when you are ready to schedule posts.</p>
+            </div>
+            <form onSubmit={(event) => void importLinkedInProfile(event)}>
+              <label htmlFor="linkedin-profile-url">LinkedIn profile URL</label>
+              <div className={styles.importActions}>
+                <input
+                  id="linkedin-profile-url"
+                  type="url"
+                  required
+                  value={linkedInProfileUrl}
+                  onChange={(event) => setLinkedInProfileUrl(event.target.value)}
+                  placeholder="https://www.linkedin.com/in/your-name"
+                />
+                <button type="submit" className={styles.connectBtn} disabled={importingLinkedIn}>
+                  <HugeiconsIcon icon={Link01Icon} size={14} />
+                  {importingLinkedIn ? "Queuing…" : "Import posts"}
+                </button>
+              </div>
+              <div className={styles.importLinks}>
+                <a href="/api/auth/linkedin/start">Connect LinkedIn publishing</a>
+                <button type="button" onClick={() => setShowLinkedInImport(false)}>Cancel</button>
+              </div>
+            </form>
+          </section>
         )}
 
         <section className={styles.section}>
