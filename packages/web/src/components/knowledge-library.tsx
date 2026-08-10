@@ -64,38 +64,94 @@ const PERMISSION_OPTIONS = [
   { value: "never_use_for_generation", label: "Store only" },
 ];
 
-const DEMO_FLOATS = [
+type ImportedConversation = { title: string; transcript: string };
+
+const EMPTY_ORBIT_CARDS = [
   {
-    className: styles.floatA,
     type: "Story",
-    title: "The pricing objection that closed the deal",
-    body: "Buyers stall when ROI isn’t visible in the first call.",
+    title: "Your customer stories",
+    body: "Bring conversations, notes, and call transcripts into the brain.",
   },
   {
-    className: styles.floatB,
     type: "Claim",
-    title: "One idea becomes ten formats",
-    body: "Knowledge first — posts are the byproduct.",
+    title: "Your point of view",
+    body: "Clear claims become reusable building blocks for every draft.",
   },
   {
-    className: styles.floatC,
     type: "Proof",
-    title: "Customer quote on onboarding speed",
-    body: "Went live in a week without a content ops hire.",
+    title: "The proof behind it",
+    body: "Keep the evidence that gives your ideas weight and credibility.",
   },
   {
-    className: styles.floatD,
     type: "Objection",
-    title: "Why another system on top of Gong?",
-    body: "Because notes don’t become reusable narrative alone.",
+    title: "The questions buyers ask",
+    body: "Capture objections while the language is fresh and useful.",
   },
 ];
 
-/** Decorative floats only outside production, unless NEXT_PUBLIC_SHOW_DEMOS=true. */
-function showDemoFloats(): boolean {
-  if (process.env.NEXT_PUBLIC_SHOW_DEMOS === "true") return true;
-  if (process.env.NEXT_PUBLIC_SHOW_DEMOS === "false") return false;
-  return process.env.NODE_ENV !== "production";
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function contentText(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.map(contentText).filter(Boolean).join("\n");
+  const record = asRecord(value);
+  if (!record) return "";
+  if (Array.isArray(record.parts)) return record.parts.map(contentText).filter(Boolean).join("\n");
+  return [record.text, record.value, record.content].map(contentText).filter(Boolean).join("\n");
+}
+
+function messageLine(value: unknown): string {
+  const entry = asRecord(value);
+  if (!entry) return "";
+  const message = asRecord(entry.message) ?? entry;
+  const author = asRecord(message.author);
+  const role = typeof author?.role === "string" ? author.role : typeof message.role === "string" ? message.role : "conversation";
+  const body = contentText(message.content ?? message.text ?? message.body);
+  if (!body.trim() || role === "system" || role === "tool") return "";
+  return `${role === "assistant" ? "Assistant" : role === "user" ? "User" : role}: ${body.trim()}`;
+}
+
+/** Supports ChatGPT's `conversations.json` and common Claude JSON exports. */
+function conversationsFromExport(value: unknown): ImportedConversation[] {
+  const root = asRecord(value);
+  const records = Array.isArray(value)
+    ? value
+    : Array.isArray(root?.conversations)
+      ? root.conversations
+      : Array.isArray(root?.data)
+        ? root.data
+        : [];
+
+  return records.flatMap((value, index) => {
+    const record = asRecord(value);
+    if (!record) return [];
+    const title = typeof record.title === "string" ? record.title : typeof record.name === "string" ? record.name : `Conversation ${index + 1}`;
+    const mapping = asRecord(record.mapping);
+    const rawMessages = mapping
+      ? Object.values(mapping).sort((left, right) => {
+          const leftMessage = asRecord(asRecord(left)?.message);
+          const rightMessage = asRecord(asRecord(right)?.message);
+          return Number(leftMessage?.create_time ?? 0) - Number(rightMessage?.create_time ?? 0);
+        })
+      : Array.isArray(record.chat_messages)
+        ? record.chat_messages
+        : Array.isArray(record.messages)
+          ? record.messages
+          : [];
+    const transcript = rawMessages.map(messageLine).filter(Boolean).join("\n\n");
+    return transcript.length >= 80 ? [{ title: title.slice(0, 180), transcript }] : [];
+  });
+}
+
+function importedTranscript(items: ImportedConversation[], selected: number[]): string {
+  return selected
+    .map((index) => items[index])
+    .filter((item): item is ImportedConversation => Boolean(item))
+    .map((item) => `# ${item.title}\n\n${item.transcript}`)
+    .join("\n\n---\n\n")
+    .slice(0, 100_000);
 }
 
 const formatDate = (value: string) =>
@@ -126,6 +182,10 @@ export function KnowledgeLibrary({
 }) {
   const searchParams = useSearchParams();
   const focusId = searchParams.get("focus");
+  const importKind = searchParams.get("import") === "chatgpt" || searchParams.get("import") === "claude"
+    ? searchParams.get("import")
+    : null;
+  const importTitle = importKind ? `${importKind === "chatgpt" ? "ChatGPT" : "Claude"} conversations` : "";
 
   const [objects, setObjects] = useState(initialObjects);
   const [query, setQuery] = useState("");
@@ -137,8 +197,11 @@ export function KnowledgeLibrary({
   const { message: notice, flash: setNotice, clear: clearNotice } = useFlashMessage(3500);
   const [transcript, setTranscript] = useState("");
   const [fileName, setFileName] = useState("");
-  const [showCapture, setShowCapture] = useState(false);
-  const [sourceType, setSourceType] = useState("founder_interview");
+  const [captureTitle, setCaptureTitle] = useState(importTitle);
+  const [importedConversations, setImportedConversations] = useState<ImportedConversation[]>([]);
+  const [selectedConversations, setSelectedConversations] = useState<number[]>([]);
+  const [showCapture, setShowCapture] = useState(Boolean(importKind));
+  const [sourceType, setSourceType] = useState(importKind ? "internal_document" : "founder_interview");
   const [speakerExpertId, setSpeakerExpertId] = useState(
     experts.find((expert) => expert.isDefault)?.id ?? "",
   );
@@ -168,7 +231,15 @@ export function KnowledgeLibrary({
     });
   }, [objects, query, typeFilter]);
 
-  const nodes = useMemo(() => buildBrainNodes(objects, showDemoFloats()), [objects]);
+  const nodes = useMemo(() => buildBrainNodes(objects, true), [objects]);
+  const orbitCards = useMemo(() => {
+    if (objects.length === 0) return EMPTY_ORBIT_CARDS;
+    return objects.slice(0, 4).map((object) => ({
+      type: TYPE_LABEL[object.objectType],
+      title: object.title,
+      body: preview(object.body, 82),
+    }));
+  }, [objects]);
   const selected = objects.find((object) => object.id === selectedId) ?? null;
   const panelOpen = showCapture || Boolean(selected);
 
@@ -176,7 +247,32 @@ export function KnowledgeLibrary({
     const file = event.target.files?.[0];
     if (!file) return;
     setFileName(file.name);
-    setTranscript(await file.text());
+    const text = await file.text();
+    if (importKind && file.name.toLowerCase().endsWith(".json")) {
+      try {
+        const conversations = conversationsFromExport(JSON.parse(text));
+        if (conversations.length === 0) throw new Error("No readable conversations were found in that export.");
+        const selected = [0];
+        setImportedConversations(conversations);
+        setSelectedConversations(selected);
+        setTranscript(importedTranscript(conversations, selected));
+        setCaptureTitle(`${importKind === "chatgpt" ? "ChatGPT" : "Claude"}: ${conversations[0]!.title}`);
+        return;
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "That export could not be read. Try a JSON conversation export or paste a chat instead.");
+      }
+    }
+    setImportedConversations([]);
+    setSelectedConversations([]);
+    setTranscript(text);
+  }
+
+  function toggleConversation(index: number) {
+    setSelectedConversations((current) => {
+      const next = current.includes(index) ? current.filter((item) => item !== index) : [...current, index];
+      setTranscript(importedTranscript(importedConversations, next));
+      return next;
+    });
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -188,7 +284,7 @@ export function KnowledgeLibrary({
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        title: String(new FormData(event.currentTarget).get("title") ?? ""),
+        title: captureTitle,
         sourceType,
         speakerExpertId: speakerExpertId || null,
         permissionLevel,
@@ -216,6 +312,9 @@ export function KnowledgeLibrary({
     setShowCapture(false);
     setTranscript("");
     setFileName("");
+    setCaptureTitle("");
+    setImportedConversations([]);
+    setSelectedConversations([]);
     event.currentTarget.reset();
     setBusy(false);
   }
@@ -259,9 +358,8 @@ export function KnowledgeLibrary({
             <span>Company knowledge brain</span>
           </div>
         </div>
-        {showDemoFloats() &&
-          DEMO_FLOATS.map((card) => (
-            <article key={card.title} className={`${styles.floatCard} ${card.className}`}>
+        {orbitCards.map((card, index) => (
+            <article key={`${card.title}-${index}`} className={`${styles.orbitCard} ${styles[`orbit${index + 1}`]}`}>
               <em>{card.type}</em>
               <strong>{card.title}</strong>
               <span>{card.body}</span>
@@ -343,7 +441,7 @@ export function KnowledgeLibrary({
                   </li>
                   <li>
                     <strong>2. Pull from Integrations</strong>
-                    <span>Connect X or LinkedIn and import owned posts</span>
+                    <span>Connect social accounts or import a ChatGPT / Claude export</span>
                     <Link href="/app/integrations" className={styles.stepAction}>
                       Integrations
                     </Link>
@@ -395,8 +493,9 @@ export function KnowledgeLibrary({
                     </button>
                   </div>
                   <p className={styles.captureHint}>
-                    Paste notes here, or{" "}
-                    <Link href="/app/integrations">import from Integrations</Link> (X / LinkedIn).
+                    {importKind
+                      ? `Export your data, extract the downloaded ZIP, then choose its conversation JSON. Select only the ${importKind === "chatgpt" ? "ChatGPT" : "Claude"} chats you want to use, or paste one below. Your account is never connected or read directly.`
+                      : <>Paste notes here, or <Link href="/app/integrations">import from Integrations</Link> (social accounts or chat exports).</>}
                   </p>
                   <label htmlFor="kb-title">Title</label>
                   <input
@@ -405,7 +504,9 @@ export function KnowledgeLibrary({
                     required
                     minLength={2}
                     maxLength={180}
-                    placeholder="Customer call on pricing"
+                    value={captureTitle}
+                    onChange={(event) => setCaptureTitle(event.target.value)}
+                    placeholder={importKind ? "Conversation import" : "Customer call on pricing"}
                   />
                   <div className={styles.captureMenus}>
                     <div>
@@ -453,13 +554,31 @@ export function KnowledgeLibrary({
                     placeholder="Paste notes, call transcript, Loom text…"
                     required
                   />
+                  {importedConversations.length > 0 && (
+                    <fieldset className={styles.conversationPicker}>
+                      <legend>Conversations to import</legend>
+                      <span>Select only material you are allowed to use. Imports are capped at 100,000 characters.</span>
+                      <div>
+                        {importedConversations.slice(0, 30).map((conversation, index) => (
+                          <label key={`${conversation.title}-${index}`} className={styles.conversationOption}>
+                            <input
+                              type="checkbox"
+                              checked={selectedConversations.includes(index)}
+                              onChange={() => toggleConversation(index)}
+                            />
+                            <span>{conversation.title}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </fieldset>
+                  )}
                   <div className={styles.captureActions}>
                     <label className={styles.fileBtn}>
                       <HugeiconsIcon icon={FileUploadIcon} size={14} />
-                      {fileName || "Upload .txt"}
+                      {fileName || (importKind ? "Choose export" : "Upload .txt")}
                       <input
                         type="file"
-                        accept=".txt,.md,text/plain,text/markdown"
+                        accept={importKind ? ".json,.txt,.md,application/json,text/plain,text/markdown" : ".txt,.md,text/plain,text/markdown"}
                         onChange={(event) => void readFile(event)}
                       />
                     </label>

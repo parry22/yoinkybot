@@ -53,6 +53,28 @@ export function NotionLogo({ className, size }: MarkProps) {
   );
 }
 
+export function ChatGPTLogo({ className, size }: MarkProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" {...sizeProps(size)} aria-hidden="true">
+      <circle cx="12" cy="12" r="11" fill="#10A37F" />
+      <path
+        fill="#FFFFFF"
+        d="M12 5.1c1.36 0 2.42.7 2.95 1.75.74-.18 1.55-.02 2.15.5.96.82 1.18 2.2.58 3.28.6.54.97 1.3.97 2.15 0 1.4-.97 2.58-2.28 2.9-.14 1.3-1.23 2.32-2.57 2.32-.75 0-1.42-.31-1.9-.8-.48.49-1.15.8-1.9.8-1.34 0-2.43-1.02-2.57-2.32a2.96 2.96 0 0 1-2.28-2.9c0-.85.37-1.61.97-2.15-.6-1.08-.38-2.46.58-3.28.6-.52 1.41-.68 2.15-.5A3.29 3.29 0 0 1 12 5.1Zm0 2.05c-.68 0-1.23.55-1.23 1.23v1.14L9.8 8.96a1.22 1.22 0 1 0-1.2 2.12l.98.56-1 .58a1.22 1.22 0 1 0 1.22 2.11l.97-.56v1.12a1.23 1.23 0 1 0 2.46 0v-1.12l.97.56a1.22 1.22 0 1 0 1.22-2.11l-1-.58.98-.56A1.22 1.22 0 1 0 14.2 8.96l-.97.56V8.38c0-.68-.55-1.23-1.23-1.23Z"
+      />
+    </svg>
+  );
+}
+
+export function ClaudeLogo({ className, size }: MarkProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" {...sizeProps(size)} aria-hidden="true">
+      <rect width="24" height="24" rx="6" fill="#D97757" />
+      <path fill="#FFF8F3" d="M12 5.1c3.3 0 5.9 2.7 5.9 6 0 3.35-2.6 6-5.9 6s-5.9-2.65-5.9-6c0-3.3 2.6-6 5.9-6Zm0 2.15a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6Z" />
+      <circle cx="12" cy="11.05" r="1.55" fill="#D97757" />
+    </svg>
+  );
+}
+
 export function GitHubLogo({ className, size }: MarkProps) {
   return (
     <svg className={className} viewBox="0 0 24 24" {...sizeProps(size)} aria-hidden="true">

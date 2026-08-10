@@ -75,14 +75,13 @@ const schema = z.object({
   GROQ_API_KEY: z.string().optional(),
   GROQ_STT_MODEL: z.string().default("whisper-large-v3-turbo"),
 
-  // OpenRouter - the only LLM route. One model for every request (no tiers, no
-  // fallback chain). Set MODEL_CHAT to switch models without a code change.
-  // Grok 4.3 (2026-08-06, was deprecated grok-4.1-fast): native X/cultural awareness is the
-  // product - drafts, trend takes, and buyer outreach all reason about what's
-  // happening on X. Verified live on OpenRouter ($1.25/M in, $2.50/M out, 1M ctx).
+  // OpenRouter is the default LLM route. Set MODEL_CHAT to switch the
+  // user-facing/frontier model without a code change.
   OPENROUTER_API_KEY: z.string().optional(),
   OPENROUTER_BASE_URL: z.string().default("https://openrouter.ai/api/v1"),
-  MODEL_CHAT: z.string().default("x-ai/grok-4.3"),
+  // Primary model for user-facing and high-judgement work. Luna Pro supports
+  // the structured-output and reasoning controls used by this gateway.
+  MODEL_CHAT: z.string().default("openai/gpt-5.6-luna-pro"),
   // Comma-separated OpenRouter provider names to exclude when picking a host
   // (spec: US/EU hosts only). Tighten or clear via env without a code change.
   OPENROUTER_PROVIDER_IGNORE: z.string().default("Baidu,Alibaba,StreamLake"),
@@ -102,11 +101,11 @@ const schema = z.object({
   // ── Two-model routing (2026-07-27) ───────────────────────────────────────
   // The single-model policy held while every call was product-critical. It isn't:
   // measured production usage says the highest-VOLUME events are mechanical
-  // classification (classify_mention alone was 44% of all calls), and paying
-  // Grok's $2/$6 for "is this tweet a question?" is pure waste.
+  // classification (classify_mention alone was 44% of all calls), and paying a
+  // frontier model for "is this tweet a question?" is pure waste.
   //
   // So `tier` now picks the MODEL as well as the reasoning effort:
-  //   frontier            → MODEL_CHAT   (Grok 4.3 - anything voice-bearing)
+  //   frontier            → MODEL_CHAT   (GPT-5.6 Luna Pro - voice-bearing work)
   //   cheap/cheap_floor/none → MODEL_CHEAP (mechanical/structural work)
   //
   // GLM 4.7 Flash is the default cheap model on purpose: the GLM family already
@@ -125,7 +124,7 @@ const schema = z.object({
   // The bounded agent loops (+ eventually the chat brain) can run on the Claude
   // Agent SDK instead of the bespoke llm/tool-loop.ts runner. The SDK spawns a
   // subprocess and talks the Anthropic Messages format, so it is routed through a
-  // LiteLLM proxy → OpenRouter → grok-4.5 (any provider/key later). SDK mode is
+  // LiteLLM proxy → OpenRouter → GPT-5.6 Luna Pro (any provider/key later). SDK mode is
   // RAILWAY-ONLY (it needs a real filesystem/subprocess - never Vercel).
   //   Per-feature runtime switch, default 'legacy' so nothing changes until a
   //   feature is deliberately flipped AFTER the Phase-0 spike passes.

@@ -14,7 +14,7 @@ export type BrainNode = {
   color: string;
 };
 
-const NODE_COLORS = ["#3df0ff", "#5b8cff", "#7a5cff", "#2ee6a6", "#4ecbff"];
+const NODE_COLORS = ["#1677d2", "#8f5ae8", "#d36944", "#23956c", "#2d8ab6"];
 
 function hash(str: string) {
   let h = 0;
@@ -58,7 +58,7 @@ export function buildBrainNodes(objects: KnowledgeObjectView[], allowDemoNodes =
   });
 }
 
-function NeonBrain() {
+function KnowledgeBrain() {
   const group = useRef<THREE.Group>(null);
   const { scene } = useGLTF("/models/brain.glb");
 
@@ -70,14 +70,14 @@ function NeonBrain() {
       mesh.castShadow = false;
       mesh.receiveShadow = false;
       mesh.material = new THREE.MeshStandardMaterial({
-        color: new THREE.Color("#061428"),
-        emissive: new THREE.Color("#1a7dff"),
-        emissiveIntensity: 1.35,
-        roughness: 0.35,
-        metalness: 0.55,
-        wireframe: true,
+        color: new THREE.Color("#dceafb"),
+        emissive: new THREE.Color("#8fc4f4"),
+        emissiveIntensity: 0.24,
+        roughness: 0.68,
+        metalness: 0.05,
+        wireframe: false,
         transparent: true,
-        opacity: 0.92,
+        opacity: 0.9,
       });
     });
 
@@ -96,13 +96,13 @@ function NeonBrain() {
       const mesh = obj as THREE.Mesh;
       if (!mesh.isMesh) return;
       mesh.material = new THREE.MeshStandardMaterial({
-        color: new THREE.Color("#03101f"),
-        emissive: new THREE.Color("#0b4db8"),
-        emissiveIntensity: 0.55,
-        roughness: 0.8,
-        metalness: 0.2,
+        color: new THREE.Color("#eef5fe"),
+        emissive: new THREE.Color("#b9d9f6"),
+        emissiveIntensity: 0.08,
+        roughness: 0.85,
+        metalness: 0.02,
         transparent: true,
-        opacity: 0.55,
+        opacity: 0.5,
       });
     });
     root.scale.multiplyScalar(0.985);
@@ -155,15 +155,15 @@ function GlowDot({ node }: { node: BrainNode }) {
 function Scene({ nodes }: { nodes: BrainNode[] }) {
   return (
     <>
-      <color attach="background" args={["#02060d"]} />
-      <fog attach="fog" args={["#02060d", 8, 18]} />
-      <ambientLight intensity={0.15} />
-      <pointLight position={[0, 2.5, 3]} intensity={1.4} color="#3aa0ff" distance={18} />
-      <pointLight position={[-3, -1, -2]} intensity={0.7} color="#6a5cff" distance={14} />
-      <pointLight position={[3, 1, -1]} intensity={0.55} color="#2ee6ff" distance={12} />
+      <color attach="background" args={["#f7f8fc"]} />
+      <fog attach="fog" args={["#f7f8fc", 8, 18]} />
+      <ambientLight intensity={1.35} />
+      <pointLight position={[0, 2.5, 3]} intensity={1.1} color="#9fc9f4" distance={18} />
+      <pointLight position={[-3, -1, -2]} intensity={0.45} color="#cbb8f4" distance={14} />
+      <pointLight position={[3, 1, -1]} intensity={0.35} color="#b5ddd4" distance={12} />
 
       <group position={[0, -0.1, 0]}>
-        <NeonBrain />
+        <KnowledgeBrain />
         {nodes.slice(0, 14).map((node) => (
           <GlowDot key={node.id} node={node} />
         ))}

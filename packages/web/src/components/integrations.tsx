@@ -7,6 +7,8 @@ import { Link01Icon, Tick02Icon } from "@hugeicons/core-free-icons";
 import {
   BeehiivLogo,
   BrevoLogo,
+  ChatGPTLogo,
+  ClaudeLogo,
   EmailLogo,
   FirefliesLogo,
   GitHubLogo,
@@ -33,6 +35,7 @@ type IntegrationCard = {
   Logo: ComponentType<{ className?: string; size?: number }>;
   href?: string;
   handle?: string | null;
+  actionLabel?: string;
 };
 
 function StatusPill({ status }: { status: IntegrationCard["status"] }) {
@@ -60,7 +63,7 @@ function Card({ item }: { item: IntegrationCard }) {
         {item.href ? (
           <a href={item.href} className={styles.connectBtn}>
             <HugeiconsIcon icon={Link01Icon} size={14} />
-            {item.status === "connected" ? "Reconnect" : "Connect"}
+            {item.actionLabel ?? (item.status === "connected" ? "Reconnect" : "Connect")}
           </a>
         ) : (
           <button type="button" className={styles.connectBtn} disabled>
@@ -158,6 +161,24 @@ export function Integrations({
   ];
 
   const sources: IntegrationCard[] = [
+    {
+      id: "chatgpt",
+      name: "ChatGPT",
+      description: "Import selected conversations from your ChatGPT data export as source-backed knowledge.",
+      status: "available",
+      Logo: ChatGPTLogo,
+      href: "/app/knowledge?import=chatgpt",
+      actionLabel: "Import export",
+    },
+    {
+      id: "claude",
+      name: "Claude",
+      description: "Bring selected Claude conversations into Knowledge from a local conversation export.",
+      status: "available",
+      Logo: ClaudeLogo,
+      href: "/app/knowledge?import=claude",
+      actionLabel: "Import export",
+    },
     {
       id: "slack",
       name: "Slack",

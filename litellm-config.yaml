@@ -3,7 +3,7 @@
 # The Claude Agent SDK speaks the Anthropic Messages format. LiteLLM serves that
 # on /v1/messages (+ /v1/messages/count_tokens) and translates to any upstream.
 # Per the migration decision, upstream = OpenRouter (reuses the existing
-# OPENROUTER_API_KEY and sidesteps grok-4.5's xAI EU-region console restriction).
+# OPENROUTER_API_KEY and keeps all agent traffic on the same provider route).
 #
 # Deploy as its OWN Railway service, private-network-reachable from the backend
 # (never public). PIN A CLEAN VERSION > 1.82.8 — PyPI 1.82.7/1.82.8 shipped
@@ -14,24 +14,23 @@
 # file-mount primitive, so baking it into a thin derived image is the mount.
 
 model_list:
-  # What the SDK sends as its `model` (config.AGENT_MODEL). grok-4.5 via OpenRouter.
+  # What the SDK sends as its `model` (config.AGENT_MODEL). GPT-5.6 Luna Pro via OpenRouter.
   - model_name: yoinky-agent
     litellm_params:
-      model: openrouter/x-ai/grok-4.5
+      model: openrouter/openai/gpt-5.6-luna-pro
       api_key: os.environ/OPENROUTER_API_KEY
-    # grok-4.5 is NOT in LiteLLM's built-in cost map — without this the proxy
-    # logs every request at $0.00 and the spend log is useless as a cross-check
-    # (and any budget ceiling silently never trips). Rates are OpenRouter's
-    # list price per token: $2/M in, $6/M out, $0.30/M cached read.
+    # Explicit prices keep LiteLLM's spend log useful even if its cost map has
+    # not caught up. OpenRouter list price: $0.10/M in, $0.60/M out,
+    # $0.01/M cached read.
     model_info:
-      input_cost_per_token: 0.000002
-      output_cost_per_token: 0.000006
-      cache_read_input_token_cost: 0.0000003
+      input_cost_per_token: 0.0000001
+      output_cost_per_token: 0.0000006
+      cache_read_input_token_cost: 0.00000001
 
   # SDK `fallbackModel` (config.AGENT_FALLBACK_MODEL). A different model, still on
   # OpenRouter (no new key). A Claude model gives the truest Anthropic-format tool
   # behavior; swap the id to taste. NOT an automatic silent degrade of the primary
-  # — the app only reaches this when grok itself errors.
+  # — the app only reaches this when the primary model itself errors.
   - model_name: yoinky-agent-fallback
     litellm_params:
       model: openrouter/anthropic/claude-sonnet-5
@@ -63,12 +62,12 @@ model_list:
   # surface too. Unused until Phase 5.
   - model_name: yoinky-chat
     litellm_params:
-      model: openrouter/x-ai/grok-4.5
+      model: openrouter/openai/gpt-5.6-luna-pro
       api_key: os.environ/OPENROUTER_API_KEY
     model_info:
-      input_cost_per_token: 0.000002
-      output_cost_per_token: 0.000006
-      cache_read_input_token_cost: 0.0000003
+      input_cost_per_token: 0.0000001
+      output_cost_per_token: 0.0000006
+      cache_read_input_token_cost: 0.00000001
 
 litellm_settings:
   # OpenRouter/xAI reject some Anthropic-shaped params — let LiteLLM drop them

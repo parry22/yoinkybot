@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import { extractJson, salvageTruncatedJson, asObject, cost, reasoningEffort, hashForCacheKey, routeFor, type RouteEnv } from "./gateway.js";
 
 describe("cost (cached input bills ~6.7x cheaper)", () => {
+  it("prices GPT-5.6 Luna Pro, the current frontier model", () => {
+    expect(cost("openai/gpt-5.6-luna-pro", 1_000_000, 500_000, 100_000)).toBeCloseTo(0.115, 6);
+  });
   it("prices the current OpenRouter frontier model", () => {
     expect(cost("x-ai/grok-4.3", 1_000_000, 0, 1_000_000)).toBeCloseTo(3.75, 6);
   });

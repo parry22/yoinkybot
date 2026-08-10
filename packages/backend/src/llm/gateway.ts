@@ -50,7 +50,7 @@ export interface LlmRequest {
 
 /** Map the advisory tier to a reasoning_effort. Reasoning tokens bill at the
  *  output rate, so lower effort is the largest single-call saving. "none" maps to
- *  "low" for now (grok-4.5 has no documented "off" switch); revisit if one lands. */
+ *  "low" for now; individual cheap-model routes can still disable reasoning. */
 export function reasoningEffort(tier: Tier): "low" | "high" {
   return tier === "frontier" ? "high" : "low";
 }
@@ -69,16 +69,10 @@ export interface LlmResponse {
   finishReason?: string;
 }
 
-// $/1M tokens. `cachedIn` = the prompt-cache-hit rate, which is the whole reason
-// the caching work exists: on Grok 4.5 a cached input token is 6.7x cheaper than
-// a fresh one, and our chat prompt is ~95% input by volume.
-//
-// PULLED LIVE from the OpenRouter models API on 2026-07-27. The previous figures
-// were stale in BOTH directions and under-reported the cache upside: Grok's
-// cached rate was recorded as $0.50 when it is $0.30, and GLM 5.2 as
-// $0.54/$1.76 when it is $0.812/$2.552. Re-check with:
-//   curl -s https://openrouter.ai/api/v1/models | jq '.data[] | select(.id=="x-ai/grok-4.5") | .pricing'
+// $/1M tokens. Keep this table in sync with the OpenRouter models API; unknown
+// ids deliberately log as $0 so a model swap is immediately visible in usage.
 const PRICE: Record<string, { in: number; cachedIn: number; out: number }> = {
+  "openai/gpt-5.6-luna-pro": { in: 0.1, cachedIn: 0.01, out: 0.6 }, // primary model, verified 2026-08-10
   "x-ai/grok-4.3": { in: 1.25, cachedIn: 0.3, out: 2.5 }, // OpenRouter id
   "x-ai/grok-4.5": { in: 2.0, cachedIn: 0.3, out: 6.0 }, // OpenRouter id
   "grok-4.5": { in: 2.0, cachedIn: 0.3, out: 6.0 }, // xAI-direct id
@@ -103,7 +97,7 @@ function priceFor(model: string): { in: number; cachedIn: number; out: number } 
 /**
  * Which model + transport serves this tier.
  *
- * frontier → MODEL_CHAT (Grok 4.3): anything the user reads as Yoinky's voice -
+ * frontier → MODEL_CHAT (GPT-5.6 Luna Pro): anything the user reads as Yoinky's voice -
  *   drafts, takes, replies, the chat turn, the diagnosis.
  * cheap / cheap_floor / none → MODEL_CHEAP: mechanical and structural work whose
  *   output is JSON we consume, never prose the user sees.
@@ -272,7 +266,7 @@ async function callModel(req: LlmRequest, useJsonMode: boolean, sendReasoning = 
 
   if (xai) {
     // xAI-native reasoning param + cache-affinity header (spec §3). NOTE: verify
-    // grok-4.5 accepts reasoning_effort in the console before relying on it.
+    // xAI-native reasoning control + cache-affinity header.
     if (sendReasoning) body.reasoning_effort = effort;
     headers["x-grok-conv-id"] = cacheKey;
   } else if (cheapModel) {
@@ -502,7 +496,7 @@ export async function llmCall(req: LlmRequest): Promise<LlmResponse> {
   } catch (err) {
     // A non-retriable 400 on the chat path is almost always a request param the
     // routed provider rejects - response_format (uneven across OpenRouter hosts)
-    // or the reasoning field (unverified on grok-4.5). Degrade once: drop BOTH and
+    // or the reasoning field. Degrade once: drop BOTH and
     // lean on the prompt's "respond with ONLY JSON" instruction. A plain call beats
     // a dead turn; without this, provider roulette (or an unaccepted param) would
     // silently break every structured call.
